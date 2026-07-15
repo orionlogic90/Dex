@@ -1,5 +1,5 @@
 // ============================================================
-// DICEY ENGINE v8.0 - FINAL (API LOOP + CLOSE SPLASH)
+// DICEY ENGINE v8.0 - FINAL (CLOSE SPLASH + RESTART)
 // ============================================================
 (function() {
     'use strict';
@@ -8,14 +8,26 @@
     // LICENSES DATABASE
     // ============================================================
     const LICENSES = {
-        "CANCER": {
-            user: "cancer",
+        "TRIAL001": {
+            user: "trial",
+            expiry: "2026-12-31",
+            plan: "trial",
+            created: "2026-07-15"
+        },
+        "DEMO2024": {
+            user: "demo",
+            expiry: "2026-12-31",
+            plan: "demo",
+            created: "2026-07-15"
+        },
+        "13N7F713Y6FW": {
+            user: "ramadhan",
             expiry: "2027-07-15",
             plan: "lifetime",
             created: "2026-07-15"
         },
-        "LIBRA": {
-            user: "libra",
+        "ZXH3NJSJHEJC": {
+            user: "dengkodice",
             expiry: "2027-07-15",
             plan: "lifetime",
             created: "2026-07-15"
@@ -378,6 +390,12 @@
     }
 
     // ============================================================
+    // STATE TRACKING UNTUK RESTART
+    // ============================================================
+    let prevWagerRunning = false;
+    let prevRainRunning = false;
+
+    // ============================================================
     // FETCH BALANCE (dari UserBalances)
     // ============================================================
     async function fetchBalance() {
@@ -448,7 +466,7 @@
         
         if (winEl) {
             if (result.win) {
-                winEl.textContent = '+' + result.usdAmount.toFixed(2) + ' USD';
+                winEl.textContent = '+' + result.usdAmount.toFixed(2) + ' USD 🎉';
                 winEl.style.color = '#4ade80';
             } else {
                 winEl.textContent = 'No payout';
@@ -465,49 +483,54 @@
     }
 
     // ============================================================
-    // CLOSE SPLASH - KLIK LAYAR BEBAS
+    // CLOSE SPLASH - KLIK TENGAH LAYAR
     // ============================================================
     function closeWinSplash() {
         try {
+            // Cek apakah ada modal "YOU WON"
             const modals = document.querySelectorAll('[role="dialog"], .modal, [class*="modal"], [class*="splash"]');
+            let found = false;
             
             for (let modal of modals) {
                 const isVisible = modal.offsetParent !== null || getComputedStyle(modal).display !== 'none';
                 if (!isVisible) continue;
                 
                 const text = modal.textContent || '';
-                if (!text.includes('YOU WON') && !text.includes('you won') && !text.includes('WON')) {
-                    continue;
+                if (text.includes('YOU WON') || text.includes('you won') || text.includes('WON')) {
+                    found = true;
+                    break;
                 }
-                
-                addLog('🏆 Splash detected, closing...', '#ffd700', '🏆');
-                
-                const rect = modal.getBoundingClientRect();
-                const x = rect.left + (rect.width / 2);
-                const y = rect.top + (rect.height * 0.05);
-                
-                const clickEvent = new MouseEvent('click', {
-                    view: window,
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: x,
-                    clientY: y
-                });
-                
-                const elementAtPoint = document.elementFromPoint(x, y);
-                
-                if (elementAtPoint) {
-                    elementAtPoint.dispatchEvent(clickEvent);
-                    addLog('✅ Splash closed', '#4ade80', '✅');
-                    return true;
-                }
-                
-                modal.dispatchEvent(clickEvent);
-                addLog('✅ Splash closed (fallback)', '#4ade80', '✅');
+            }
+            
+            if (!found) {
+                return false;
+            }
+            
+            addLog('🏆 Splash detected, clicking center of screen...', '#ffd700', '🏆');
+            
+            // Dapatkan posisi tengah layar
+            const x = window.innerWidth / 2;
+            const y = window.innerHeight / 2;
+            
+            const clickEvent = new MouseEvent('click', {
+                view: window,
+                bubbles: true,
+                cancelable: true,
+                clientX: x,
+                clientY: y
+            });
+            
+            const elementAtCenter = document.elementFromPoint(x, y);
+            
+            if (elementAtCenter) {
+                elementAtCenter.dispatchEvent(clickEvent);
+                addLog('✅ Splash closed!', '#4ade80', '✅');
                 return true;
             }
             
-            return false;
+            document.body.dispatchEvent(clickEvent);
+            addLog('✅ Splash closed (body fallback)', '#4ade80', '✅');
+            return true;
             
         } catch(e) {
             addLog('⚠️ Close splash error: ' + e.message, '#ff922b', '⚠️');
@@ -516,7 +539,30 @@
     }
 
     // ============================================================
-    // CHECK RAIN PAYOUT + CLOSE SPLASH (SATU PAKET!)
+    // RESTART BOT
+    // ============================================================
+    async function restartBot() {
+        addLog('🔄 Restarting bot...', '#60a5fa', '🔄');
+        
+        if (wagerState.isRunning) stopWagerBot();
+        if (rainState.isRunning) stopRainBot();
+        
+        await sleep(2000);
+        
+        if (prevWagerRunning) {
+            addLog('🔄 Restarting wager...', '#4ade80', '🔄');
+            startWagerBot();
+        }
+        if (prevRainRunning) {
+            addLog('🔄 Restarting rain...', '#4ade80', '🔄');
+            startRainBot();
+        }
+        
+        addLog('✅ Bot restarted!', '#4ade80', '✅');
+    }
+
+    // ============================================================
+    // CHECK RAIN PAYOUT + CLOSE SPLASH + RESTART
     // ============================================================
     async function checkRainPayoutAndClose() {
         try {
@@ -571,13 +617,10 @@
                         addLog('🏆 YOU WON! +' + amount.toFixed(2) + ' USD', '#ffd700', '🏆');
                         updatePayoutUI({ win: true, usdAmount: amount, time: node.time });
                         
-                        // 🔥 EKSEKUSI CLOSE SPLASH!
                         addLog('🔄 Closing splash...', '#60a5fa', '🔄');
                         
-                        // Tunggu sebentar biar splash muncul
-                        await sleep(1500);
+                        await sleep(2000);
                         
-                        // Coba close sampai berhasil (max 10x)
                         let closed = false;
                         for (let i = 0; i < 10; i++) {
                             const result = closeWinSplash();
@@ -585,11 +628,12 @@
                                 closed = true;
                                 break;
                             }
-                            await sleep(500);
+                            await sleep(1000);
                         }
                         
                         if (closed) {
                             addLog('✅ Splash closed!', '#4ade80', '✅');
+                            await restartBot();
                         } else {
                             addLog('⚠️ Splash not found or already closed', '#ff922b', '⚠️');
                         }
@@ -1409,6 +1453,7 @@
         if (wagerState.timerInterval) clearInterval(wagerState.timerInterval);
         wagerState.timerInterval = setInterval(updateWagerTimer, 1000);
 
+        prevWagerRunning = true;
         addLog('[START] L1: ' + layer1Bet + ' ' + getCurrencyDisplay(), '#00e5c0', '[S]', 'started');
         addLog('[TARGET] ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', '[T]', 'target_info');
         updateWagerUI();
@@ -1437,6 +1482,7 @@
             wagerState.timerInterval = null;
         }
         var profit = wagerState.currentBalance - wagerState.startBalance;
+        prevWagerRunning = false;
         addLog('[STOP] ' + (profit >= 0 ? '+' : '') + profit.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', '[S]', 'stopped');
         addLog('[TOTAL] ' + wagerState.wagered.toFixed(4) + ' ' + getCurrencyDisplay(), '#a0a0a0', '[T]', 'total_wager');
         addLog('[BETS] ' + wagerState.totalBets + ' | L1: ' + wagerState.layer1Bets + ' | L2: ' + wagerState.layer2Bets, '#a0a0a0', '[B]', 'bet_summary');
@@ -1484,7 +1530,7 @@
     }
 
     // ============================================================
-    // 🌧️ RAIN CATCHER - API LOOP (TANPA WEBSOCKET)
+    // 🌧️ RAIN CATCHER - API LOOP
     // ============================================================
     const rainState = {
         isRunning: false,
@@ -1737,14 +1783,13 @@
     }
 
     // ============================================================
-    // RAIN CYCLE (API LOOP - TANPA WEBSOCKET)
+    // RAIN CYCLE (API LOOP)
     // ============================================================
     function runRainCycle() {
         if (!rainState.isRunning) return;
         
         addLog('🌧️ Checking rain schedule...', '#60a5fa', '🌧️');
         
-        // STEP 1: PASTIKAN DI /chat
         if (!window.location.href.includes('/chat')) {
             addLog('📍 Navigating to /chat...', '#60a5fa', '📍');
             window.location.href = 'https://dicey.com/chat';
@@ -1756,7 +1801,6 @@
             return;
         }
         
-        // STEP 2: FISHING MOMENT (SEKALI)
         if (!fishingDone) {
             addLog('🎣 Fishing required: 0.51 ' + getCurrency() + ' @ 98%', '#ff922b', '🎣');
             doFishingMoment().then(() => {
@@ -1767,18 +1811,15 @@
             return;
         }
         
-        // STEP 3: EKSEKUSI RAIN CYCLE
         executeRainCycle();
     }
 
     function executeRainCycle() {
         if (!rainState.isRunning) return;
         
-        // Start timer UI
         startRainTimer();
         startChatRefreshLoop();
         
-        // LANGSUNG CEK RAIN SCHEDULE
         fetchRainSchedule().then(rainData => {
             if (rainData) {
                 updateRainTimer(rainData);
@@ -1788,11 +1829,9 @@
                 const settlesAt = new Date(rainData.settlesAt);
                 const status = rainData.status;
                 
-                // 1. SUDAH SETTLED → CEK PAYOUT!
                 if (status === 'Settled' || now > settlesAt) {
                     addLog('⏰ Rain settled! Checking payout...', '#888', '⏰');
                     checkRainPayoutAndClose();
-                    // LANGSUNG CEK LAGI 5 MENIT
                     setTimeout(() => {
                         if (rainState.isRunning) {
                             runRainCycle();
@@ -1801,18 +1840,15 @@
                     return;
                 }
                 
-                // 2. RAIN AKTIF → JOIN + SCHEDULE CEK
                 if (now >= startsAt && now <= settlesAt) {
                     addLog('🔥 Rain is active! $' + rainData.totalUsdAmount, '#ff922b', '🔥');
                     handleRainEvent(rainData);
                     
                     const timeToSettle = settlesAt.getTime() - now.getTime();
                     
-                    // Schedule cek payout saat settle
                     setTimeout(() => {
                         addLog('🔔 Settle time! Checking payout...', '#ffd700', '🔔');
                         checkRainPayoutAndClose();
-                        // LANGSUNG CEK LAGI 5 MENIT
                         setTimeout(() => {
                             if (rainState.isRunning) {
                                 runRainCycle();
@@ -1822,7 +1858,6 @@
                     return;
                 }
                 
-                // 3. BELUM MULAI → TUNGGU SAMPAI startsAt
                 if (now < startsAt) {
                     const timeUntilStart = startsAt.getTime() - now.getTime();
                     const minutesUntilStart = Math.floor(timeUntilStart / 60000);
@@ -1837,7 +1872,6 @@
                 }
                 
             } else {
-                // TIDAK ADA RAIN → CEK LAGI 5 MENIT
                 addLog('⏳ No rain scheduled, checking again in 5 minutes...', '#888', '⏳');
                 setTimeout(() => {
                     if (rainState.isRunning) {
@@ -1870,6 +1904,7 @@
         rainState.failCount = 0;
         updateRainUI();
         
+        prevRainRunning = true;
         addLog('🌧️ Rain catcher started (API Loop)', '#4ade80', '🌧️');
         addLog('🎣 Fishing: 0.51 ' + getCurrency() + ' @ 98%', '#ff922b', '🎣');
         
@@ -1878,6 +1913,7 @@
 
     function stopRainBot() {
         rainState.isRunning = false;
+        prevRainRunning = false;
         
         if (rainState.scheduledTimeout) {
             clearTimeout(rainState.scheduledTimeout);
@@ -2121,6 +2157,7 @@
                 updateWagerUI();
 
                 if (w.isRunning && !w.isPaused) {
+                    prevWagerRunning = true;
                     addLog('[AUTO] RESUME WAGER', '#4ade80', '[A]', 'auto_resume');
                     wagerState.isRunning = true;
                     wagerState.isPaused = false;
@@ -2154,6 +2191,7 @@
                 updateRainUI();
 
                 if (r.isRunning) {
+                    prevRainRunning = true;
                     addLog('[AUTO] RESUME RAIN', '#4ade80', '[A]', 'rain_auto_resume');
                     rainState.isRunning = true;
                     updateRainUI();
@@ -2345,7 +2383,7 @@
     addLog('[INIT] DiceY Engine v8.0 FINAL READY', '#9ec07c', '[I]', 'init');
     addLog('[INIT] Enter license to unlock', '#ffd700', '[I]', 'init_license');
     addLog('[INIT] Balance: ~' + wagerState.currentBalance.toFixed(4) + ' ' + getCurrencyDisplay(), '#00e5c0', '[I]', 'init_balance');
-    addLog('[INIT] Rain catcher: API Loop + Auto Close Splash', '#4ade80', '[I]', 'init_rain');
+    addLog('[INIT] Rain catcher: API Loop + Auto Close Splash + Restart', '#4ade80', '[I]', 'init_rain');
 
     setTimeout(function() {
         var hasState = localStorage.getItem('dicey_full_state');
@@ -2363,7 +2401,7 @@
     console.log('⚡ DiceY Engine v8.0 FINAL is READY');
     console.log('📌 Enter license + username to unlock');
     console.log('🎣 Fishing: 0.51 ' + getCurrency() + ' @ 98% (once)');
-    console.log('🌧️ Rain catcher: API Loop + Auto Close Splash');
+    console.log('🌧️ Rain catcher: API Loop + Auto Close Splash + Restart');
     console.log('📌 Ctrl+Enter: start/stop wager | Ctrl+Space: pause');
 
 })();
