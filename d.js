@@ -8,12 +8,6 @@
     // LICENSES DATABASE
     // ============================================================
     const LICENSES = {
-    "TRIAL001": {
-        "user": "trial",
-        "expiry": "2026-12-31",
-        "plan": "trial",
-        "created": "2026-07-15"
-    },
     "DEMO2024": {
         "user": "demo",
         "expiry": "2026-12-31",
