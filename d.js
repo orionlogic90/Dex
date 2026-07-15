@@ -15,6 +15,12 @@
             expiry: "2026-12-31",
             plan: "trial",
             created: "2026-07-15"
+        },
+        "DEMO2024": {
+            user: "demo",
+            expiry: "2026-12-31",
+            plan: "demo",
+            created: "2026-07-15"
         }
     };
 
@@ -740,7 +746,7 @@
     });
 
     // ============================================================
-    // WAGER BOT - STATE (SAMA SEPERTI SEBELUMNYA)
+    // WAGER BOT - STATE
     // ============================================================
     const wagerState = {
         isRunning: false,
@@ -779,7 +785,7 @@
     };
 
     // ============================================================
-    // WAGER BOT - UI UPDATE (SAMA)
+    // WAGER BOT - UI UPDATE
     // ============================================================
     function updateWagerTimer() {
         if (!wagerState.startTime) return;
@@ -939,7 +945,7 @@
     }
 
     // ============================================================
-    // WAGER BOT - CORE FUNCTIONS (SAMA)
+    // WAGER BOT - CORE FUNCTIONS
     // ============================================================
     function getRealBalance() {
         try {
@@ -1435,7 +1441,7 @@
     }
 
     // ============================================================
-    // RAIN CATCHER - API FIRST (SAMA SEPERTI SEBELUMNYA)
+    // RAIN CATCHER - API FIRST
     // ============================================================
     const TELEGRAM_BOT_TOKEN = '8328589586:AAGO3dB_8pkPxD5Ogy9UI1lJMMtPQOUAdIE';
     const TELEGRAM_CHAT_ID = '8453280675';
@@ -2345,7 +2351,6 @@
 
     if (licenseInput) {
         licenseInput.addEventListener('input', function() {
-            // Auto uppercase
             this.value = this.value.toUpperCase();
         });
         licenseInput.addEventListener('keydown', function(e) {
@@ -2443,7 +2448,6 @@
 
     switchTab('main');
     
-    // Auto-check license jika ada saved
     setTimeout(function() {
         if (licenseInput && licenseInput.value && usernameInput && usernameInput.value) {
             updateLicenseStatus();
@@ -2462,7 +2466,6 @@
     addLog('🛑 Stop Loss: 90%', '#ff6b6b', '🛑', 'init_stop');
     addLog('🌧️ Rain Catcher Ready (API-First)', '#4ade80', '🌧️', 'init_rain');
 
-    // Restore state
     setTimeout(function() {
         var hasState = localStorage.getItem('dicey_full_state');
         if (hasState) {
