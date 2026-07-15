@@ -5,27 +5,31 @@
     'use strict';
 
     // ============================================================
-    // 🔐 LICENSES DATABASE (HARDCODE - EDIT VIA GENERATOR)
+    // ð LICENSES DATABASE (HARDCODE - EDIT VIA GENERATOR)
     // ============================================================
     const LICENSES = {
-        // ⚠️ JANGAN EDIT MANUAL! Gunakan Generator
-        // Tambahkan license di sini via generator.html
-        "TRIAL001": {
-            user: "trial",
-            expiry: "2026-12-31",
-            plan: "trial",
-            created: "2026-07-15"
-        },
-        "DEMO2024": {
-            user: "demo",
-            expiry: "2026-12-31",
-            plan: "demo",
-            created: "2026-07-15"
-        }
-    };
+    "TRIAL001": {
+        "user": "trial",
+        "expiry": "2026-12-31",
+        "plan": "trial",
+        "created": "2026-07-15"
+    },
+    "DEMO2024": {
+        "user": "demo",
+        "expiry": "2026-12-31",
+        "plan": "demo",
+        "created": "2026-07-15"
+    },
+    "U6TJ96AALBZQ": {
+        "user": "dengkodice",
+        "expiry": "2027-07-15",
+        "plan": "premium",
+        "created": "2026-07-15"
+    }
+};
 
     // ============================================================
-    // ✅ CHECK LICENSE (LANGSUNG DARI HARDCODE)
+    // â CHECK LICENSE (LANGSUNG DARI HARDCODE)
     // ============================================================
     function checkLicense(licenseKey, username) {
         const trimmedLicense = licenseKey.trim().toUpperCase();
@@ -46,12 +50,12 @@
         }
         
         const expiry = licenseData.expiry;
-        if (expiry === 'permanent' || expiry === '∞' || expiry === 'forever') {
+        if (expiry === 'permanent' || expiry === 'â' || expiry === 'forever') {
             return {
                 valid: true,
                 user: licenseData.user,
                 expiry: 'Permanent',
-                remaining: '∞',
+                remaining: 'â',
                 plan: licenseData.plan || 'premium'
             };
         }
@@ -125,7 +129,7 @@
 
     function addLog(msg, color, icon, key) {
         color = color || '#a0a0a0';
-        icon = icon || '📌';
+        icon = icon || 'ð';
         key = key || msg.substring(0, 30);
         
         if (isLogSpam(key, msg)) {
@@ -206,12 +210,12 @@
             pointer-events: auto !important;
         ">
             <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
-                <span style="font-weight: 700; font-size: 12px; white-space: nowrap;">⭐ DiceY Engine</span>
+                <span style="font-weight: 700; font-size: 12px; white-space: nowrap;">â­ DiceY Engine</span>
                 <span style="background: rgba(0,0,0,0.2); padding: 1px 8px; border-radius: 20px; font-size: 8px; font-weight: 600; white-space: nowrap;">by cheapcheatx</span>
             </div>
             <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                <button id="dicey-minimize" style="background: rgba(0,0,0,0.2); border: none; color: #000; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 12px; pointer-events: auto !important;">▼</button>
-                <button id="dicey-close" style="background: rgba(0,0,0,0.2); border: none; color: #000; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 14px; pointer-events: auto !important;">✕</button>
+                <button id="dicey-minimize" style="background: rgba(0,0,0,0.2); border: none; color: #000; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 12px; pointer-events: auto !important;">â¼</button>
+                <button id="dicey-close" style="background: rgba(0,0,0,0.2); border: none; color: #000; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 14px; pointer-events: auto !important;">â</button>
             </div>
         </div>
 
@@ -266,7 +270,7 @@
                 
                 <!-- LICENSE STATUS -->
                 <div id="dicey-license-status" style="margin-bottom:6px;padding:4px 8px;background:#1e1f1c;border-radius:4px;border:1px solid #30363d;font-size:9px;color:#888;text-align:center;pointer-events: auto !important;">
-                    🔑 Enter license key to activate bots
+                    ð Enter license key to activate bots
                 </div>
 
                 <!-- LICENSE INPUT -->
@@ -279,8 +283,8 @@
                 <!-- WAGER CONTROLS -->
                 <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:4px;pointer-events: auto !important;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events: auto !important;">
-                        <span style="font-size:9px;font-weight:600;color:#9ec07c;pointer-events: auto !important;">🎲 WAGER BOT</span>
-                        <span id="dicey-wager-license-status" style="font-size:8px;color:#ff6b81;pointer-events: auto !important;">🔒 Locked</span>
+                        <span style="font-size:9px;font-weight:600;color:#9ec07c;pointer-events: auto !important;">ð² WAGER BOT</span>
+                        <span id="dicey-wager-license-status" style="font-size:8px;color:#ff6b81;pointer-events: auto !important;">ð Locked</span>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 0.8fr; gap: 3px; margin-bottom: 6px; pointer-events: auto !important;">
                         <button id="dicey-wager-start" style="padding: 8px 0; border: none; border-radius: 6px; background: #00e5c0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.5; min-height: 32px; pointer-events: auto !important;">START</button>
@@ -296,27 +300,27 @@
                         </select>
                     </div>
                     <div style="display: flex; gap: 3px; margin-bottom: 6px; pointer-events: auto !important;">
-                        <button id="dicey-wager-reset" style="flex:1; padding: 6px 0; border: none; border-radius: 6px; background: #a0a0a0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; min-height: 28px; pointer-events: auto !important;">🔄 RESET</button>
+                        <button id="dicey-wager-reset" style="flex:1; padding: 6px 0; border: none; border-radius: 6px; background: #a0a0a0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; min-height: 28px; pointer-events: auto !important;">ð RESET</button>
                     </div>
                 </div>
 
                 <!-- RAIN CATCHER CONTROLS -->
                 <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:2px;pointer-events: auto !important;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events: auto !important;">
-                        <span style="font-size:9px;font-weight:600;color:#ff922b;pointer-events: auto !important;">🌧️ RAIN CATCHER</span>
-                        <span id="dicey-rain-license-status" style="font-size:8px;color:#ff6b81;pointer-events: auto !important;">🔒 Locked</span>
+                        <span style="font-size:9px;font-weight:600;color:#ff922b;pointer-events: auto !important;">ð§ï¸ RAIN CATCHER</span>
+                        <span id="dicey-rain-license-status" style="font-size:8px;color:#ff6b81;pointer-events: auto !important;">ð Locked</span>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 4px; pointer-events: auto !important;">
-                        <button id="dicey-rain-start" style="padding: 8px 0; border: none; border-radius: 6px; background: #ff922b; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.5; min-height: 34px; pointer-events: auto !important;">▶ START RAIN</button>
-                        <button id="dicey-rain-stop" style="padding: 8px 0; border: none; border-radius: 6px; background: #a0a0a0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.4; min-height: 34px; pointer-events: auto !important;">■ STOP RAIN</button>
+                        <button id="dicey-rain-start" style="padding: 8px 0; border: none; border-radius: 6px; background: #ff922b; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.5; min-height: 34px; pointer-events: auto !important;">â¶ START RAIN</button>
+                        <button id="dicey-rain-stop" style="padding: 8px 0; border: none; border-radius: 6px; background: #a0a0a0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.4; min-height: 34px; pointer-events: auto !important;">â  STOP RAIN</button>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;padding:3px 0;border-top:1px solid #3a3a3a;border-bottom:1px solid #3a3a3a;pointer-events: auto !important;">
                         <span id="dicey-rain-dot" style="width:6px;height:6px;border-radius:50%;background:#888;display:inline-block;pointer-events: auto !important;"></span>
                         <span id="dicey-rain-status" style="font-size:8px;color:#888;pointer-events: auto !important;">STOPPED</span>
-                        <span id="dicey-rain-mode" style="font-size:7px;color:#666;margin-left:4px;pointer-events: auto !important;">⏸️ IDLE</span>
+                        <span id="dicey-rain-mode" style="font-size:7px;color:#666;margin-left:4px;pointer-events: auto !important;">â¸ï¸ IDLE</span>
                         <span style="margin-left:auto;font-size:8px;white-space:nowrap;pointer-events: auto !important;">
-                            <span style="color:#00e5c0;">✓ <span id="dicey-rain-success" style="font-weight:700;">0</span></span>
-                            <span style="color:#ff6b81;margin-left:6px;">✗ <span id="dicey-rain-fail" style="font-weight:700;">0</span></span>
+                            <span style="color:#00e5c0;">â <span id="dicey-rain-success" style="font-weight:700;">0</span></span>
+                            <span style="color:#ff6b81;margin-left:6px;">â <span id="dicey-rain-fail" style="font-weight:700;">0</span></span>
                         </span>
                     </div>
                 </div>
@@ -333,7 +337,7 @@
                     <!-- Layer Status -->
                     <div style="background: #272822; border-radius: 8px; padding: 4px 8px; margin-bottom: 4px; border: 1px solid #3a3a3a; pointer-events: auto !important;">
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px; font-size: 9px; pointer-events: auto !important;">
-                            <div style="pointer-events: auto !important;">📊 Layer: <strong id="dicey-layer" style="color:#00e5c0;">1</strong></div>
+                            <div style="pointer-events: auto !important;">ð Layer: <strong id="dicey-layer" style="color:#00e5c0;">1</strong></div>
                             <div style="pointer-events: auto !important;">Chance: <strong id="dicey-chance-display" style="color:#9ec07c;">98%</strong></div>
                             <div style="pointer-events: auto !important;">Bet: <strong id="dicey-bet-display" style="color:#ffd700;">0.0000</strong></div>
                             <div style="pointer-events: auto !important;">Streak: <strong id="dicey-streak-display">0</strong></div>
@@ -373,8 +377,8 @@
                     <!-- Wager Progress -->
                     <div style="background: #272822; border-radius: 8px; padding: 3px 6px; border: 1px solid #3a3a3a; pointer-events: auto !important;">
                         <div style="display: flex; justify-content: space-between; font-size: 7px; color: #a0a0a0; pointer-events: auto !important;">
-                            <span style="pointer-events: auto !important;">📊 Wager: <strong id="dicey-wager-current">0.00</strong> / <strong id="dicey-wager-target">300</strong> <span id="dicey-target-coin">USDC</span></span>
-                            <span id="dicey-wager-status" style="color:#00e5c0; pointer-events: auto !important;">▶ RUNNING</span>
+                            <span style="pointer-events: auto !important;">ð Wager: <strong id="dicey-wager-current">0.00</strong> / <strong id="dicey-wager-target">300</strong> <span id="dicey-target-coin">USDC</span></span>
+                            <span id="dicey-wager-status" style="color:#00e5c0; pointer-events: auto !important;">â¶ RUNNING</span>
                         </div>
                         <div style="background: #3a3a3a; border-radius: 3px; margin-top: 1px; height: 2px; overflow: hidden; pointer-events: auto !important;">
                             <div id="dicey-wager-bar" style="background: #00e5c0; height: 2px; border-radius: 3px; width: 0%; transition: width 0.3s; pointer-events: auto !important;"></div>
@@ -385,7 +389,7 @@
                 <!-- LOGS -->
                 <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:6px;pointer-events: auto !important;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events: auto !important;">
-                        <span style="font-size:9px;font-weight:600;color:#a0a0a0;pointer-events: auto !important;">📋 LOGS</span>
+                        <span style="font-size:9px;font-weight:600;color:#a0a0a0;pointer-events: auto !important;">ð LOGS</span>
                         <div style="display:flex;gap:4px;pointer-events: auto !important;">
                             <button id="dicey-log-clear" style="padding:2px 8px;border:none;border-radius:4px;background:#3a3a3a;color:#a0a0a0;font-size:7px;cursor:pointer;pointer-events: auto !important;">CLEAR</button>
                             <button id="dicey-log-filter" style="padding:2px 8px;border:none;border-radius:4px;background:#3a3a3a;color:#a0a0a0;font-size:7px;cursor:pointer;pointer-events: auto !important;">ALL</button>
@@ -400,7 +404,7 @@
                 <div style="background: #272822; border-radius: 12px; padding: 10px; border: 1px solid #3a3a3a; pointer-events: auto !important;">
                     
                     <!-- LAYER 1 SETTINGS -->
-                    <div style="font-weight:bold; font-size:11px; margin-bottom:8px; color:#9ec07c; pointer-events: auto !important;">⚙️ LAYER 1 SETTINGS</div>
+                    <div style="font-weight:bold; font-size:11px; margin-bottom:8px; color:#9ec07c; pointer-events: auto !important;">âï¸ LAYER 1 SETTINGS</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
                         <div style="pointer-events: auto !important;">
                             <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Chance % (1-98)</label>
@@ -417,7 +421,7 @@
                     </div>
 
                     <!-- LAYER 2 SETTINGS -->
-                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#ff922b; pointer-events: auto !important;">⚙️ LAYER 2 SETTINGS</div>
+                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#ff922b; pointer-events: auto !important;">âï¸ LAYER 2 SETTINGS</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
                         <div style="pointer-events: auto !important;">
                             <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Chance Awal % (1-98)</label>
@@ -440,7 +444,7 @@
                     </div>
 
                     <!-- BACK TO LAYER 1 TRIGGERS -->
-                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#00e5c0; pointer-events: auto !important;">⚙️ BACK TO LAYER 1 TRIGGERS</div>
+                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#00e5c0; pointer-events: auto !important;">âï¸ BACK TO LAYER 1 TRIGGERS</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
                         <div style="pointer-events: auto !important;">
                             <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Trigger 1: Win Streak</label>
@@ -455,7 +459,7 @@
                     </div>
 
                     <!-- GENERAL SETTINGS -->
-                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#a0a0a0; pointer-events: auto !important;">⚙️ GENERAL SETTINGS</div>
+                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#a0a0a0; pointer-events: auto !important;">âï¸ GENERAL SETTINGS</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
                         <div style="pointer-events: auto !important;">
                             <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Target Profit %</label>
@@ -508,9 +512,9 @@
             font-family: 'Segoe UI', monospace;
             pointer-events: auto !important;
         ">
-            <span style="pointer-events: auto !important;">🛡️ <span id="dicey-protection-status" style="pointer-events: auto !important;">🔒 Locked</span></span>
+            <span style="pointer-events: auto !important;">ð¡ï¸ <span id="dicey-protection-status" style="pointer-events: auto !important;">ð Locked</span></span>
             <span id="dicey-footer-greeting" style="color:#9ec07c;font-weight:600;pointer-events: auto !important;">Goodluck -</span>
-            <span id="dicey-live-status" style="color:#888;pointer-events: auto !important;">○ Idle</span>
+            <span id="dicey-live-status" style="color:#888;pointer-events: auto !important;">â Idle</span>
         </div>
     `;
 
@@ -589,12 +593,12 @@
         currentLicense = license;
         
         if (!license || !username) {
-            statusEl.textContent = '🔑 Enter license key and username to activate';
+            statusEl.textContent = 'ð Enter license key and username to activate';
             statusEl.style.color = '#888';
             statusEl.style.borderColor = '#30363d';
-            if (wagerStatusEl) { wagerStatusEl.textContent = '🔒 Locked'; wagerStatusEl.style.color = '#ff6b81'; }
-            if (rainStatusEl) { rainStatusEl.textContent = '🔒 Locked'; rainStatusEl.style.color = '#ff6b81'; }
-            if (protectionStatus) { protectionStatus.textContent = '🔒 Locked'; protectionStatus.style.color = '#ff6b81'; }
+            if (wagerStatusEl) { wagerStatusEl.textContent = 'ð Locked'; wagerStatusEl.style.color = '#ff6b81'; }
+            if (rainStatusEl) { rainStatusEl.textContent = 'ð Locked'; rainStatusEl.style.color = '#ff6b81'; }
+            if (protectionStatus) { protectionStatus.textContent = 'ð Locked'; protectionStatus.style.color = '#ff6b81'; }
             if (greetingEl) { greetingEl.textContent = 'Goodluck -'; greetingEl.style.color = '#888'; }
             if (userEl) { userEl.textContent = '-'; }
             isLicensed = false;
@@ -603,35 +607,35 @@
             return;
         }
         
-        statusEl.textContent = '⏳ Checking license...';
+        statusEl.textContent = 'â³ Checking license...';
         statusEl.style.color = '#ffd700';
         
         const check = checkLicense(license, username);
         
         if (check.valid) {
-            statusEl.textContent = '✅ ' + check.user + ' - ' + check.remaining + ' (' + check.plan + ')';
+            statusEl.textContent = 'â ' + check.user + ' - ' + check.remaining + ' (' + check.plan + ')';
             statusEl.style.color = '#4ade80';
             statusEl.style.borderColor = '#4ade80';
-            if (wagerStatusEl) { wagerStatusEl.textContent = '✅ Unlocked'; wagerStatusEl.style.color = '#4ade80'; }
-            if (rainStatusEl) { rainStatusEl.textContent = '✅ Unlocked'; rainStatusEl.style.color = '#4ade80'; }
-            if (protectionStatus) { protectionStatus.textContent = '✅ Protected'; protectionStatus.style.color = '#4ade80'; }
+            if (wagerStatusEl) { wagerStatusEl.textContent = 'â Unlocked'; wagerStatusEl.style.color = '#4ade80'; }
+            if (rainStatusEl) { rainStatusEl.textContent = 'â Unlocked'; rainStatusEl.style.color = '#4ade80'; }
+            if (protectionStatus) { protectionStatus.textContent = 'â Protected'; protectionStatus.style.color = '#4ade80'; }
             if (greetingEl) { greetingEl.textContent = 'Goodluck ' + check.user; greetingEl.style.color = '#9ec07c'; }
             if (userEl) { userEl.textContent = check.user; }
             isLicensed = true;
             localStorage.setItem('dicey_license', license);
             localStorage.setItem('dicey_username', username);
-            addLog('✅ ' + check.user + ' - ' + check.remaining + ' (' + check.plan + ')', '#4ade80', '✅', 'license_valid');
+            addLog('â ' + check.user + ' - ' + check.remaining + ' (' + check.plan + ')', '#4ade80', 'â', 'license_valid');
         } else {
-            statusEl.textContent = '❌ ' + check.reason;
+            statusEl.textContent = 'â ' + check.reason;
             statusEl.style.color = '#f87171';
             statusEl.style.borderColor = '#f87171';
-            if (wagerStatusEl) { wagerStatusEl.textContent = '🔒 Locked'; wagerStatusEl.style.color = '#ff6b81'; }
-            if (rainStatusEl) { rainStatusEl.textContent = '🔒 Locked'; rainStatusEl.style.color = '#ff6b81'; }
-            if (protectionStatus) { protectionStatus.textContent = '🔒 Locked'; protectionStatus.style.color = '#ff6b81'; }
+            if (wagerStatusEl) { wagerStatusEl.textContent = 'ð Locked'; wagerStatusEl.style.color = '#ff6b81'; }
+            if (rainStatusEl) { rainStatusEl.textContent = 'ð Locked'; rainStatusEl.style.color = '#ff6b81'; }
+            if (protectionStatus) { protectionStatus.textContent = 'ð Locked'; protectionStatus.style.color = '#ff6b81'; }
             if (greetingEl) { greetingEl.textContent = 'Goodluck ' + username; greetingEl.style.color = '#888'; }
             if (userEl) { userEl.textContent = username; }
             isLicensed = false;
-            addLog('❌ ' + check.reason, '#f87171', '❌', 'license_invalid');
+            addLog('â ' + check.reason, '#f87171', 'â', 'license_invalid');
         }
         updateWagerButtons();
         updateRainButtons();
@@ -893,13 +897,13 @@
         var wagerStatus = $('dicey-wager-status');
         if (wagerStatus) {
             if (wagerState.isRunning && !wagerState.isPaused) {
-                wagerStatus.textContent = '▶ RUNNING';
+                wagerStatus.textContent = 'â¶ RUNNING';
                 wagerStatus.style.color = '#00e5c0';
             } else if (wagerState.isRunning && wagerState.isPaused) {
-                wagerStatus.textContent = '⏸ PAUSED';
+                wagerStatus.textContent = 'â¸ PAUSED';
                 wagerStatus.style.color = '#ff922b';
             } else {
-                wagerStatus.textContent = '⏹ STOPPED';
+                wagerStatus.textContent = 'â¹ STOPPED';
                 wagerStatus.style.color = '#ff6b6b';
             }
         }
@@ -908,7 +912,7 @@
         
         var startBtn = $('dicey-wager-start');
         if (startBtn) {
-            startBtn.textContent = wagerState.isRunning && !wagerState.isPaused ? '● RUN' : 'START';
+            startBtn.textContent = wagerState.isRunning && !wagerState.isPaused ? 'â RUN' : 'START';
             startBtn.style.opacity = (wagerState.isRunning && !wagerState.isPaused) ? '0.6' : (isLicensed ? '1' : '0.3');
         }
         var pauseBtn = $('dicey-wager-pause');
@@ -932,13 +936,13 @@
         var liveStatus = $('dicey-live-status');
         if (liveStatus) {
             if (wagerState.isRunning || rainState.isRunning) {
-                liveStatus.textContent = '● Running';
+                liveStatus.textContent = 'â Running';
                 liveStatus.style.color = '#4ade80';
             } else if (wagerState.isPaused) {
-                liveStatus.textContent = '⏸ Paused';
+                liveStatus.textContent = 'â¸ Paused';
                 liveStatus.style.color = '#ff922b';
             } else {
-                liveStatus.textContent = '○ Idle';
+                liveStatus.textContent = 'â Idle';
                 liveStatus.style.color = '#888';
             }
         }
@@ -1144,7 +1148,7 @@
                 }
             }
             if (!result.success) {
-                addLog('❌ Bet failed: ' + result.error, '#ff6b6b', '❌', 'bet_error');
+                addLog('â Bet failed: ' + result.error, '#ff6b6b', 'â', 'bet_error');
                 updateWagerUI();
                 return null;
             }
@@ -1177,7 +1181,7 @@
                 wagerState.lossRecovery += profitNum;
                 
                 if (backProfit > 0 && wagerState.lossRecovery >= backProfit) {
-                    addLog('🔄 L2 → L1 ✅ (Recovery: ' + wagerState.lossRecovery.toFixed(4) + '/' + backProfit.toFixed(4) + ')', '#00e5c0', '🔄', 'layer_recovery');
+                    addLog('ð L2 â L1 â (Recovery: ' + wagerState.lossRecovery.toFixed(4) + '/' + backProfit.toFixed(4) + ')', '#00e5c0', 'ð', 'layer_recovery');
                     wagerState.currentLayer = 1;
                     wagerState.currentBet = layer1Bet;
                     wagerState.currentStreak = 0;
@@ -1188,7 +1192,7 @@
                     wagerState.layer2BetCount = 0;
                 }
                 else if (wagerState.currentStreak >= backStreak) {
-                    addLog('🔄 L2 → L1 ✅ (Win streak: ' + wagerState.currentStreak + ')', '#00e5c0', '🔄', 'layer_win_streak');
+                    addLog('ð L2 â L1 â (Win streak: ' + wagerState.currentStreak + ')', '#00e5c0', 'ð', 'layer_win_streak');
                     wagerState.currentLayer = 1;
                     wagerState.currentBet = layer1Bet;
                     wagerState.currentStreak = 0;
@@ -1214,7 +1218,7 @@
                 wagerState.totalLossInL2 = 0;
                 wagerState.layer2CurrentChance = layer2ChanceStart;
                 wagerState.layer2BetCount = 0;
-                addLog('🔄 L1 → L2 ❌ (Loss streak: ' + Math.abs(wagerState.currentStreak) + ')', '#ff922b', '🔄', 'layer_to_l2');
+                addLog('ð L1 â L2 â (Loss streak: ' + Math.abs(wagerState.currentStreak) + ')', '#ff922b', 'ð', 'layer_to_l2');
             } else {
                 wagerState.totalLossInL2 += Math.abs(profitNum);
                 wagerState.currentBet = wagerState.currentBet * layer2Multiplier;
@@ -1229,7 +1233,7 @@
                 }
                 
                 if (Math.abs(wagerState.currentStreak) >= 10) {
-                    addLog('🚨 Emergency Reset! L2 → L1 (Loss streak: ' + Math.abs(wagerState.currentStreak) + ')', '#ff6b6b', '🚨', 'emergency_reset');
+                    addLog('ð¨ Emergency Reset! L2 â L1 (Loss streak: ' + Math.abs(wagerState.currentStreak) + ')', '#ff6b6b', 'ð¨', 'emergency_reset');
                     wagerState.currentLayer = 1;
                     wagerState.currentBet = layer1Bet;
                     wagerState.currentStreak = 0;
@@ -1256,25 +1260,25 @@
 
         var wagerTarget = getConvertedTarget();
         if (wagerState.wagered >= wagerTarget) {
-            addLog('🎯 Target Wager ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay() + ' REACHED!', '#00e5c0', '🎯', 'target_reached');
+            addLog('ð¯ Target Wager ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay() + ' REACHED!', '#00e5c0', 'ð¯', 'target_reached');
             stopWagerBot();
             return null;
         }
 
         if (wagerState.currentBalance - wagerState.startBalance >= targetProfit) {
-            addLog('🎯 Target +' + targetProfitPercent + '% reached!', '#00e5c0', '🎯', 'profit_target');
+            addLog('ð¯ Target +' + targetProfitPercent + '% reached!', '#00e5c0', 'ð¯', 'profit_target');
             stopWagerBot();
             return null;
         }
 
         if (wagerState.currentBalance <= stopLoss) {
-            addLog('🛑 Stop loss -' + stopLossPercent + '%', '#ff6b6b', '🛑', 'stop_loss');
+            addLog('ð Stop loss -' + stopLossPercent + '%', '#ff6b6b', 'ð', 'stop_loss');
             stopWagerBot();
             return null;
         }
 
         if (stopOnWinEl && stopOnWinEl.checked && wagerState.currentStreak >= 5) {
-            addLog('🛑 Win streak: ' + wagerState.currentStreak, '#ffd700', '🛑', 'win_streak_stop');
+            addLog('ð Win streak: ' + wagerState.currentStreak, '#ffd700', 'ð', 'win_streak_stop');
             stopWagerBot();
             return null;
         }
@@ -1297,24 +1301,24 @@
             }
         }).catch(function(e) {
             wagerState.isLooping = false;
-            addLog('⚠️ Error: ' + e.message, '#ff6b6b', '⚠️', 'loop_error');
+            addLog('â ï¸ Error: ' + e.message, '#ff6b6b', 'â ï¸', 'loop_error');
             setTimeout(wagerLoop, 5000);
         });
     }
 
     function startWagerBot() {
         if (!isLicensed) {
-            addLog('⚠️ License required!', '#f87171', '⚠️', 'license_required');
+            addLog('â ï¸ License required!', '#f87171', 'â ï¸', 'license_required');
             return;
         }
         if (wagerState.isRunning && !wagerState.isPaused) {
-            addLog('⚠️ Already running', '#ffd700', '⚠️', 'already_running');
+            addLog('â ï¸ Already running', '#ffd700', 'â ï¸', 'already_running');
             return;
         }
         if (wagerState.isPaused) {
             wagerState.isPaused = false;
             wagerState.isRunning = true;
-            addLog('▶️ Resumed', '#00e5c0', '▶️', 'resumed');
+            addLog('â¶ï¸ Resumed', '#00e5c0', 'â¶ï¸', 'resumed');
             updateWagerUI();
             setTimeout(wagerLoop, 500);
             return;
@@ -1323,7 +1327,7 @@
         var layer1BetEl = $('dicey-layer1-bet');
         var layer1Bet = layer1BetEl ? parseFloat(layer1BetEl.value) : 0.01;
         if (layer1Bet <= 0) {
-            addLog('⚠️ Set valid Layer 1 bet', '#ff6b6b', '⚠️', 'invalid_bet');
+            addLog('â ï¸ Set valid Layer 1 bet', '#ff6b6b', 'â ï¸', 'invalid_bet');
             return;
         }
 
@@ -1366,19 +1370,19 @@
         if (wagerState.timerInterval) clearInterval(wagerState.timerInterval);
         wagerState.timerInterval = setInterval(updateWagerTimer, 1000);
 
-        addLog('▶️ STARTED | L1: ' + layer1Bet + ' ' + getCurrencyDisplay(), '#00e5c0', '▶️', 'started');
-        addLog('🎯 Target: ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', '🎯', 'target_info');
+        addLog('â¶ï¸ STARTED | L1: ' + layer1Bet + ' ' + getCurrencyDisplay(), '#00e5c0', 'â¶ï¸', 'started');
+        addLog('ð¯ Target: ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', 'ð¯', 'target_info');
         updateWagerUI();
         setTimeout(wagerLoop, 500);
     }
 
     function pauseWagerBot() {
         if (!wagerState.isRunning) {
-            addLog('⚠️ Bot not running', '#ffd700', '⚠️', 'not_running');
+            addLog('â ï¸ Bot not running', '#ffd700', 'â ï¸', 'not_running');
             return;
         }
         wagerState.isPaused = !wagerState.isPaused;
-        addLog(wagerState.isPaused ? '⏸ Paused' : '▶️ Resumed', '#ffd700', wagerState.isPaused ? '⏸' : '▶️', 'pause_toggle');
+        addLog(wagerState.isPaused ? 'â¸ Paused' : 'â¶ï¸ Resumed', '#ffd700', wagerState.isPaused ? 'â¸' : 'â¶ï¸', 'pause_toggle');
         updateWagerUI();
         if (!wagerState.isPaused) {
             setTimeout(wagerLoop, 500);
@@ -1394,9 +1398,9 @@
             wagerState.timerInterval = null;
         }
         var profit = wagerState.currentBalance - wagerState.startBalance;
-        addLog('⏹ STOPPED | ' + (profit >= 0 ? '+' : '') + profit.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', '⏹', 'stopped');
-        addLog('📊 Total Wager: ' + wagerState.wagered.toFixed(4) + ' ' + getCurrencyDisplay(), '#a0a0a0', '📊', 'total_wager');
-        addLog('📊 Bets: ' + wagerState.totalBets + ' | L1: ' + wagerState.layer1Bets + ' | L2: ' + wagerState.layer2Bets, '#a0a0a0', '📊', 'bet_summary');
+        addLog('â¹ STOPPED | ' + (profit >= 0 ? '+' : '') + profit.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', 'â¹', 'stopped');
+        addLog('ð Total Wager: ' + wagerState.wagered.toFixed(4) + ' ' + getCurrencyDisplay(), '#a0a0a0', 'ð', 'total_wager');
+        addLog('ð Bets: ' + wagerState.totalBets + ' | L1: ' + wagerState.layer1Bets + ' | L2: ' + wagerState.layer2Bets, '#a0a0a0', 'ð', 'bet_summary');
         updateWagerUI();
     }
 
@@ -1425,7 +1429,7 @@
             wagerState.startBalance = realBalance;
         }
         
-        addLog('🔄 RESET', '#ffd700', '🔄', 'reset');
+        addLog('ð RESET', '#ffd700', 'ð', 'reset');
         var log = $('dicey-log');
         if (log) {
             var children = log.children;
@@ -1490,7 +1494,7 @@
                     var potId = body.variables?.potId || null;
                     if (potId) {
                         rainState.lastPotId = potId;
-                        console.log('📌 potId captured from request:', potId);
+                        console.log('ð potId captured from request:', potId);
                     }
                 }
                 
@@ -1504,14 +1508,14 @@
                             rainState.successCount++;
                             rainState.status = 'waiting';
                             rainState.lastJoinStatus = 'joined';
-                            addLog('🌧️ ✅ JOIN BERHASIL via API! (Total: ' + rainState.successCount + ' sukses)', '#4ade80', '🌧️', 'rain_join_success');
+                            addLog('ð§ï¸ â JOIN BERHASIL via API! (Total: ' + rainState.successCount + ' sukses)', '#4ade80', 'ð§ï¸', 'rain_join_success');
                             sendTelegramReport(true, null);
                             updateRainUI();
                         } else if (joinResult.joined === false) {
                             rainState.failCount++;
                             rainState.status = 'failed';
                             var reason = joinResult.ineligibleReason || 'Unknown';
-                            addLog('🌧️ ❌ JOIN GAGAL: ' + reason, '#f87171', '🌧️', 'rain_join_fail_' + reason);
+                            addLog('ð§ï¸ â JOIN GAGAL: ' + reason, '#f87171', 'ð§ï¸', 'rain_join_fail_' + reason);
                             sendTelegramReport(false, reason);
                             updateRainUI();
                         }
@@ -1723,8 +1727,8 @@
             second: '2-digit'
         });
         
-        var message = '🎲 DiceY Rain Catcher\nUsername: ' + rainState.username + '\nWaktu: ' + timeStr + '\n──────────────────\n';
-        message += isSuccess ? '✅ STATUS: BERHASIL JOIN!\nTotal Berhasil: ' + rainState.successCount + ' kali' : '❌ STATUS: GAGAL JOIN\nAlasan: ' + (reason || 'Tidak diketahui');
+        var message = 'ð² DiceY Rain Catcher\nUsername: ' + rainState.username + '\nWaktu: ' + timeStr + '\nââââââââââââââââââ\n';
+        message += isSuccess ? 'â STATUS: BERHASIL JOIN!\nTotal Berhasil: ' + rainState.successCount + ' kali' : 'â STATUS: GAGAL JOIN\nAlasan: ' + (reason || 'Tidak diketahui');
 
         var url = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
         fetch(url, {
@@ -1753,27 +1757,27 @@
         if (rainState.isRunning) {
             if (dot) dot.style.background = rainState.isScanning ? '#ff922b' : '#4ade80';
             if (statusText) {
-                statusText.textContent = rainState.isScanning ? '● SCANNING' : '● RUNNING';
+                statusText.textContent = rainState.isScanning ? 'â SCANNING' : 'â RUNNING';
                 statusText.style.color = rainState.isScanning ? '#ff922b' : '#4ade80';
             }
             if (modeText) {
-                modeText.textContent = rainState.isScanning ? '🔍 SCANNING' : '⏸️ IDLE';
+                modeText.textContent = rainState.isScanning ? 'ð SCANNING' : 'â¸ï¸ IDLE';
                 modeText.style.color = rainState.isScanning ? '#ff922b' : '#888';
             }
         } else {
             if (dot) dot.style.background = '#888';
             if (statusText) {
-                statusText.textContent = '○ STOPPED';
+                statusText.textContent = 'â STOPPED';
                 statusText.style.color = '#888';
             }
             if (modeText) {
-                modeText.textContent = '⏸️ IDLE';
+                modeText.textContent = 'â¸ï¸ IDLE';
                 modeText.style.color = '#888';
             }
         }
 
         if (startBtn) {
-            startBtn.textContent = rainState.isRunning ? '● RUNNING' : '▶ START RAIN';
+            startBtn.textContent = rainState.isRunning ? 'â RUNNING' : 'â¶ START RAIN';
             startBtn.style.opacity = rainState.isRunning ? '0.6' : (isLicensed ? '1' : '0.3');
         }
         if (stopBtn) {
@@ -1788,7 +1792,7 @@
         if (addBtn) {
             if (rainState.lastJoinStatus !== 'joined') {
                 rainState.lastJoinStatus = 'joined';
-                addLog('🌧️ ✅ Already in rain pool - waiting...', '#4ade80', '🌧️', 'rain_add_to_rain');
+                addLog('ð§ï¸ â Already in rain pool - waiting...', '#4ade80', 'ð§ï¸', 'rain_add_to_rain');
                 rainState.status = 'waiting';
                 updateRainUI();
             }
@@ -1804,10 +1808,10 @@
             }
             
             if (isActive) {
-                addLog('🌧️ 🔄 Clicking JOIN button...', '#ff922b', '🌧️', 'rain_click_join');
+                addLog('ð§ï¸ ð Clicking JOIN button...', '#ff922b', 'ð§ï¸', 'rain_click_join');
                 var clicked = forceClickButton(joinBtn);
                 if (clicked) {
-                    addLog('🌧️ ✅ JOIN clicked! Waiting for response...', '#4ade80', '🌧️', 'rain_join_clicked');
+                    addLog('ð§ï¸ â JOIN clicked! Waiting for response...', '#4ade80', 'ð§ï¸', 'rain_join_clicked');
                     rainState.lastJoinStatus = null;
                     rainState.status = 'searching';
                     updateRainUI();
@@ -1858,7 +1862,7 @@
                 rainState.successCount++;
                 rainState.status = 'waiting';
                 rainState.lastJoinStatus = 'joined';
-                addLog('🌧️ ✅ JOIN BERHASIL via API! (Total: ' + rainState.successCount + ' sukses)', '#4ade80', '🌧️', 'rain_join_success_api');
+                addLog('ð§ï¸ â JOIN BERHASIL via API! (Total: ' + rainState.successCount + ' sukses)', '#4ade80', 'ð§ï¸', 'rain_join_success_api');
                 sendTelegramReport(true, null);
                 updateRainUI();
                 return true;
@@ -1866,7 +1870,7 @@
                 rainState.failCount++;
                 rainState.status = 'failed';
                 var reason = result?.ineligibleReason || 'Unknown';
-                addLog('🌧️ ❌ JOIN GAGAL via API: ' + reason, '#f87171', '🌧️', 'rain_join_fail_api_' + reason);
+                addLog('ð§ï¸ â JOIN GAGAL via API: ' + reason, '#f87171', 'ð§ï¸', 'rain_join_fail_api_' + reason);
                 sendTelegramReport(false, reason);
                 updateRainUI();
                 return false;
@@ -1874,18 +1878,18 @@
             
             return false;
         } catch(e) {
-            addLog('🌧️ ⚠️ API error: ' + e.message, '#ff6b6b', '🌧️', 'rain_api_error');
+            addLog('ð§ï¸ â ï¸ API error: ' + e.message, '#ff6b6b', 'ð§ï¸', 'rain_api_error');
             return false;
         }
     }
 
     function startRainBot() {
         if (!isLicensed) {
-            addLog('🌧️ ⚠️ License required!', '#f87171', '🌧️', 'rain_license_required');
+            addLog('ð§ï¸ â ï¸ License required!', '#f87171', 'ð§ï¸', 'rain_license_required');
             return;
         }
         if (rainState.isRunning) {
-            addLog('🌧️ ⚠️ Already running', '#ffd700', '🌧️', 'rain_already');
+            addLog('ð§ï¸ â ï¸ Already running', '#ffd700', 'ð§ï¸', 'rain_already');
             return;
         }
 
@@ -1908,16 +1912,16 @@
         DOM_CACHE.chatOpen = false;
         DOM_CACHE.lastScan = 0;
 
-        addLog('🌧️ ▶️ Rain started @' + rainState.username, '#4ade80', '🌧️', 'rain_start');
-        addLog('🌧️ 📡 API interceptor active', '#60a5fa', '🌧️', 'rain_api');
-        addLog('🌧️ 🔄 API-First: Scan every 15 seconds', '#60a5fa', '🌧️', 'rain_scan');
+        addLog('ð§ï¸ â¶ï¸ Rain started @' + rainState.username, '#4ade80', 'ð§ï¸', 'rain_start');
+        addLog('ð§ï¸ ð¡ API interceptor active', '#60a5fa', 'ð§ï¸', 'rain_api');
+        addLog('ð§ï¸ ð API-First: Scan every 15 seconds', '#60a5fa', 'ð§ï¸', 'rain_scan');
 
         setTimeout(function() {
             if (rainState.isRunning) {
                 var chatTab = findChatTab();
                 if (chatTab) {
                     forceClickButton(chatTab);
-                    addLog('🌧️ 📂 Chat tab opened', '#60a5fa', '🌧️', 'rain_chat_open');
+                    addLog('ð§ï¸ ð Chat tab opened', '#60a5fa', 'ð§ï¸', 'rain_chat_open');
                 }
             }
         }, 500);
@@ -1927,13 +1931,13 @@
             
             rainState.isScanning = true;
             updateRainUI();
-            addLog('🌧️ 🔍 Scanning...', '#60a5fa', '🌧️', 'rain_scan_start');
+            addLog('ð§ï¸ ð Scanning...', '#60a5fa', 'ð§ï¸', 'rain_scan_start');
             
             if (!isChatroomOpen()) {
                 var chatTab = findChatTab();
                 if (chatTab) {
                     forceClickButton(chatTab);
-                    addLog('🌧️ 📂 Re-opening chat', '#60a5fa', '🌧️', 'rain_reopen_chat');
+                    addLog('ð§ï¸ ð Re-opening chat', '#60a5fa', 'ð§ï¸', 'rain_reopen_chat');
                 }
             }
             
@@ -1941,7 +1945,7 @@
             if (addBtn) {
                 if (rainState.lastJoinStatus !== 'joined') {
                     rainState.lastJoinStatus = 'joined';
-                    addLog('🌧️ ✅ Already in rain pool - waiting...', '#4ade80', '🌧️', 'rain_add_to_rain');
+                    addLog('ð§ï¸ â Already in rain pool - waiting...', '#4ade80', 'ð§ï¸', 'rain_add_to_rain');
                     rainState.status = 'waiting';
                 }
                 rainState.isScanning = false;
@@ -1954,22 +1958,22 @@
             
             if (rainState.lastJoinStatus === 'joined') {
                 rainState.lastJoinStatus = null;
-                addLog('🌧️ 🔄 "Add to Rain" gone! Checking "Join"...', '#60a5fa', '🌧️', 'rain_add_gone');
+                addLog('ð§ï¸ ð "Add to Rain" gone! Checking "Join"...', '#60a5fa', 'ð§ï¸', 'rain_add_gone');
                 rainState.status = 'searching';
                 updateRainUI();
             }
             
             if (rainState.lastPotId) {
-                addLog('🌧️ 🔄 Joining via API...', '#ff922b', '🌧️', 'rain_api_join');
+                addLog('ð§ï¸ ð Joining via API...', '#ff922b', 'ð§ï¸', 'rain_api_join');
                 joinRainViaAPI(rainState.lastPotId).then(function(success) {
                     rainState.isScanning = false;
                     updateRainUI();
                     
                     if (!success) {
-                        addLog('🌧️ 🔄 API failed, trying DOM...', '#ff922b', '🌧️', 'rain_dom_fallback');
+                        addLog('ð§ï¸ ð API failed, trying DOM...', '#ff922b', 'ð§ï¸', 'rain_dom_fallback');
                         var domSuccess = clickRainJoinDOM();
                         if (!domSuccess) {
-                            addLog('🌧️ ⏳ No rain available (DOM)', '#888', '🌧️', 'rain_no_rain');
+                            addLog('ð§ï¸ â³ No rain available (DOM)', '#888', 'ð§ï¸', 'rain_no_rain');
                             rainState.status = 'idle';
                         }
                     }
@@ -1981,12 +1985,12 @@
                 return;
             }
             
-            addLog('🌧️ 🔄 No potId, using DOM...', '#ff922b', '🌧️', 'rain_no_potid');
+            addLog('ð§ï¸ ð No potId, using DOM...', '#ff922b', 'ð§ï¸', 'rain_no_potid');
             var domSuccess = clickRainJoinDOM();
             if (!domSuccess) {
                 var now = Date.now();
                 if (!rainState._lastNoJoinLog || (now - rainState._lastNoJoinLog) > 30000) {
-                    addLog('🌧️ ⏳ No JOIN button, waiting...', '#888', '🌧️', 'rain_no_join');
+                    addLog('ð§ï¸ â³ No JOIN button, waiting...', '#888', 'ð§ï¸', 'rain_no_join');
                     rainState._lastNoJoinLog = now;
                 }
                 rainState.status = 'idle';
@@ -2029,7 +2033,7 @@
             clearInterval(rainState.interval);
             rainState.interval = null;
         }
-        addLog('🌧️ ⏹️ Rain stopped', '#f87171', '🌧️', 'rain_stop');
+        addLog('ð§ï¸ â¹ï¸ Rain stopped', '#f87171', 'ð§ï¸', 'rain_stop');
         updateRainUI();
     }
 
@@ -2039,7 +2043,7 @@
     window.addEventListener('beforeunload', function(e) {
         if (wagerState.isRunning || rainState.isRunning) {
             saveFullState();
-            var msg = '⚠️ Bot sedang berjalan! Data akan disimpan. Refresh?';
+            var msg = 'â ï¸ Bot sedang berjalan! Data akan disimpan. Refresh?';
             e.preventDefault();
             e.returnValue = msg;
             return msg;
@@ -2050,19 +2054,19 @@
         if (e.key === 'F5') {
             e.preventDefault();
             e.stopPropagation();
-            addLog('🚫 Refresh diblokir (F5)', '#ff6b6b', '🚫', 'block_f5');
+            addLog('ð« Refresh diblokir (F5)', '#ff6b6b', 'ð«', 'block_f5');
             return false;
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
             e.preventDefault();
             e.stopPropagation();
-            addLog('🚫 Refresh diblokir (Ctrl+R)', '#ff6b6b', '🚫', 'block_ctrl_r');
+            addLog('ð« Refresh diblokir (Ctrl+R)', '#ff6b6b', 'ð«', 'block_ctrl_r');
             return false;
         }
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
             e.preventDefault();
             e.stopPropagation();
-            addLog('🚫 Refresh diblokir (Ctrl+Shift+R)', '#ff6b6b', '🚫', 'block_hard');
+            addLog('ð« Refresh diblokir (Ctrl+Shift+R)', '#ff6b6b', 'ð«', 'block_hard');
             return false;
         }
     }, { passive: false, capture: true });
@@ -2225,7 +2229,7 @@
                 updateWagerUI();
                 
                 if (w.isRunning && !w.isPaused) {
-                    addLog('▶️ RESUME WAGER BOT OTOMATIS!', '#4ade80', '▶️', 'auto_resume');
+                    addLog('â¶ï¸ RESUME WAGER BOT OTOMATIS!', '#4ade80', 'â¶ï¸', 'auto_resume');
                     wagerState.isRunning = true;
                     wagerState.isPaused = false;
                     wagerState.isLooping = false;
@@ -2236,7 +2240,7 @@
                         }
                     }, 2000);
                 } else if (w.isRunning && w.isPaused) {
-                    addLog('⏸ Wager bot in PAUSED state', '#ff922b', '⏸', 'auto_paused');
+                    addLog('â¸ Wager bot in PAUSED state', '#ff922b', 'â¸', 'auto_paused');
                     wagerState.isRunning = true;
                     wagerState.isPaused = true;
                     updateWagerUI();
@@ -2255,7 +2259,7 @@
                 updateRainUI();
                 
                 if (r.isRunning) {
-                    addLog('🌧️ RESUME RAIN CATCHER OTOMATIS!', '#4ade80', '🌧️', 'rain_auto_resume');
+                    addLog('ð§ï¸ RESUME RAIN CATCHER OTOMATIS!', '#4ade80', 'ð§ï¸', 'rain_auto_resume');
                     rainState.isRunning = true;
                     rainState.isScanning = false;
                     rainState.status = 'searching';
@@ -2284,7 +2288,7 @@
                 }
             }
             
-            addLog('✅ STATE RESTORED SUCCESSFULLY!', '#4ade80', '✅', 'restore_done');
+            addLog('â STATE RESTORED SUCCESSFULLY!', '#4ade80', 'â', 'restore_done');
             return true;
             
         } catch(e) {
@@ -2307,7 +2311,7 @@
         var log = $('dicey-log');
         if (log) {
             log.innerHTML = '';
-            addLog('📋 Log cleared', '#888', '🧹', 'log_clear');
+            addLog('ð Log cleared', '#888', 'ð§¹', 'log_clear');
         }
     });
     
@@ -2328,15 +2332,15 @@
                 entry.style.display = 'flex';
             } else if (logFilter === 'wager') {
                 var isWager = text.includes('BET') || text.includes('WIN') || text.includes('LOSS') || 
-                              text.includes('LAYER') || text.includes('WAGER') || text.includes('🎯');
+                              text.includes('LAYER') || text.includes('WAGER') || text.includes('ð¯');
                 entry.style.display = isWager ? 'flex' : 'none';
             } else if (logFilter === 'rain') {
                 var isRain = text.includes('RAIN') || text.includes('JOIN') || 
-                             text.includes('splash') || text.includes('Add to Rain') || text.includes('🌧️');
+                             text.includes('splash') || text.includes('Add to Rain') || text.includes('ð§ï¸');
                 entry.style.display = isRain ? 'flex' : 'none';
             } else if (logFilter === 'system') {
                 var isSystem = text.includes('READY') || text.includes('START') || 
-                               text.includes('STOP') || text.includes('RESUME') || text.includes('🚀');
+                               text.includes('STOP') || text.includes('RESUME') || text.includes('ð');
                 entry.style.display = isSystem ? 'flex' : 'none';
             }
         });
@@ -2405,7 +2409,7 @@
         minimized = !minimized;
         var content = $('dicey-content');
         if (content) content.style.display = minimized ? 'none' : 'block';
-        this.textContent = minimized ? '▲' : '▼';
+        this.textContent = minimized ? 'â²' : 'â¼';
         container.style.height = minimized ? '44px' : '100%';
     });
 
@@ -2458,32 +2462,32 @@
     setTimeout(updateRainUI, 700);
     setTimeout(updateWagerTarget, 800);
     
-    addLog('🚀 DiceY engine v7.0 is READY', '#9ec07c', '🚀', 'init');
-    addLog('🔑 Enter license key to unlock bots', '#ffd700', '🔑', 'init_license');
-    addLog('💰 Balance: ~' + wagerState.currentBalance.toFixed(4) + ' ' + getCurrencyDisplay(), '#00e5c0', '💰', 'init_balance');
-    addLog('📌 Layer 1: 98% chance, bet 0.01 ' + getCurrencyDisplay(), '#00e5c0', '📌', 'init_l1');
-    addLog('📌 Layer 2: 65% chance (inc +1%, max 99%)', '#ff922b', '📌', 'init_l2');
-    addLog('🛑 Stop Loss: 90%', '#ff6b6b', '🛑', 'init_stop');
-    addLog('🌧️ Rain Catcher Ready (API-First)', '#4ade80', '🌧️', 'init_rain');
+    addLog('ð DiceY engine v7.0 is READY', '#9ec07c', 'ð', 'init');
+    addLog('ð Enter license key to unlock bots', '#ffd700', 'ð', 'init_license');
+    addLog('ð° Balance: ~' + wagerState.currentBalance.toFixed(4) + ' ' + getCurrencyDisplay(), '#00e5c0', 'ð°', 'init_balance');
+    addLog('ð Layer 1: 98% chance, bet 0.01 ' + getCurrencyDisplay(), '#00e5c0', 'ð', 'init_l1');
+    addLog('ð Layer 2: 65% chance (inc +1%, max 99%)', '#ff922b', 'ð', 'init_l2');
+    addLog('ð Stop Loss: 90%', '#ff6b6b', 'ð', 'init_stop');
+    addLog('ð§ï¸ Rain Catcher Ready (API-First)', '#4ade80', 'ð§ï¸', 'init_rain');
 
     setTimeout(function() {
         var hasState = localStorage.getItem('dicey_full_state');
         if (hasState) {
-            addLog('📦 Found saved state, restoring...', '#60a5fa', '📦', 'restore_check');
+            addLog('ð¦ Found saved state, restoring...', '#60a5fa', 'ð¦', 'restore_check');
             setTimeout(function() {
                 var restored = restoreAndResume();
                 if (restored) {
-                    addLog('✅ Bot resumed automatically!', '#4ade80', '✅', 'resume_done');
+                    addLog('â Bot resumed automatically!', '#4ade80', 'â', 'resume_done');
                 }
             }, 2000);
         }
     }, 3000);
 
-    console.log('⚡ DiceY Engine v7.0 is READY');
-    console.log('🔑 Enter license key + username to unlock');
-    console.log('📌 List of valid licenses:');
+    console.log('â¡ DiceY Engine v7.0 is READY');
+    console.log('ð Enter license key + username to unlock');
+    console.log('ð List of valid licenses:');
     console.log(LICENSES);
-    console.log('🔄 Rain: API-First, DOM Fallback');
-    console.log('📌 Ctrl+Enter: start/stop wager | Ctrl+Space: pause');
+    console.log('ð Rain: API-First, DOM Fallback');
+    console.log('ð Ctrl+Enter: start/stop wager | Ctrl+Space: pause');
 
 })();
