@@ -8,31 +8,37 @@
     // LICENSES DATABASE (TIDAK DIUBAH)
     // ============================================================
     const LICENSES = {
-        "TRIAL001": {
-            user: "trial",
-            expiry: "2026-12-31",
-            plan: "trial",
-            created: "2026-07-15"
-        },
-        "DEMO2024": {
-            user: "demo",
-            expiry: "2026-12-31",
-            plan: "demo",
-            created: "2026-07-15"
-        },
-        "13N7F713Y6FW": {
-            user: "ramadhan",
-            expiry: "2027-07-15",
-            plan: "lifetime",
-            created: "2026-07-15"
-        },
-        "ZXH3NJSJHEJC": {
-            user: "dengkodice",
-            expiry: "2027-07-15",
-            plan: "lifetime",
-            created: "2026-07-15"
-        }
-    };
+    "TRIAL001": {
+        "user": "trial",
+        "expiry": "2026-12-31",
+        "plan": "trial",
+        "created": "2026-07-15"
+    },
+    "DEMO2024": {
+        "user": "demo",
+        "expiry": "2026-12-31",
+        "plan": "demo",
+        "created": "2026-07-15"
+    },
+    "13N7F713Y6FW": {
+        "user": "ramadhan",
+        "expiry": "2027-07-15",
+        "plan": "lifetime",
+        "created": "2026-07-15"
+    },
+    "ZXH3NJSJHEJC": {
+        "user": "dengkodice",
+        "expiry": "2027-07-15",
+        "plan": "lifetime",
+        "created": "2026-07-15"
+    },
+    "HUO30X3SEO77": {
+        "user": "eror",
+        "expiry": "2026-08-30",
+        "plan": "premium",
+        "created": "2026-07-15"
+    }
+};
 
     // ============================================================
     // CHECK LICENSE (TIDAK DIUBAH)
@@ -114,7 +120,7 @@
     // ============================================================
     // LOG SYSTEM - LOG BET TETAP, YANG LAIN DI-NONAKTIFKAN
     // ============================================================
-    // ⚡ MAX SPEED: Hanya log bet yang jalan, sisanya skip
+    // â¡ MAX SPEED: Hanya log bet yang jalan, sisanya skip
     function addLog(msg, color, icon, key) {
         // Hanya tampilkan log BET, WIN, LOSS, LAYER
         const important = ['BET', 'WIN', 'LOSS', 'LAYER', 'TARGET', 'PROFIT', 'STOP', 'START', 'RESUME', 'PAUSED'];
@@ -840,7 +846,7 @@
     }
 
     // ============================================================
-    // doBet - ⚡ MAX SPEED (SEMUA DELAY DIHILANGKAN)
+    // doBet - â¡ MAX SPEED (SEMUA DELAY DIHILANGKAN)
     // ============================================================
     async function doBet() {
         if (!wagerState.isRunning || wagerState.isPaused) return null;
@@ -898,7 +904,7 @@
 
         var result = await placeBet(betAmount, chance);
 
-        // ⚡ MAX SPEED: Retry dihilangkan total!
+        // â¡ MAX SPEED: Retry dihilangkan total!
         if (!result.success) {
             addLog('[X] Bet failed: ' + result.error, '#ff6b6b', '[X]', 'bet_error');
             updateWagerUI();
@@ -916,7 +922,7 @@
             wagerState.currentBalance = realBalance2;
         }
 
-        // ⚡ LOG BET TETAP JALAN!
+        // â¡ LOG BET TETAP JALAN!
         addBetLog(wagerState.totalBets, betAmount.toFixed(4), chance, profitNum);
 
         if (data.isWin) {
@@ -1040,7 +1046,7 @@
     }
 
     // ============================================================
-    // wagerLoop - ⚡ COOLDOWN MINIMAL (0ms)
+    // wagerLoop - â¡ COOLDOWN MINIMAL (0ms)
     // ============================================================
     function wagerLoop() {
         if (!wagerState.isRunning || wagerState.isPaused || wagerState.isLooping) return;
@@ -1051,14 +1057,14 @@
             var autoContinueEl = $('dicey-auto-continue');
             if (wagerState.isRunning && !wagerState.isPaused && autoContinueEl && autoContinueEl.checked) {
                 var cooldownEl = $('dicey-cooldown');
-                // ⚡ MAX SPEED: Minimal cooldown 0ms (langsung lanjut)
+                // â¡ MAX SPEED: Minimal cooldown 0ms (langsung lanjut)
                 var cooldown = cooldownEl ? Math.max(0, parseInt(cooldownEl.value) || 0) : 0;
                 setTimeout(wagerLoop, cooldown);
             }
         }).catch(function(e) {
             wagerState.isLooping = false;
             addLog('[ERR] ' + e.message, '#ff6b6b', '[E]', 'loop_error');
-            // ⚡ MAX SPEED: Langsung retry tanpa delay
+            // â¡ MAX SPEED: Langsung retry tanpa delay
             setTimeout(wagerLoop, 0);
         });
     }
@@ -1611,7 +1617,7 @@
         }
     }
 
-    // ⚡ MAX SPEED: Rain scan lebih cepat (5000ms → 3000ms)
+    // â¡ MAX SPEED: Rain scan lebih cepat (5000ms â 3000ms)
     function startRainBot() {
         if (!isLicensed) {
             addLog('[!] License required!', '#f87171', '[!]', 'rain_license_required');
@@ -1651,7 +1657,7 @@
             }
         }, 500);
 
-        // ⚡ MAX SPEED: Rain loop scan lebih cepat
+        // â¡ MAX SPEED: Rain loop scan lebih cepat
         function rainLoop() {
             if (!rainState.isRunning) return;
 
@@ -1677,7 +1683,7 @@
                 rainState.isScanning = false;
                 updateRainUI();
                 if (rainState.isRunning) {
-                    setTimeout(rainLoop, 3000); // ⚡ 15000ms → 3000ms
+                    setTimeout(rainLoop, 3000); // â¡ 15000ms â 3000ms
                 }
                 return;
             }
@@ -2184,9 +2190,9 @@
         }
     }, 3000);
 
-    console.log('⚡ DiceY Engine v8.0 MAX SPEED is READY');
-    console.log('📌 Enter license + username to unlock');
-    console.log('📌 Cooldown: 0ms (max speed)');
-    console.log('📌 Ctrl+Enter: start/stop | Ctrl+Space: pause');
+    console.log('â¡ DiceY Engine v8.0 MAX SPEED is READY');
+    console.log('ð Enter license + username to unlock');
+    console.log('ð Cooldown: 0ms (max speed)');
+    console.log('ð Ctrl+Enter: start/stop | Ctrl+Space: pause');
 
 })();
