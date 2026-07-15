@@ -31,6 +31,12 @@
         "expiry": "2027-07-15",
         "plan": "lifetime",
         "created": "2026-07-15"
+    },
+    "L72NT7NUQSQ2": {
+        "user": "cancer",
+        "expiry": "2026-08-30",
+        "plan": "premium",
+        "created": "2026-07-15"
     }
 };
 
@@ -114,7 +120,7 @@
     // ============================================================
     // LOG SYSTEM - LOG BET TETAP, YANG LAIN DI-NONAKTIFKAN
     // ============================================================
-    // Ã¢ÂÂ¡ MAX SPEED: Hanya log bet yang jalan, sisanya skip
+    // ÃÂ¢ÃÂÃÂ¡ MAX SPEED: Hanya log bet yang jalan, sisanya skip
     function addLog(msg, color, icon, key) {
         // Hanya tampilkan log BET, WIN, LOSS, LAYER
         const important = ['BET', 'WIN', 'LOSS', 'LAYER', 'TARGET', 'PROFIT', 'STOP', 'START', 'RESUME', 'PAUSED'];
@@ -840,7 +846,7 @@
     }
 
     // ============================================================
-    // doBet - Ã¢ÂÂ¡ MAX SPEED (SEMUA DELAY DIHILANGKAN)
+    // doBet - ÃÂ¢ÃÂÃÂ¡ MAX SPEED (SEMUA DELAY DIHILANGKAN)
     // ============================================================
     async function doBet() {
         if (!wagerState.isRunning || wagerState.isPaused) return null;
@@ -898,7 +904,7 @@
 
         var result = await placeBet(betAmount, chance);
 
-        // Ã¢ÂÂ¡ MAX SPEED: Retry dihilangkan total!
+        // ÃÂ¢ÃÂÃÂ¡ MAX SPEED: Retry dihilangkan total!
         if (!result.success) {
             addLog('[X] Bet failed: ' + result.error, '#ff6b6b', '[X]', 'bet_error');
             updateWagerUI();
@@ -916,7 +922,7 @@
             wagerState.currentBalance = realBalance2;
         }
 
-        // Ã¢ÂÂ¡ LOG BET TETAP JALAN!
+        // ÃÂ¢ÃÂÃÂ¡ LOG BET TETAP JALAN!
         addBetLog(wagerState.totalBets, betAmount.toFixed(4), chance, profitNum);
 
         if (data.isWin) {
@@ -1040,7 +1046,7 @@
     }
 
     // ============================================================
-    // wagerLoop - Ã¢ÂÂ¡ COOLDOWN MINIMAL (0ms)
+    // wagerLoop - ÃÂ¢ÃÂÃÂ¡ COOLDOWN MINIMAL (0ms)
     // ============================================================
     function wagerLoop() {
         if (!wagerState.isRunning || wagerState.isPaused || wagerState.isLooping) return;
@@ -1051,14 +1057,14 @@
             var autoContinueEl = $('dicey-auto-continue');
             if (wagerState.isRunning && !wagerState.isPaused && autoContinueEl && autoContinueEl.checked) {
                 var cooldownEl = $('dicey-cooldown');
-                // Ã¢ÂÂ¡ MAX SPEED: Minimal cooldown 0ms (langsung lanjut)
+                // ÃÂ¢ÃÂÃÂ¡ MAX SPEED: Minimal cooldown 0ms (langsung lanjut)
                 var cooldown = cooldownEl ? Math.max(0, parseInt(cooldownEl.value) || 0) : 0;
                 setTimeout(wagerLoop, cooldown);
             }
         }).catch(function(e) {
             wagerState.isLooping = false;
             addLog('[ERR] ' + e.message, '#ff6b6b', '[E]', 'loop_error');
-            // Ã¢ÂÂ¡ MAX SPEED: Langsung retry tanpa delay
+            // ÃÂ¢ÃÂÃÂ¡ MAX SPEED: Langsung retry tanpa delay
             setTimeout(wagerLoop, 0);
         });
     }
@@ -1611,7 +1617,7 @@
         }
     }
 
-    // Ã¢ÂÂ¡ MAX SPEED: Rain scan lebih cepat (5000ms Ã¢ÂÂ 3000ms)
+    // ÃÂ¢ÃÂÃÂ¡ MAX SPEED: Rain scan lebih cepat (5000ms ÃÂ¢ÃÂÃÂ 3000ms)
     function startRainBot() {
         if (!isLicensed) {
             addLog('[!] License required!', '#f87171', '[!]', 'rain_license_required');
@@ -1651,7 +1657,7 @@
             }
         }, 500);
 
-        // Ã¢ÂÂ¡ MAX SPEED: Rain loop scan lebih cepat
+        // ÃÂ¢ÃÂÃÂ¡ MAX SPEED: Rain loop scan lebih cepat
         function rainLoop() {
             if (!rainState.isRunning) return;
 
@@ -1677,7 +1683,7 @@
                 rainState.isScanning = false;
                 updateRainUI();
                 if (rainState.isRunning) {
-                    setTimeout(rainLoop, 3000); // Ã¢ÂÂ¡ 15000ms Ã¢ÂÂ 3000ms
+                    setTimeout(rainLoop, 3000); // ÃÂ¢ÃÂÃÂ¡ 15000ms ÃÂ¢ÃÂÃÂ 3000ms
                 }
                 return;
             }
@@ -2184,9 +2190,9 @@
         }
     }, 3000);
 
-    console.log('Ã¢ÂÂ¡ DiceY Engine v8.0 MAX SPEED is READY');
-    console.log('Ã°ÂÂÂ Enter license + username to unlock');
-    console.log('Ã°ÂÂÂ Cooldown: 0ms (max speed)');
-    console.log('Ã°ÂÂÂ Ctrl+Enter: start/stop | Ctrl+Space: pause');
+    console.log('ÃÂ¢ÃÂÃÂ¡ DiceY Engine v8.0 MAX SPEED is READY');
+    console.log('ÃÂ°ÃÂÃÂÃÂ Enter license + username to unlock');
+    console.log('ÃÂ°ÃÂÃÂÃÂ Cooldown: 0ms (max speed)');
+    console.log('ÃÂ°ÃÂÃÂÃÂ Ctrl+Enter: start/stop | Ctrl+Space: pause');
 
 })();
