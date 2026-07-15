@@ -1,41 +1,29 @@
 // ============================================================
-// DICEY ENGINE v7.0 - HARDCODE LICENSE SYSTEM
+// DICEY ENGINE v7.0 - NO EMOJI VERSION
 // ============================================================
 (function() {
     'use strict';
 
     // ============================================================
-    // Ã°ÂÂÂ LICENSES DATABASE (HARDCODE - EDIT VIA GENERATOR)
+    // LICENSES DATABASE
     // ============================================================
     const LICENSES = {
-    "TRIAL001": {
-        "user": "trial",
-        "expiry": "2026-12-31",
-        "plan": "trial",
-        "created": "2026-07-15"
-    },
-    "DEMO2024": {
-        "user": "demo",
-        "expiry": "2026-12-31",
-        "plan": "demo",
-        "created": "2026-07-15"
-    },
-    "U6TJ96AALBZQ": {
-        "user": "dengkodice",
-        "expiry": "2027-07-15",
-        "plan": "premium",
-        "created": "2026-07-15"
-    },
-    "6A7EAYYESKCX": {
-        "user": "ramadhan",
-        "expiry": "2027-07-15",
-        "plan": "lifetime",
-        "created": "2026-07-15"
-    }
-};
+        "TRIAL001": {
+            user: "trial",
+            expiry: "2026-12-31",
+            plan: "trial",
+            created: "2026-07-15"
+        },
+        "DEMO2024": {
+            user: "demo",
+            expiry: "2026-12-31",
+            plan: "demo",
+            created: "2026-07-15"
+        }
+    };
 
     // ============================================================
-    // Ã¢ÂÂ CHECK LICENSE (LANGSUNG DARI HARDCODE)
+    // CHECK LICENSE
     // ============================================================
     function checkLicense(licenseKey, username) {
         const trimmedLicense = licenseKey.trim().toUpperCase();
@@ -56,12 +44,12 @@
         }
         
         const expiry = licenseData.expiry;
-        if (expiry === 'permanent' || expiry === 'Ã¢ÂÂ' || expiry === 'forever') {
+        if (expiry === 'permanent' || expiry === 'forever') {
             return {
                 valid: true,
                 user: licenseData.user,
                 expiry: 'Permanent',
-                remaining: 'Ã¢ÂÂ',
+                remaining: 'Forever',
                 plan: licenseData.plan || 'premium'
             };
         }
@@ -74,7 +62,7 @@
         if (new Date() > expiryDate) {
             return {
                 valid: false,
-                reason: `License expired (${expiry})`
+                reason: 'License expired (' + expiry + ')'
             };
         }
         
@@ -89,7 +77,7 @@
     }
 
     // ============================================================
-    // COIN PRICES FOR WAGER TARGET CONVERSION
+    // COIN PRICES
     // ============================================================
     const COIN_PRICES = {
         'USDC': 1.00,
@@ -112,7 +100,7 @@
     }
 
     // ============================================================
-    // LOG SYSTEM - UNIFIED + ANTI-SPAM
+    // LOG SYSTEM
     // ============================================================
     const logCooldown = {
         lastLog: {},
@@ -123,19 +111,19 @@
         const now = Date.now();
         const last = logCooldown.lastLog[key];
         if (!last) {
-            logCooldown.lastLog[key] = { msg, time: now };
+            logCooldown.lastLog[key] = { msg: msg, time: now };
             return false;
         }
         if (last.msg === msg && (now - last.time) < logCooldown.cooldownTime) {
             return true;
         }
-        logCooldown.lastLog[key] = { msg, time: now };
+        logCooldown.lastLog[key] = { msg: msg, time: now };
         return false;
     }
 
     function addLog(msg, color, icon, key) {
         color = color || '#a0a0a0';
-        icon = icon || 'Ã°ÂÂÂ';
+        icon = icon || '[i]';
         key = key || msg.substring(0, 30);
         
         if (isLogSpam(key, msg)) {
@@ -147,21 +135,8 @@
         
         const time = new Date().toLocaleTimeString();
         const entry = document.createElement('div');
-        entry.style.cssText = `
-            padding: 2px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.03);
-            font-size: 7px;
-            font-family: 'Consolas', monospace;
-            color: ${color};
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        `;
-        entry.innerHTML = `
-            <span style="color:#666;flex-shrink:0;">[${time}]</span>
-            <span style="flex-shrink:0;">${icon}</span>
-            <span style="word-break:break-word;">${msg}</span>
-        `;
+        entry.style.cssText = 'padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.03);font-size:7px;font-family:Consolas,monospace;color:' + color + ';display:flex;align-items:center;gap:4px;';
+        entry.innerHTML = '<span style="color:#666;flex-shrink:0;">[' + time + ']</span><span style="flex-shrink:0;">' + icon + '</span><span style="word-break:break-word;">' + msg + '</span>';
         
         log.appendChild(entry);
         log.scrollTop = log.scrollHeight;
@@ -172,131 +147,60 @@
     }
 
     // ============================================================
-    // UI CONTAINER - FULL RESPONSIVE
+    // UI CONTAINER - NO EMOJI
     // ============================================================
     const container = document.createElement('div');
     container.id = 'dicey-bot-ui';
-    container.style.cssText = `
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-        max-width: 100vw;
-        max-height: 100vh;
-        background: #1e1f1c;
-        color: #f8f8f2;
-        font-family: 'Segoe UI', Consolas, monospace;
-        border-radius: 0;
-        box-shadow: none;
-        border: none;
-        z-index: 999999;
-        overflow: hidden;
-        user-select: none;
-        font-size: 12px;
-        display: flex;
-        flex-direction: column;
-        pointer-events: auto !important;
-    `;
+    container.style.cssText = 'position:fixed;bottom:0;left:0;right:0;top:0;width:100%;height:100%;max-width:100vw;max-height:100vh;background:#1e1f1c;color:#f8f8f2;font-family:Segoe UI,Consolas,monospace;border-radius:0;box-shadow:none;border:none;z-index:999999;overflow:hidden;user-select:none;font-size:12px;display:flex;flex-direction:column;pointer-events:auto!important;';
 
     container.innerHTML = `
         <!-- HEADER -->
-        <div id="dicey-header" style="
-            background: #9ec07c; 
-            padding: 6px 12px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            cursor: move; 
-            color: #000;
-            flex-shrink: 0;
-            min-height: 44px;
-            pointer-events: auto !important;
-        ">
-            <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
-                <span style="font-weight: 700; font-size: 12px; white-space: nowrap;">Ã¢Â­Â DiceY Engine</span>
-                <span style="background: rgba(0,0,0,0.2); padding: 1px 8px; border-radius: 20px; font-size: 8px; font-weight: 600; white-space: nowrap;">by cheapcheatx</span>
+        <div id="dicey-header" style="background:#9ec07c;padding:6px 12px;display:flex;justify-content:space-between;align-items:center;cursor:move;color:#000;flex-shrink:0;min-height:44px;pointer-events:auto!important;">
+            <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
+                <span style="font-weight:700;font-size:12px;white-space:nowrap;">DiceY Engine</span>
+                <span style="background:rgba(0,0,0,0.2);padding:1px 8px;border-radius:20px;font-size:8px;font-weight:600;white-space:nowrap;">v7</span>
             </div>
-            <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                <button id="dicey-minimize" style="background: rgba(0,0,0,0.2); border: none; color: #000; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 12px; pointer-events: auto !important;">Ã¢ÂÂ¼</button>
-                <button id="dicey-close" style="background: rgba(0,0,0,0.2); border: none; color: #000; width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 14px; pointer-events: auto !important;">Ã¢ÂÂ</button>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+                <button id="dicey-minimize" style="background:rgba(0,0,0,0.2);border:none;color:#000;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:12px;pointer-events:auto!important;">-</button>
+                <button id="dicey-close" style="background:rgba(0,0,0,0.2);border:none;color:#000;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px;pointer-events:auto!important;">X</button>
             </div>
         </div>
 
         <!-- CONTENT -->
-        <div id="dicey-content" style="
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden;
-            padding: 8px 10px 12px 10px;
-            -webkit-overflow-scrolling: touch;
-            pointer-events: auto !important;
-        ">
+        <div id="dicey-content" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:8px 10px 12px 10px;-webkit-overflow-scrolling:touch;pointer-events:auto!important;">
+            
             <!-- TAB BAR -->
-            <div id="dicey-tab-bar" style="
-                display: flex; 
-                gap: 2px; 
-                padding: 0 0 6px 0; 
-                border-bottom: 1px solid #3a3a3a; 
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-                flex-shrink: 0;
-                pointer-events: auto !important;
-            ">
-                <button class="dicey-tab active" data-tab="main" style="
-                    padding: 4px 10px; 
-                    background: transparent; 
-                    border: none; 
-                    color: #9ec07c; 
-                    font-size: 10px; 
-                    font-weight: 600; 
-                    cursor: pointer; 
-                    border-bottom: 2px solid #9ec07c;
-                    white-space: nowrap;
-                    pointer-events: auto !important;
-                ">MAIN</button>
-                <button class="dicey-tab" data-tab="cfg" style="
-                    padding: 4px 10px; 
-                    background: transparent; 
-                    border: none; 
-                    color: #a0a0a0; 
-                    font-size: 10px; 
-                    font-weight: 600; 
-                    cursor: pointer; 
-                    border-bottom: 2px solid transparent;
-                    white-space: nowrap;
-                    pointer-events: auto !important;
-                ">CFG</button>
+            <div id="dicey-tab-bar" style="display:flex;gap:2px;padding:0 0 6px 0;border-bottom:1px solid #3a3a3a;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-shrink:0;pointer-events:auto!important;">
+                <button class="dicey-tab active" data-tab="main" style="padding:4px 10px;background:transparent;border:none;color:#9ec07c;font-size:10px;font-weight:600;cursor:pointer;border-bottom:2px solid #9ec07c;white-space:nowrap;pointer-events:auto!important;">MAIN</button>
+                <button class="dicey-tab" data-tab="cfg" style="padding:4px 10px;background:transparent;border:none;color:#a0a0a0;font-size:10px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;pointer-events:auto!important;">CFG</button>
             </div>
 
             <!-- TAB: MAIN -->
-            <div id="tab-main" class="dicey-tab-content" style="padding-top: 8px; display: block; pointer-events: auto !important;">
+            <div id="tab-main" class="dicey-tab-content" style="padding-top:8px;display:block;pointer-events:auto!important;">
                 
                 <!-- LICENSE STATUS -->
-                <div id="dicey-license-status" style="margin-bottom:6px;padding:4px 8px;background:#1e1f1c;border-radius:4px;border:1px solid #30363d;font-size:9px;color:#888;text-align:center;pointer-events: auto !important;">
-                    Ã°ÂÂÂ Enter license key to activate bots
+                <div id="dicey-license-status" style="margin-bottom:6px;padding:4px 8px;background:#1e1f1c;border-radius:4px;border:1px solid #30363d;font-size:9px;color:#888;text-align:center;pointer-events:auto!important;">
+                    [key] Enter license to activate
                 </div>
 
                 <!-- LICENSE INPUT -->
-                <div style="display:flex;gap:4px;margin-bottom:6px;pointer-events: auto !important;">
-                    <input id="dicey-license" type="text" placeholder="Enter license key..." style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:10px;box-sizing:border-box;outline:none;font-family:monospace;pointer-events: auto !important;text-transform:uppercase;">
-                    <input id="dicey-username" type="text" placeholder="Username..." style="flex:0.7;padding:4px 8px;border-radius:4px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:10px;box-sizing:border-box;outline:none;font-family:monospace;pointer-events: auto !important;">
-                    <button id="dicey-check-license" style="padding:4px 10px;border:none;border-radius:4px;background:#9ec07c;color:#000;font-weight:700;font-size:9px;cursor:pointer;pointer-events: auto !important;">ACTIVATE</button>
+                <div style="display:flex;gap:4px;margin-bottom:6px;pointer-events:auto!important;">
+                    <input id="dicey-license" type="text" placeholder="License key..." style="flex:1;padding:4px 8px;border-radius:4px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:10px;box-sizing:border-box;outline:none;font-family:monospace;pointer-events:auto!important;text-transform:uppercase;">
+                    <input id="dicey-username" type="text" placeholder="Username..." style="flex:0.7;padding:4px 8px;border-radius:4px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:10px;box-sizing:border-box;outline:none;font-family:monospace;pointer-events:auto!important;">
+                    <button id="dicey-check-license" style="padding:4px 10px;border:none;border-radius:4px;background:#9ec07c;color:#000;font-weight:700;font-size:9px;cursor:pointer;pointer-events:auto!important;">ACTIVATE</button>
                 </div>
 
                 <!-- WAGER CONTROLS -->
-                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:4px;pointer-events: auto !important;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events: auto !important;">
-                        <span style="font-size:9px;font-weight:600;color:#9ec07c;pointer-events: auto !important;">Ã°ÂÂÂ² WAGER BOT</span>
-                        <span id="dicey-wager-license-status" style="font-size:8px;color:#ff6b81;pointer-events: auto !important;">Ã°ÂÂÂ Locked</span>
+                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:4px;pointer-events:auto!important;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events:auto!important;">
+                        <span style="font-size:9px;font-weight:600;color:#9ec07c;pointer-events:auto!important;">[W] WAGER BOT</span>
+                        <span id="dicey-wager-license-status" style="font-size:8px;color:#ff6b81;pointer-events:auto!important;">[LOCKED]</span>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 0.8fr; gap: 3px; margin-bottom: 6px; pointer-events: auto !important;">
-                        <button id="dicey-wager-start" style="padding: 8px 0; border: none; border-radius: 6px; background: #00e5c0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.5; min-height: 32px; pointer-events: auto !important;">START</button>
-                        <button id="dicey-wager-pause" style="padding: 8px 0; border: none; border-radius: 6px; background: #a0a0a0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.5; min-height: 32px; pointer-events: auto !important;">PAUSE</button>
-                        <button id="dicey-wager-stop" style="padding: 8px 0; border: none; border-radius: 6px; background: #ff6b81; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.5; min-height: 32px; pointer-events: auto !important;">STOP</button>
-                        <select id="dicey-currency" style="padding: 4px; border-radius: 6px; border:1px solid #3a3a3a; background:#272822; color:#f8f8f2; font-size:9px; min-height: 32px; pointer-events: auto !important;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 0.8fr;gap:3px;margin-bottom:6px;pointer-events:auto!important;">
+                        <button id="dicey-wager-start" style="padding:8px 0;border:none;border-radius:6px;background:#00e5c0;color:#000;font-weight:700;font-size:9px;cursor:pointer;opacity:0.5;min-height:32px;pointer-events:auto!important;">START</button>
+                        <button id="dicey-wager-pause" style="padding:8px 0;border:none;border-radius:6px;background:#a0a0a0;color:#000;font-weight:700;font-size:9px;cursor:pointer;opacity:0.5;min-height:32px;pointer-events:auto!important;">PAUSE</button>
+                        <button id="dicey-wager-stop" style="padding:8px 0;border:none;border-radius:6px;background:#ff6b81;color:#000;font-weight:700;font-size:9px;cursor:pointer;opacity:0.5;min-height:32px;pointer-events:auto!important;">STOP</button>
+                        <select id="dicey-currency" style="padding:4px;border-radius:6px;border:1px solid #3a3a3a;background:#272822;color:#f8f8f2;font-size:9px;min-height:32px;pointer-events:auto!important;">
                             <option value="SOL">SOL</option>
                             <option value="USDC" selected>USDC</option>
                             <option value="USDT">USDT</option>
@@ -305,196 +209,188 @@
                             <option value="ETH">ETH</option>
                         </select>
                     </div>
-                    <div style="display: flex; gap: 3px; margin-bottom: 6px; pointer-events: auto !important;">
-                        <button id="dicey-wager-reset" style="flex:1; padding: 6px 0; border: none; border-radius: 6px; background: #a0a0a0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; min-height: 28px; pointer-events: auto !important;">Ã°ÂÂÂ RESET</button>
+                    <div style="display:flex;gap:3px;margin-bottom:6px;pointer-events:auto!important;">
+                        <button id="dicey-wager-reset" style="flex:1;padding:6px 0;border:none;border-radius:6px;background:#a0a0a0;color:#000;font-weight:700;font-size:9px;cursor:pointer;min-height:28px;pointer-events:auto!important;">RESET</button>
                     </div>
                 </div>
 
-                <!-- RAIN CATCHER CONTROLS -->
-                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:2px;pointer-events: auto !important;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events: auto !important;">
-                        <span style="font-size:9px;font-weight:600;color:#ff922b;pointer-events: auto !important;">Ã°ÂÂÂ§Ã¯Â¸Â RAIN CATCHER</span>
-                        <span id="dicey-rain-license-status" style="font-size:8px;color:#ff6b81;pointer-events: auto !important;">Ã°ÂÂÂ Locked</span>
+                <!-- RAIN CATCHER -->
+                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:2px;pointer-events:auto!important;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events:auto!important;">
+                        <span style="font-size:9px;font-weight:600;color:#ff922b;pointer-events:auto!important;">[R] RAIN CATCHER</span>
+                        <span id="dicey-rain-license-status" style="font-size:8px;color:#ff6b81;pointer-events:auto!important;">[LOCKED]</span>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-bottom: 4px; pointer-events: auto !important;">
-                        <button id="dicey-rain-start" style="padding: 8px 0; border: none; border-radius: 6px; background: #ff922b; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.5; min-height: 34px; pointer-events: auto !important;">Ã¢ÂÂ¶ START RAIN</button>
-                        <button id="dicey-rain-stop" style="padding: 8px 0; border: none; border-radius: 6px; background: #a0a0a0; color: #000; font-weight: 700; font-size: 9px; cursor: pointer; opacity:0.4; min-height: 34px; pointer-events: auto !important;">Ã¢ÂÂ  STOP RAIN</button>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:4px;pointer-events:auto!important;">
+                        <button id="dicey-rain-start" style="padding:8px 0;border:none;border-radius:6px;background:#ff922b;color:#000;font-weight:700;font-size:9px;cursor:pointer;opacity:0.5;min-height:34px;pointer-events:auto!important;">START</button>
+                        <button id="dicey-rain-stop" style="padding:8px 0;border:none;border-radius:6px;background:#a0a0a0;color:#000;font-weight:700;font-size:9px;cursor:pointer;opacity:0.4;min-height:34px;pointer-events:auto!important;">STOP</button>
                     </div>
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;padding:3px 0;border-top:1px solid #3a3a3a;border-bottom:1px solid #3a3a3a;pointer-events: auto !important;">
-                        <span id="dicey-rain-dot" style="width:6px;height:6px;border-radius:50%;background:#888;display:inline-block;pointer-events: auto !important;"></span>
-                        <span id="dicey-rain-status" style="font-size:8px;color:#888;pointer-events: auto !important;">STOPPED</span>
-                        <span id="dicey-rain-mode" style="font-size:7px;color:#666;margin-left:4px;pointer-events: auto !important;">Ã¢ÂÂ¸Ã¯Â¸Â IDLE</span>
-                        <span style="margin-left:auto;font-size:8px;white-space:nowrap;pointer-events: auto !important;">
-                            <span style="color:#00e5c0;">Ã¢ÂÂ <span id="dicey-rain-success" style="font-weight:700;">0</span></span>
-                            <span style="color:#ff6b81;margin-left:6px;">Ã¢ÂÂ <span id="dicey-rain-fail" style="font-weight:700;">0</span></span>
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;padding:3px 0;border-top:1px solid #3a3a3a;border-bottom:1px solid #3a3a3a;pointer-events:auto!important;">
+                        <span id="dicey-rain-dot" style="width:6px;height:6px;border-radius:50%;background:#888;display:inline-block;pointer-events:auto!important;"></span>
+                        <span id="dicey-rain-status" style="font-size:8px;color:#888;pointer-events:auto!important;">STOPPED</span>
+                        <span id="dicey-rain-mode" style="font-size:7px;color:#666;margin-left:4px;pointer-events:auto!important;">[IDLE]</span>
+                        <span style="margin-left:auto;font-size:8px;white-space:nowrap;pointer-events:auto!important;">
+                            <span style="color:#00e5c0;">OK <span id="dicey-rain-success" style="font-weight:700;">0</span></span>
+                            <span style="color:#ff6b81;margin-left:6px;">FAIL <span id="dicey-rain-fail" style="font-weight:700;">0</span></span>
                         </span>
                     </div>
                 </div>
 
                 <!-- WAGER STATUS -->
-                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:4px;pointer-events: auto !important;">
-                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 9px; pointer-events: auto !important;">
-                        <span id="dicey-status-dot" style="width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: #FF4757; pointer-events: auto !important;"></span>
-                        <span id="dicey-status-text" style="pointer-events: auto !important;">STOPPED</span>
-                        <span style="color:#a0a0a0; margin-left:auto; pointer-events: auto !important;" id="dicey-running-time">00:00:00</span>
-                        <span style="color:#a0a0a0; margin-left:6px; pointer-events: auto !important;" id="dicey-user">-</span>
+                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:4px;pointer-events:auto!important;">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:9px;pointer-events:auto!important;">
+                        <span id="dicey-status-dot" style="width:6px;height:6px;border-radius:50%;display:inline-block;background:#FF4757;pointer-events:auto!important;"></span>
+                        <span id="dicey-status-text" style="pointer-events:auto!important;">STOPPED</span>
+                        <span style="color:#a0a0a0;margin-left:auto;pointer-events:auto!important;" id="dicey-running-time">00:00:00</span>
+                        <span style="color:#a0a0a0;margin-left:6px;pointer-events:auto!important;" id="dicey-user">-</span>
                     </div>
 
                     <!-- Layer Status -->
-                    <div style="background: #272822; border-radius: 8px; padding: 4px 8px; margin-bottom: 4px; border: 1px solid #3a3a3a; pointer-events: auto !important;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 2px; font-size: 9px; pointer-events: auto !important;">
-                            <div style="pointer-events: auto !important;">Ã°ÂÂÂ Layer: <strong id="dicey-layer" style="color:#00e5c0;">1</strong></div>
-                            <div style="pointer-events: auto !important;">Chance: <strong id="dicey-chance-display" style="color:#9ec07c;">98%</strong></div>
-                            <div style="pointer-events: auto !important;">Bet: <strong id="dicey-bet-display" style="color:#ffd700;">0.0000</strong></div>
-                            <div style="pointer-events: auto !important;">Streak: <strong id="dicey-streak-display">0</strong></div>
+                    <div style="background:#272822;border-radius:8px;padding:4px 8px;margin-bottom:4px;border:1px solid #3a3a3a;pointer-events:auto!important;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2px;font-size:9px;pointer-events:auto!important;">
+                            <div style="pointer-events:auto!important;">Layer: <strong id="dicey-layer" style="color:#00e5c0;">1</strong></div>
+                            <div style="pointer-events:auto!important;">Chance: <strong id="dicey-chance-display" style="color:#9ec07c;">98%</strong></div>
+                            <div style="pointer-events:auto!important;">Bet: <strong id="dicey-bet-display" style="color:#ffd700;">0.0000</strong></div>
+                            <div style="pointer-events:auto!important;">Streak: <strong id="dicey-streak-display">0</strong></div>
                         </div>
                     </div>
 
-                    <!-- Stats Block -->
-                    <div style="background: #272822; border-radius: 8px; padding: 6px 10px; margin-bottom: 4px; border: 1px solid #3a3a3a; font-size: 8px; line-height: 1.8; pointer-events: auto !important;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px 20px; pointer-events: auto !important;">
-                            <div style="display: flex; justify-content: space-between; pointer-events: auto !important;">
+                    <!-- Stats -->
+                    <div style="background:#272822;border-radius:8px;padding:6px 10px;margin-bottom:4px;border:1px solid #3a3a3a;font-size:8px;line-height:1.8;pointer-events:auto!important;">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 20px;pointer-events:auto!important;">
+                            <div style="display:flex;justify-content:space-between;pointer-events:auto!important;">
                                 <span style="color:#a0a0a0;">Profit</span>
                                 <span style="font-weight:600;" id="dicey-profit">+0.0000</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; pointer-events: auto !important;">
+                            <div style="display:flex;justify-content:space-between;pointer-events:auto!important;">
                                 <span style="color:#a0a0a0;">Wagered</span>
-                                <span style="font-weight:600; color:#ffd700;" id="dicey-wagered">0.0000</span>
+                                <span style="font-weight:600;color:#ffd700;" id="dicey-wagered">0.0000</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; pointer-events: auto !important;">
-                                <span style="color:#a0a0a0;">Bets | WR</span>
-                                <span style="font-weight:600;" id="dicey-bets">0 | 0%</span>
+                            <div style="display:flex;justify-content:space-between;pointer-events:auto!important;">
+                                <span style="color:#a0a0a0;">Bets|WR</span>
+                                <span style="font-weight:600;" id="dicey-bets">0|0%</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; pointer-events: auto !important;">
+                            <div style="display:flex;justify-content:space-between;pointer-events:auto!important;">
                                 <span style="color:#a0a0a0;">W/L</span>
-                                <span style="font-weight: 700;" id="dicey-wl">0/0</span>
+                                <span style="font-weight:700;" id="dicey-wl">0/0</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; pointer-events: auto !important;">
-                                <span style="color:#a0a0a0;">Win Rate</span>
-                                <span style="font-weight: 700;" id="dicey-winrate">0%</span>
+                            <div style="display:flex;justify-content:space-between;pointer-events:auto!important;">
+                                <span style="color:#a0a0a0;">WinRate</span>
+                                <span style="font-weight:700;" id="dicey-winrate">0%</span>
                             </div>
-                            <div style="display: flex; justify-content: space-between; pointer-events: auto !important;">
-                                <span style="color:#a0a0a0;">L2 Recovery</span>
-                                <span style="font-weight:700; color:#ff922b;" id="dicey-loss-recovery">0.0000</span>
+                            <div style="display:flex;justify-content:space-between;pointer-events:auto!important;">
+                                <span style="color:#a0a0a0;">L2 Rec</span>
+                                <span style="font-weight:700;color:#ff922b;" id="dicey-loss-recovery">0.0000</span>
                             </div>
                         </div>
                     </div>
 
                     <!-- Wager Progress -->
-                    <div style="background: #272822; border-radius: 8px; padding: 3px 6px; border: 1px solid #3a3a3a; pointer-events: auto !important;">
-                        <div style="display: flex; justify-content: space-between; font-size: 7px; color: #a0a0a0; pointer-events: auto !important;">
-                            <span style="pointer-events: auto !important;">Ã°ÂÂÂ Wager: <strong id="dicey-wager-current">0.00</strong> / <strong id="dicey-wager-target">300</strong> <span id="dicey-target-coin">USDC</span></span>
-                            <span id="dicey-wager-status" style="color:#00e5c0; pointer-events: auto !important;">Ã¢ÂÂ¶ RUNNING</span>
+                    <div style="background:#272822;border-radius:8px;padding:3px 6px;border:1px solid #3a3a3a;pointer-events:auto!important;">
+                        <div style="display:flex;justify-content:space-between;font-size:7px;color:#a0a0a0;pointer-events:auto!important;">
+                            <span style="pointer-events:auto!important;">Wager: <strong id="dicey-wager-current">0.00</strong> / <strong id="dicey-wager-target">300</strong> <span id="dicey-target-coin">USDC</span></span>
+                            <span id="dicey-wager-status" style="color:#00e5c0;pointer-events:auto!important;">RUN</span>
                         </div>
-                        <div style="background: #3a3a3a; border-radius: 3px; margin-top: 1px; height: 2px; overflow: hidden; pointer-events: auto !important;">
-                            <div id="dicey-wager-bar" style="background: #00e5c0; height: 2px; border-radius: 3px; width: 0%; transition: width 0.3s; pointer-events: auto !important;"></div>
+                        <div style="background:#3a3a3a;border-radius:3px;margin-top:1px;height:2px;overflow:hidden;pointer-events:auto!important;">
+                            <div id="dicey-wager-bar" style="background:#00e5c0;height:2px;border-radius:3px;width:0%;transition:width 0.3s;pointer-events:auto!important;"></div>
                         </div>
                     </div>
                 </div>
 
                 <!-- LOGS -->
-                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:6px;pointer-events: auto !important;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events: auto !important;">
-                        <span style="font-size:9px;font-weight:600;color:#a0a0a0;pointer-events: auto !important;">Ã°ÂÂÂ LOGS</span>
-                        <div style="display:flex;gap:4px;pointer-events: auto !important;">
-                            <button id="dicey-log-clear" style="padding:2px 8px;border:none;border-radius:4px;background:#3a3a3a;color:#a0a0a0;font-size:7px;cursor:pointer;pointer-events: auto !important;">CLEAR</button>
-                            <button id="dicey-log-filter" style="padding:2px 8px;border:none;border-radius:4px;background:#3a3a3a;color:#a0a0a0;font-size:7px;cursor:pointer;pointer-events: auto !important;">ALL</button>
+                <div style="border-top:1px solid #3a3a3a;padding-top:6px;margin-top:6px;pointer-events:auto!important;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;pointer-events:auto!important;">
+                        <span style="font-size:9px;font-weight:600;color:#a0a0a0;pointer-events:auto!important;">LOGS</span>
+                        <div style="display:flex;gap:4px;pointer-events:auto!important;">
+                            <button id="dicey-log-clear" style="padding:2px 8px;border:none;border-radius:4px;background:#3a3a3a;color:#a0a0a0;font-size:7px;cursor:pointer;pointer-events:auto!important;">CLEAR</button>
+                            <button id="dicey-log-filter" style="padding:2px 8px;border:none;border-radius:4px;background:#3a3a3a;color:#a0a0a0;font-size:7px;cursor:pointer;pointer-events:auto!important;">ALL</button>
                         </div>
                     </div>
-                    <div id="dicey-log" style="background:#0f0f0a;border-radius:4px;padding:3px 5px;max-height:120px;overflow-y:auto;font-family:'Consolas',monospace;font-size:7px;color:#a0a0a0;border:1px solid #3a3a3a;margin-top:3px;-webkit-overflow-scrolling:touch;pointer-events: auto !important;"></div>
+                    <div id="dicey-log" style="background:#0f0f0a;border-radius:4px;padding:3px 5px;max-height:120px;overflow-y:auto;font-family:Consolas,monospace;font-size:7px;color:#a0a0a0;border:1px solid #3a3a3a;margin-top:3px;-webkit-overflow-scrolling:touch;pointer-events:auto!important;"></div>
                 </div>
             </div>
 
             <!-- TAB: CFG -->
-            <div id="tab-cfg" class="dicey-tab-content" style="display: none; padding-top: 8px; pointer-events: auto !important;">
-                <div style="background: #272822; border-radius: 12px; padding: 10px; border: 1px solid #3a3a3a; pointer-events: auto !important;">
+            <div id="tab-cfg" class="dicey-tab-content" style="display:none;padding-top:8px;pointer-events:auto!important;">
+                <div style="background:#272822;border-radius:12px;padding:10px;border:1px solid #3a3a3a;pointer-events:auto!important;">
                     
-                    <!-- LAYER 1 SETTINGS -->
-                    <div style="font-weight:bold; font-size:11px; margin-bottom:8px; color:#9ec07c; pointer-events: auto !important;">Ã¢ÂÂÃ¯Â¸Â LAYER 1 SETTINGS</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Chance % (1-98)</label>
-                            <input id="dicey-layer1-chance" type="number" value="98" min="1" max="98" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                    <div style="font-weight:bold;font-size:11px;margin-bottom:8px;color:#9ec07c;pointer-events:auto!important;">LAYER 1</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;pointer-events:auto!important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Chance %</label>
+                            <input id="dicey-layer1-chance" type="number" value="98" min="1" max="98" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Bet Amount</label>
-                            <input id="dicey-layer1-bet" type="text" value="0.01" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; font-family:monospace; pointer-events: auto !important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Bet</label>
+                            <input id="dicey-layer1-bet" type="text" value="0.01" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;font-family:monospace;pointer-events:auto!important;">
                         </div>
                     </div>
-                    <div style="margin-top: 6px; pointer-events: auto !important;">
-                        <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Loss Increase % (Multiplier)</label>
-                        <input id="dicey-layer1-multiplier" type="number" value="2.0" step="0.1" min="1" max="10" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                    <div style="margin-top:6px;pointer-events:auto!important;">
+                        <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Multiplier</label>
+                        <input id="dicey-layer1-multiplier" type="number" value="2.0" step="0.1" min="1" max="10" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                     </div>
 
-                    <!-- LAYER 2 SETTINGS -->
-                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#ff922b; pointer-events: auto !important;">Ã¢ÂÂÃ¯Â¸Â LAYER 2 SETTINGS</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Chance Awal % (1-98)</label>
-                            <input id="dicey-layer2-chance-start" type="number" value="65" min="1" max="98" step="0.5" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                    <div style="font-weight:bold;font-size:11px;margin:12px 0 8px 0;border-top:1px solid #3a3a3a;padding-top:12px;color:#ff922b;pointer-events:auto!important;">LAYER 2</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;pointer-events:auto!important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Start %</label>
+                            <input id="dicey-layer2-chance-start" type="number" value="65" min="1" max="98" step="0.5" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Max Chance % (1-99)</label>
-                            <input id="dicey-layer2-chance-max" type="number" value="99" min="1" max="99" step="0.5" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Max %</label>
+                            <input id="dicey-layer2-chance-max" type="number" value="99" min="1" max="99" step="0.5" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; pointer-events: auto !important;">
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Increment per Bet (%)</label>
-                            <input id="dicey-layer2-chance-increment" type="number" value="1.0" min="0.1" max="5" step="0.1" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;pointer-events:auto!important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Increment</label>
+                            <input id="dicey-layer2-chance-increment" type="number" value="1.0" min="0.1" max="5" step="0.1" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Multiplier (x)</label>
-                            <input id="dicey-layer2-multiplier" type="number" value="1.1" min="1" max="10" step="0.1" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Multiplier</label>
+                            <input id="dicey-layer2-multiplier" type="number" value="1.1" min="1" max="10" step="0.1" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
                     </div>
 
-                    <!-- BACK TO LAYER 1 TRIGGERS -->
-                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#00e5c0; pointer-events: auto !important;">Ã¢ÂÂÃ¯Â¸Â BACK TO LAYER 1 TRIGGERS</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Trigger 1: Win Streak</label>
-                            <input id="dicey-back-streak" type="number" value="1" min="1" max="20" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
-                            <div style="color:#666; font-size:8px; margin-top:2px; pointer-events: auto !important;">Back to L1 after X consecutive wins</div>
+                    <div style="font-weight:bold;font-size:11px;margin:12px 0 8px 0;border-top:1px solid #3a3a3a;padding-top:12px;color:#00e5c0;pointer-events:auto!important;">BACK TO L1</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;pointer-events:auto!important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Win Streak</label>
+                            <input id="dicey-back-streak" type="number" value="1" min="1" max="20" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Trigger 2: Loss Recovery</label>
-                            <input id="dicey-back-profit" type="text" value="0.00" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; font-family:monospace; pointer-events: auto !important;">
-                            <div style="color:#666; font-size:8px; margin-top:2px; pointer-events: auto !important;">Back to L1 after recovering this amount</div>
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Loss Recovery</label>
+                            <input id="dicey-back-profit" type="text" value="0.00" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;font-family:monospace;pointer-events:auto!important;">
                         </div>
                     </div>
 
-                    <!-- GENERAL SETTINGS -->
-                    <div style="font-weight:bold; font-size:11px; margin:12px 0 8px 0; border-top:1px solid #3a3a3a; padding-top:12px; color:#a0a0a0; pointer-events: auto !important;">Ã¢ÂÂÃ¯Â¸Â GENERAL SETTINGS</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; pointer-events: auto !important;">
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Target Profit %</label>
-                            <input id="dicey-target-profit" type="number" value="100" min="1" max="100" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                    <div style="font-weight:bold;font-size:11px;margin:12px 0 8px 0;border-top:1px solid #3a3a3a;padding-top:12px;color:#a0a0a0;pointer-events:auto!important;">GENERAL</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;pointer-events:auto!important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Target Profit %</label>
+                            <input id="dicey-target-profit" type="number" value="100" min="1" max="100" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Stop Loss %</label>
-                            <input id="dicey-stop-loss" type="number" value="90" min="1" max="100" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Stop Loss %</label>
+                            <input id="dicey-stop-loss" type="number" value="90" min="1" max="100" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; pointer-events: auto !important;">
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Cooldown (ms)</label>
-                            <input id="dicey-cooldown" type="number" value="1500" min="500" step="500" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; pointer-events: auto !important;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;pointer-events:auto!important;">
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Cooldown (ms)</label>
+                            <input id="dicey-cooldown" type="number" value="1500" min="500" step="500" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;pointer-events:auto!important;">
                         </div>
-                        <div style="pointer-events: auto !important;">
-                            <label style="color:#a0a0a0; font-size:9px; pointer-events: auto !important;">Wager Target (<span id="dicey-cfg-coin">USDC</span>)</label>
-                            <input id="dicey-wager-target-input" type="number" value="300" step="0.0001" style="width:100%; padding:4px 6px; border-radius:6px; border:1px solid #3a3a3a; background:#1e1f1c; color:#f8f8f2; font-size:11px; font-family:monospace; pointer-events: auto !important;">
-                            <div style="color:#666; font-size:8px; margin-top:2px; pointer-events: auto !important;">= $300 USD (auto convert)</div>
+                        <div style="pointer-events:auto!important;">
+                            <label style="color:#a0a0a0;font-size:9px;pointer-events:auto!important;">Wager Target (<span id="dicey-cfg-coin">USDC</span>)</label>
+                            <input id="dicey-wager-target-input" type="number" value="300" step="0.0001" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid #3a3a3a;background:#1e1f1c;color:#f8f8f2;font-size:11px;font-family:monospace;pointer-events:auto!important;">
                         </div>
                     </div>
 
-                    <!-- CHECKBOX -->
-                    <div style="margin-top: 10px; display: flex; gap: 16px; flex-wrap: wrap; border-top: 1px solid #3a3a3a; padding-top: 10px; pointer-events: auto !important;">
-                        <label style="color:#a0a0a0; font-size:10px; display:flex; align-items:center; gap:4px; cursor:pointer; pointer-events: auto !important;">
-                            <input type="checkbox" id="dicey-auto-continue" checked style="pointer-events: auto !important;"> Auto Continue
+                    <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid #3a3a3a;padding-top:10px;pointer-events:auto!important;">
+                        <label style="color:#a0a0a0;font-size:10px;display:flex;align-items:center;gap:4px;cursor:pointer;pointer-events:auto!important;">
+                            <input type="checkbox" id="dicey-auto-continue" checked style="pointer-events:auto!important;"> Auto Continue
                         </label>
-                        <label style="color:#a0a0a0; font-size:10px; display:flex; align-items:center; gap:4px; cursor:pointer; pointer-events: auto !important;">
-                            <input type="checkbox" id="dicey-stop-on-win" style="pointer-events: auto !important;"> Stop on Win Streak
+                        <label style="color:#a0a0a0;font-size:10px;display:flex;align-items:center;gap:4px;cursor:pointer;pointer-events:auto!important;">
+                            <input type="checkbox" id="dicey-stop-on-win" style="pointer-events:auto!important;"> Stop on Win Streak
                         </label>
                     </div>
 
@@ -504,23 +400,10 @@
         </div>
 
         <!-- FOOTER -->
-        <div style="
-            background: #2d2d2a;
-            padding: 2px 10px;
-            font-size: 7px;
-            color: #888;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-top: 1px solid #3a3a3a;
-            flex-shrink: 0;
-            min-height: 20px;
-            font-family: 'Segoe UI', monospace;
-            pointer-events: auto !important;
-        ">
-            <span style="pointer-events: auto !important;">Ã°ÂÂÂ¡Ã¯Â¸Â <span id="dicey-protection-status" style="pointer-events: auto !important;">Ã°ÂÂÂ Locked</span></span>
-            <span id="dicey-footer-greeting" style="color:#9ec07c;font-weight:600;pointer-events: auto !important;">Goodluck -</span>
-            <span id="dicey-live-status" style="color:#888;pointer-events: auto !important;">Ã¢ÂÂ Idle</span>
+        <div style="background:#2d2d2a;padding:2px 10px;font-size:7px;color:#888;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #3a3a3a;flex-shrink:0;min-height:20px;font-family:Segoe UI,monospace;pointer-events:auto!important;">
+            <span style="pointer-events:auto!important;">[S] <span id="dicey-protection-status" style="pointer-events:auto!important;">LOCKED</span></span>
+            <span id="dicey-footer-greeting" style="color:#9ec07c;font-weight:600;pointer-events:auto!important;">Welcome -</span>
+            <span id="dicey-live-status" style="color:#888;pointer-events:auto!important;">Idle</span>
         </div>
     `;
 
@@ -563,10 +446,6 @@
             btn.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
             btn.dispatchEvent(new MouseEvent('mousedown', { view: window, bubbles: true }));
             btn.dispatchEvent(new MouseEvent('mouseup', { view: window, bubbles: true }));
-            btn.dispatchEvent(new PointerEvent('pointerdown', { view: window, bubbles: true }));
-            btn.dispatchEvent(new PointerEvent('pointerup', { view: window, bubbles: true }));
-            btn.dispatchEvent(new TouchEvent('touchstart', { view: window, bubbles: true }));
-            btn.dispatchEvent(new TouchEvent('touchend', { view: window, bubbles: true }));
             btn.focus();
             return true;
         } catch(e) {
@@ -581,7 +460,7 @@
     let isLicensed = false;
     let currentLicense = '';
 
-    async function updateLicenseStatus() {
+    function updateLicenseStatus() {
         const licenseInput = $('dicey-license');
         const usernameInput = $('dicey-username');
         const statusEl = $('dicey-license-status');
@@ -599,13 +478,12 @@
         currentLicense = license;
         
         if (!license || !username) {
-            statusEl.textContent = 'Ã°ÂÂÂ Enter license key and username to activate';
+            statusEl.textContent = '[key] Enter license to activate';
             statusEl.style.color = '#888';
-            statusEl.style.borderColor = '#30363d';
-            if (wagerStatusEl) { wagerStatusEl.textContent = 'Ã°ÂÂÂ Locked'; wagerStatusEl.style.color = '#ff6b81'; }
-            if (rainStatusEl) { rainStatusEl.textContent = 'Ã°ÂÂÂ Locked'; rainStatusEl.style.color = '#ff6b81'; }
-            if (protectionStatus) { protectionStatus.textContent = 'Ã°ÂÂÂ Locked'; protectionStatus.style.color = '#ff6b81'; }
-            if (greetingEl) { greetingEl.textContent = 'Goodluck -'; greetingEl.style.color = '#888'; }
+            if (wagerStatusEl) { wagerStatusEl.textContent = '[LOCKED]'; wagerStatusEl.style.color = '#ff6b81'; }
+            if (rainStatusEl) { rainStatusEl.textContent = '[LOCKED]'; rainStatusEl.style.color = '#ff6b81'; }
+            if (protectionStatus) { protectionStatus.textContent = 'LOCKED'; protectionStatus.style.color = '#ff6b81'; }
+            if (greetingEl) { greetingEl.textContent = 'Welcome -'; greetingEl.style.color = '#888'; }
             if (userEl) { userEl.textContent = '-'; }
             isLicensed = false;
             updateWagerButtons();
@@ -613,35 +491,33 @@
             return;
         }
         
-        statusEl.textContent = 'Ã¢ÂÂ³ Checking license...';
+        statusEl.textContent = '[check] Checking...';
         statusEl.style.color = '#ffd700';
         
         const check = checkLicense(license, username);
         
         if (check.valid) {
-            statusEl.textContent = 'Ã¢ÂÂ ' + check.user + ' - ' + check.remaining + ' (' + check.plan + ')';
+            statusEl.textContent = '[OK] ' + check.user + ' - ' + check.remaining + ' (' + check.plan + ')';
             statusEl.style.color = '#4ade80';
-            statusEl.style.borderColor = '#4ade80';
-            if (wagerStatusEl) { wagerStatusEl.textContent = 'Ã¢ÂÂ Unlocked'; wagerStatusEl.style.color = '#4ade80'; }
-            if (rainStatusEl) { rainStatusEl.textContent = 'Ã¢ÂÂ Unlocked'; rainStatusEl.style.color = '#4ade80'; }
-            if (protectionStatus) { protectionStatus.textContent = 'Ã¢ÂÂ Protected'; protectionStatus.style.color = '#4ade80'; }
-            if (greetingEl) { greetingEl.textContent = 'Goodluck ' + check.user; greetingEl.style.color = '#9ec07c'; }
+            if (wagerStatusEl) { wagerStatusEl.textContent = '[UNLOCKED]'; wagerStatusEl.style.color = '#4ade80'; }
+            if (rainStatusEl) { rainStatusEl.textContent = '[UNLOCKED]'; rainStatusEl.style.color = '#4ade80'; }
+            if (protectionStatus) { protectionStatus.textContent = 'PROTECTED'; protectionStatus.style.color = '#4ade80'; }
+            if (greetingEl) { greetingEl.textContent = 'Welcome ' + check.user; greetingEl.style.color = '#9ec07c'; }
             if (userEl) { userEl.textContent = check.user; }
             isLicensed = true;
             localStorage.setItem('dicey_license', license);
             localStorage.setItem('dicey_username', username);
-            addLog('Ã¢ÂÂ ' + check.user + ' - ' + check.remaining + ' (' + check.plan + ')', '#4ade80', 'Ã¢ÂÂ', 'license_valid');
+            addLog('[OK] ' + check.user + ' - ' + check.remaining, '#4ade80', '[OK]', 'license_valid');
         } else {
-            statusEl.textContent = 'Ã¢ÂÂ ' + check.reason;
+            statusEl.textContent = '[X] ' + check.reason;
             statusEl.style.color = '#f87171';
-            statusEl.style.borderColor = '#f87171';
-            if (wagerStatusEl) { wagerStatusEl.textContent = 'Ã°ÂÂÂ Locked'; wagerStatusEl.style.color = '#ff6b81'; }
-            if (rainStatusEl) { rainStatusEl.textContent = 'Ã°ÂÂÂ Locked'; rainStatusEl.style.color = '#ff6b81'; }
-            if (protectionStatus) { protectionStatus.textContent = 'Ã°ÂÂÂ Locked'; protectionStatus.style.color = '#ff6b81'; }
-            if (greetingEl) { greetingEl.textContent = 'Goodluck ' + username; greetingEl.style.color = '#888'; }
+            if (wagerStatusEl) { wagerStatusEl.textContent = '[LOCKED]'; wagerStatusEl.style.color = '#ff6b81'; }
+            if (rainStatusEl) { rainStatusEl.textContent = '[LOCKED]'; rainStatusEl.style.color = '#ff6b81'; }
+            if (protectionStatus) { protectionStatus.textContent = 'LOCKED'; protectionStatus.style.color = '#ff6b81'; }
+            if (greetingEl) { greetingEl.textContent = 'Welcome ' + username; greetingEl.style.color = '#888'; }
             if (userEl) { userEl.textContent = username; }
             isLicensed = false;
-            addLog('Ã¢ÂÂ ' + check.reason, '#f87171', 'Ã¢ÂÂ', 'license_invalid');
+            addLog('[X] ' + check.reason, '#f87171', '[X]', 'license_invalid');
         }
         updateWagerButtons();
         updateRainButtons();
@@ -687,7 +563,7 @@
     }
 
     // ============================================================
-    // DRAGGABLE & RESIZABLE
+    // DRAGGABLE
     // ============================================================
     let isDragging = false;
     let dragOffsetX, dragOffsetY;
@@ -756,7 +632,7 @@
     });
 
     // ============================================================
-    // WAGER BOT - STATE
+    // WAGER BOT STATE
     // ============================================================
     const wagerState = {
         isRunning: false,
@@ -795,7 +671,7 @@
     };
 
     // ============================================================
-    // WAGER BOT - UI UPDATE
+    // WAGER BOT UI UPDATE
     // ============================================================
     function updateWagerTimer() {
         if (!wagerState.startTime) return;
@@ -903,13 +779,13 @@
         var wagerStatus = $('dicey-wager-status');
         if (wagerStatus) {
             if (wagerState.isRunning && !wagerState.isPaused) {
-                wagerStatus.textContent = 'Ã¢ÂÂ¶ RUNNING';
+                wagerStatus.textContent = 'RUNNING';
                 wagerStatus.style.color = '#00e5c0';
             } else if (wagerState.isRunning && wagerState.isPaused) {
-                wagerStatus.textContent = 'Ã¢ÂÂ¸ PAUSED';
+                wagerStatus.textContent = 'PAUSED';
                 wagerStatus.style.color = '#ff922b';
             } else {
-                wagerStatus.textContent = 'Ã¢ÂÂ¹ STOPPED';
+                wagerStatus.textContent = 'STOPPED';
                 wagerStatus.style.color = '#ff6b6b';
             }
         }
@@ -918,7 +794,7 @@
         
         var startBtn = $('dicey-wager-start');
         if (startBtn) {
-            startBtn.textContent = wagerState.isRunning && !wagerState.isPaused ? 'Ã¢ÂÂ RUN' : 'START';
+            startBtn.textContent = wagerState.isRunning && !wagerState.isPaused ? 'RUN' : 'START';
             startBtn.style.opacity = (wagerState.isRunning && !wagerState.isPaused) ? '0.6' : (isLicensed ? '1' : '0.3');
         }
         var pauseBtn = $('dicey-wager-pause');
@@ -935,27 +811,24 @@
         updateLiveStatus();
     }
 
-    // ============================================================
-    // FOOTER STATUS
-    // ============================================================
     function updateLiveStatus() {
         var liveStatus = $('dicey-live-status');
         if (liveStatus) {
             if (wagerState.isRunning || rainState.isRunning) {
-                liveStatus.textContent = 'Ã¢ÂÂ Running';
+                liveStatus.textContent = 'Running';
                 liveStatus.style.color = '#4ade80';
             } else if (wagerState.isPaused) {
-                liveStatus.textContent = 'Ã¢ÂÂ¸ Paused';
+                liveStatus.textContent = 'Paused';
                 liveStatus.style.color = '#ff922b';
             } else {
-                liveStatus.textContent = 'Ã¢ÂÂ Idle';
+                liveStatus.textContent = 'Idle';
                 liveStatus.style.color = '#888';
             }
         }
     }
 
     // ============================================================
-    // WAGER BOT - CORE FUNCTIONS
+    // WAGER BOT CORE
     // ============================================================
     function getRealBalance() {
         try {
@@ -964,7 +837,6 @@
                 '[data-testid="balance"]', '.balance-amount',
                 '.user-balance', '.wallet-balance',
                 '[class*="wallet"] [class*="amount"]',
-                '[class*="token"]', '[class*="Token"]',
                 '[data-testid="wallet-balance"]'
             ];
             for (var i = 0; i < selectors.length; i++) {
@@ -1059,22 +931,8 @@
         if (!log) return;
         
         const entry = document.createElement('div');
-        entry.style.cssText = `
-            padding: 1px 0;
-            font-size: 7px;
-            font-family: 'Consolas', monospace;
-            color: ${color};
-            display: grid;
-            grid-template-columns: 25px 45px 40px 50px;
-            gap: 4px;
-            border-bottom: 1px solid rgba(255,255,255,0.02);
-        `;
-        entry.innerHTML = `
-            <span>${number}</span>
-            <span>${bet}</span>
-            <span>${chance}%</span>
-            <span>${sign}${amount.toFixed(4)}</span>
-        `;
+        entry.style.cssText = 'padding:1px 0;font-size:7px;font-family:Consolas,monospace;color:' + color + ';display:grid;grid-template-columns:25px 45px 40px 50px;gap:4px;border-bottom:1px solid rgba(255,255,255,0.02);';
+        entry.innerHTML = '<span>' + number + '</span><span>' + bet + '</span><span>' + chance + '%</span><span>' + sign + amount.toFixed(4) + '</span>';
         
         log.appendChild(entry);
         log.scrollTop = log.scrollHeight;
@@ -1127,16 +985,14 @@
 
         wagerState.totalBets++;
 
-        var betAmount, chance, layerDisplay;
+        var betAmount, chance;
         if (wagerState.currentLayer === 1) {
             betAmount = wagerState.currentBet;
             chance = layer1Chance;
-            layerDisplay = 'L1';
             wagerState.layer1Bets++;
         } else {
             betAmount = wagerState.currentBet;
             chance = wagerState.layer2CurrentChance;
-            layerDisplay = 'L2';
             wagerState.layer2Bets++;
         }
 
@@ -1154,7 +1010,7 @@
                 }
             }
             if (!result.success) {
-                addLog('Ã¢ÂÂ Bet failed: ' + result.error, '#ff6b6b', 'Ã¢ÂÂ', 'bet_error');
+                addLog('[X] Bet failed: ' + result.error, '#ff6b6b', '[X]', 'bet_error');
                 updateWagerUI();
                 return null;
             }
@@ -1187,7 +1043,7 @@
                 wagerState.lossRecovery += profitNum;
                 
                 if (backProfit > 0 && wagerState.lossRecovery >= backProfit) {
-                    addLog('Ã°ÂÂÂ L2 Ã¢ÂÂ L1 Ã¢ÂÂ (Recovery: ' + wagerState.lossRecovery.toFixed(4) + '/' + backProfit.toFixed(4) + ')', '#00e5c0', 'Ã°ÂÂÂ', 'layer_recovery');
+                    addLog('[L2->L1] Recovery: ' + wagerState.lossRecovery.toFixed(4), '#00e5c0', '[L2]', 'layer_recovery');
                     wagerState.currentLayer = 1;
                     wagerState.currentBet = layer1Bet;
                     wagerState.currentStreak = 0;
@@ -1198,7 +1054,7 @@
                     wagerState.layer2BetCount = 0;
                 }
                 else if (wagerState.currentStreak >= backStreak) {
-                    addLog('Ã°ÂÂÂ L2 Ã¢ÂÂ L1 Ã¢ÂÂ (Win streak: ' + wagerState.currentStreak + ')', '#00e5c0', 'Ã°ÂÂÂ', 'layer_win_streak');
+                    addLog('[L2->L1] Win streak: ' + wagerState.currentStreak, '#00e5c0', '[L2]', 'layer_win_streak');
                     wagerState.currentLayer = 1;
                     wagerState.currentBet = layer1Bet;
                     wagerState.currentStreak = 0;
@@ -1224,7 +1080,7 @@
                 wagerState.totalLossInL2 = 0;
                 wagerState.layer2CurrentChance = layer2ChanceStart;
                 wagerState.layer2BetCount = 0;
-                addLog('Ã°ÂÂÂ L1 Ã¢ÂÂ L2 Ã¢ÂÂ (Loss streak: ' + Math.abs(wagerState.currentStreak) + ')', '#ff922b', 'Ã°ÂÂÂ', 'layer_to_l2');
+                addLog('[L1->L2] Loss streak: ' + Math.abs(wagerState.currentStreak), '#ff922b', '[L1]', 'layer_to_l2');
             } else {
                 wagerState.totalLossInL2 += Math.abs(profitNum);
                 wagerState.currentBet = wagerState.currentBet * layer2Multiplier;
@@ -1239,7 +1095,7 @@
                 }
                 
                 if (Math.abs(wagerState.currentStreak) >= 10) {
-                    addLog('Ã°ÂÂÂ¨ Emergency Reset! L2 Ã¢ÂÂ L1 (Loss streak: ' + Math.abs(wagerState.currentStreak) + ')', '#ff6b6b', 'Ã°ÂÂÂ¨', 'emergency_reset');
+                    addLog('[EMERGENCY] L2->L1', '#ff6b6b', '[!]', 'emergency_reset');
                     wagerState.currentLayer = 1;
                     wagerState.currentBet = layer1Bet;
                     wagerState.currentStreak = 0;
@@ -1266,25 +1122,25 @@
 
         var wagerTarget = getConvertedTarget();
         if (wagerState.wagered >= wagerTarget) {
-            addLog('Ã°ÂÂÂ¯ Target Wager ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay() + ' REACHED!', '#00e5c0', 'Ã°ÂÂÂ¯', 'target_reached');
+            addLog('[TARGET] ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay() + ' REACHED!', '#00e5c0', '[T]', 'target_reached');
             stopWagerBot();
             return null;
         }
 
         if (wagerState.currentBalance - wagerState.startBalance >= targetProfit) {
-            addLog('Ã°ÂÂÂ¯ Target +' + targetProfitPercent + '% reached!', '#00e5c0', 'Ã°ÂÂÂ¯', 'profit_target');
+            addLog('[PROFIT] +' + targetProfitPercent + '% reached!', '#00e5c0', '[P]', 'profit_target');
             stopWagerBot();
             return null;
         }
 
         if (wagerState.currentBalance <= stopLoss) {
-            addLog('Ã°ÂÂÂ Stop loss -' + stopLossPercent + '%', '#ff6b6b', 'Ã°ÂÂÂ', 'stop_loss');
+            addLog('[STOP] -' + stopLossPercent + '%', '#ff6b6b', '[S]', 'stop_loss');
             stopWagerBot();
             return null;
         }
 
         if (stopOnWinEl && stopOnWinEl.checked && wagerState.currentStreak >= 5) {
-            addLog('Ã°ÂÂÂ Win streak: ' + wagerState.currentStreak, '#ffd700', 'Ã°ÂÂÂ', 'win_streak_stop');
+            addLog('[STOP] Win streak: ' + wagerState.currentStreak, '#ffd700', '[S]', 'win_streak_stop');
             stopWagerBot();
             return null;
         }
@@ -1307,24 +1163,24 @@
             }
         }).catch(function(e) {
             wagerState.isLooping = false;
-            addLog('Ã¢ÂÂ Ã¯Â¸Â Error: ' + e.message, '#ff6b6b', 'Ã¢ÂÂ Ã¯Â¸Â', 'loop_error');
+            addLog('[ERR] ' + e.message, '#ff6b6b', '[E]', 'loop_error');
             setTimeout(wagerLoop, 5000);
         });
     }
 
     function startWagerBot() {
         if (!isLicensed) {
-            addLog('Ã¢ÂÂ Ã¯Â¸Â License required!', '#f87171', 'Ã¢ÂÂ Ã¯Â¸Â', 'license_required');
+            addLog('[!] License required!', '#f87171', '[!]', 'license_required');
             return;
         }
         if (wagerState.isRunning && !wagerState.isPaused) {
-            addLog('Ã¢ÂÂ Ã¯Â¸Â Already running', '#ffd700', 'Ã¢ÂÂ Ã¯Â¸Â', 'already_running');
+            addLog('[!] Already running', '#ffd700', '[!]', 'already_running');
             return;
         }
         if (wagerState.isPaused) {
             wagerState.isPaused = false;
             wagerState.isRunning = true;
-            addLog('Ã¢ÂÂ¶Ã¯Â¸Â Resumed', '#00e5c0', 'Ã¢ÂÂ¶Ã¯Â¸Â', 'resumed');
+            addLog('[RESUME]', '#00e5c0', '[R]', 'resumed');
             updateWagerUI();
             setTimeout(wagerLoop, 500);
             return;
@@ -1333,7 +1189,7 @@
         var layer1BetEl = $('dicey-layer1-bet');
         var layer1Bet = layer1BetEl ? parseFloat(layer1BetEl.value) : 0.01;
         if (layer1Bet <= 0) {
-            addLog('Ã¢ÂÂ Ã¯Â¸Â Set valid Layer 1 bet', '#ff6b6b', 'Ã¢ÂÂ Ã¯Â¸Â', 'invalid_bet');
+            addLog('[!] Set valid Layer 1 bet', '#ff6b6b', '[!]', 'invalid_bet');
             return;
         }
 
@@ -1376,19 +1232,19 @@
         if (wagerState.timerInterval) clearInterval(wagerState.timerInterval);
         wagerState.timerInterval = setInterval(updateWagerTimer, 1000);
 
-        addLog('Ã¢ÂÂ¶Ã¯Â¸Â STARTED | L1: ' + layer1Bet + ' ' + getCurrencyDisplay(), '#00e5c0', 'Ã¢ÂÂ¶Ã¯Â¸Â', 'started');
-        addLog('Ã°ÂÂÂ¯ Target: ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', 'Ã°ÂÂÂ¯', 'target_info');
+        addLog('[START] L1: ' + layer1Bet + ' ' + getCurrencyDisplay(), '#00e5c0', '[S]', 'started');
+        addLog('[TARGET] ' + wagerTarget.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', '[T]', 'target_info');
         updateWagerUI();
         setTimeout(wagerLoop, 500);
     }
 
     function pauseWagerBot() {
         if (!wagerState.isRunning) {
-            addLog('Ã¢ÂÂ Ã¯Â¸Â Bot not running', '#ffd700', 'Ã¢ÂÂ Ã¯Â¸Â', 'not_running');
+            addLog('[!] Bot not running', '#ffd700', '[!]', 'not_running');
             return;
         }
         wagerState.isPaused = !wagerState.isPaused;
-        addLog(wagerState.isPaused ? 'Ã¢ÂÂ¸ Paused' : 'Ã¢ÂÂ¶Ã¯Â¸Â Resumed', '#ffd700', wagerState.isPaused ? 'Ã¢ÂÂ¸' : 'Ã¢ÂÂ¶Ã¯Â¸Â', 'pause_toggle');
+        addLog(wagerState.isPaused ? '[PAUSED]' : '[RESUMED]', '#ffd700', wagerState.isPaused ? '[P]' : '[R]', 'pause_toggle');
         updateWagerUI();
         if (!wagerState.isPaused) {
             setTimeout(wagerLoop, 500);
@@ -1404,9 +1260,9 @@
             wagerState.timerInterval = null;
         }
         var profit = wagerState.currentBalance - wagerState.startBalance;
-        addLog('Ã¢ÂÂ¹ STOPPED | ' + (profit >= 0 ? '+' : '') + profit.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', 'Ã¢ÂÂ¹', 'stopped');
-        addLog('Ã°ÂÂÂ Total Wager: ' + wagerState.wagered.toFixed(4) + ' ' + getCurrencyDisplay(), '#a0a0a0', 'Ã°ÂÂÂ', 'total_wager');
-        addLog('Ã°ÂÂÂ Bets: ' + wagerState.totalBets + ' | L1: ' + wagerState.layer1Bets + ' | L2: ' + wagerState.layer2Bets, '#a0a0a0', 'Ã°ÂÂÂ', 'bet_summary');
+        addLog('[STOP] ' + (profit >= 0 ? '+' : '') + profit.toFixed(4) + ' ' + getCurrencyDisplay(), '#ffd700', '[S]', 'stopped');
+        addLog('[TOTAL] ' + wagerState.wagered.toFixed(4) + ' ' + getCurrencyDisplay(), '#a0a0a0', '[T]', 'total_wager');
+        addLog('[BETS] ' + wagerState.totalBets + ' | L1: ' + wagerState.layer1Bets + ' | L2: ' + wagerState.layer2Bets, '#a0a0a0', '[B]', 'bet_summary');
         updateWagerUI();
     }
 
@@ -1435,7 +1291,7 @@
             wagerState.startBalance = realBalance;
         }
         
-        addLog('Ã°ÂÂÂ RESET', '#ffd700', 'Ã°ÂÂÂ', 'reset');
+        addLog('[RESET]', '#ffd700', '[R]', 'reset');
         var log = $('dicey-log');
         if (log) {
             var children = log.children;
@@ -1451,7 +1307,7 @@
     }
 
     // ============================================================
-    // RAIN CATCHER - API FIRST
+    // RAIN CATCHER - SIMPLIFIED
     // ============================================================
     const TELEGRAM_BOT_TOKEN = '8328589586:AAGO3dB_8pkPxD5Ogy9UI1lJMMtPQOUAdIE';
     const TELEGRAM_CHAT_ID = '8453280675';
@@ -1474,16 +1330,8 @@
         username: '',
         status: 'idle',
         lastJoinStatus: null,
-        lastLogTime: 0,
-        lastLogMessage: '',
-        winSplashClosed: false,
-        isProcessing: false,
-        chatOpened: false,
-        joinTime: null,
-        waitingForJoin: false,
-        processCount: 0,
-        _lastNoJoinLog: null,
-        lastPotId: null
+        lastPotId: null,
+        _lastNoJoinLog: null
     };
 
     function interceptRainGraphQL() {
@@ -1500,7 +1348,6 @@
                     var potId = body.variables?.potId || null;
                     if (potId) {
                         rainState.lastPotId = potId;
-                        console.log('Ã°ÂÂÂ potId captured from request:', potId);
                     }
                 }
                 
@@ -1514,14 +1361,14 @@
                             rainState.successCount++;
                             rainState.status = 'waiting';
                             rainState.lastJoinStatus = 'joined';
-                            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ JOIN BERHASIL via API! (Total: ' + rainState.successCount + ' sukses)', '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_join_success');
+                            addLog('[RAIN] JOIN OK (Total: ' + rainState.successCount + ')', '#4ade80', '[R]', 'rain_join_success');
                             sendTelegramReport(true, null);
                             updateRainUI();
                         } else if (joinResult.joined === false) {
                             rainState.failCount++;
                             rainState.status = 'failed';
                             var reason = joinResult.ineligibleReason || 'Unknown';
-                            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ JOIN GAGAL: ' + reason, '#f87171', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_join_fail_' + reason);
+                            addLog('[RAIN] JOIN FAIL: ' + reason, '#f87171', '[R]', 'rain_join_fail');
                             sendTelegramReport(false, reason);
                             updateRainUI();
                         }
@@ -1593,9 +1440,7 @@
         var selectors = [
             'div.shrink-0 button.font-small-1-semibold',
             '.shrink-0 .font-small-1-semibold',
-            'button.font-small-1-semibold',
-            'div.shrink-0 button',
-            '.shrink-0 button'
+            'button.font-small-1-semibold'
         ];
         
         for (var i = 0; i < selectors.length; i++) {
@@ -1707,19 +1552,6 @@
         return false;
     }
 
-    function isElementVisible(element) {
-        if (!element) return false;
-        var rect = element.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return false;
-        if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
-        if (rect.right < 0 || rect.left > window.innerWidth) return false;
-        var style = window.getComputedStyle(element);
-        if (style.display === 'none') return false;
-        if (style.visibility === 'hidden') return false;
-        if (parseFloat(style.opacity) < 0.1) return false;
-        return true;
-    }
-
     function sendTelegramReport(isSuccess, reason) {
         reason = reason || null;
         if (!rainState.username.trim()) return;
@@ -1733,8 +1565,8 @@
             second: '2-digit'
         });
         
-        var message = 'Ã°ÂÂÂ² DiceY Rain Catcher\nUsername: ' + rainState.username + '\nWaktu: ' + timeStr + '\nÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ\n';
-        message += isSuccess ? 'Ã¢ÂÂ STATUS: BERHASIL JOIN!\nTotal Berhasil: ' + rainState.successCount + ' kali' : 'Ã¢ÂÂ STATUS: GAGAL JOIN\nAlasan: ' + (reason || 'Tidak diketahui');
+        var message = 'DiceY Rain Catcher\nUser: ' + rainState.username + '\nTime: ' + timeStr + '\n---\n';
+        message += isSuccess ? 'OK - Joined! Total: ' + rainState.successCount : 'FAIL - ' + (reason || 'Unknown');
 
         var url = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
         fetch(url, {
@@ -1763,27 +1595,27 @@
         if (rainState.isRunning) {
             if (dot) dot.style.background = rainState.isScanning ? '#ff922b' : '#4ade80';
             if (statusText) {
-                statusText.textContent = rainState.isScanning ? 'Ã¢ÂÂ SCANNING' : 'Ã¢ÂÂ RUNNING';
+                statusText.textContent = rainState.isScanning ? 'SCANNING' : 'RUNNING';
                 statusText.style.color = rainState.isScanning ? '#ff922b' : '#4ade80';
             }
             if (modeText) {
-                modeText.textContent = rainState.isScanning ? 'Ã°ÂÂÂ SCANNING' : 'Ã¢ÂÂ¸Ã¯Â¸Â IDLE';
+                modeText.textContent = rainState.isScanning ? '[SCAN]' : '[IDLE]';
                 modeText.style.color = rainState.isScanning ? '#ff922b' : '#888';
             }
         } else {
             if (dot) dot.style.background = '#888';
             if (statusText) {
-                statusText.textContent = 'Ã¢ÂÂ STOPPED';
+                statusText.textContent = 'STOPPED';
                 statusText.style.color = '#888';
             }
             if (modeText) {
-                modeText.textContent = 'Ã¢ÂÂ¸Ã¯Â¸Â IDLE';
+                modeText.textContent = '[IDLE]';
                 modeText.style.color = '#888';
             }
         }
 
         if (startBtn) {
-            startBtn.textContent = rainState.isRunning ? 'Ã¢ÂÂ RUNNING' : 'Ã¢ÂÂ¶ START RAIN';
+            startBtn.textContent = rainState.isRunning ? 'RUNNING' : 'START';
             startBtn.style.opacity = rainState.isRunning ? '0.6' : (isLicensed ? '1' : '0.3');
         }
         if (stopBtn) {
@@ -1798,7 +1630,7 @@
         if (addBtn) {
             if (rainState.lastJoinStatus !== 'joined') {
                 rainState.lastJoinStatus = 'joined';
-                addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ Already in rain pool - waiting...', '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_add_to_rain');
+                addLog('[RAIN] Already in pool', '#4ade80', '[R]', 'rain_add_to_rain');
                 rainState.status = 'waiting';
                 updateRainUI();
             }
@@ -1814,10 +1646,10 @@
             }
             
             if (isActive) {
-                addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ Clicking JOIN button...', '#ff922b', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_click_join');
+                addLog('[RAIN] Clicking JOIN...', '#ff922b', '[R]', 'rain_click_join');
                 var clicked = forceClickButton(joinBtn);
                 if (clicked) {
-                    addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ JOIN clicked! Waiting for response...', '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_join_clicked');
+                    addLog('[RAIN] JOIN clicked!', '#4ade80', '[R]', 'rain_join_clicked');
                     rainState.lastJoinStatus = null;
                     rainState.status = 'searching';
                     updateRainUI();
@@ -1847,16 +1679,7 @@
                 credentials: 'include',
                 body: JSON.stringify({
                     operationName: 'JoinRain',
-                    query: `
-                        mutation JoinRain($potId: ID!) {
-                            joinRain(potId: $potId) {
-                                joined
-                                alreadyJoined
-                                ineligibleReason
-                                __typename
-                            }
-                        }
-                    `,
+                    query: 'mutation JoinRain($potId: ID!) { joinRain(potId: $potId) { joined alreadyJoined ineligibleReason __typename } }',
                     variables: { potId: potId }
                 })
             });
@@ -1868,7 +1691,7 @@
                 rainState.successCount++;
                 rainState.status = 'waiting';
                 rainState.lastJoinStatus = 'joined';
-                addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ JOIN BERHASIL via API! (Total: ' + rainState.successCount + ' sukses)', '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_join_success_api');
+                addLog('[RAIN] JOIN OK via API! (Total: ' + rainState.successCount + ')', '#4ade80', '[R]', 'rain_join_success_api');
                 sendTelegramReport(true, null);
                 updateRainUI();
                 return true;
@@ -1876,7 +1699,7 @@
                 rainState.failCount++;
                 rainState.status = 'failed';
                 var reason = result?.ineligibleReason || 'Unknown';
-                addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ JOIN GAGAL via API: ' + reason, '#f87171', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_join_fail_api_' + reason);
+                addLog('[RAIN] JOIN FAIL: ' + reason, '#f87171', '[R]', 'rain_join_fail_api');
                 sendTelegramReport(false, reason);
                 updateRainUI();
                 return false;
@@ -1884,18 +1707,18 @@
             
             return false;
         } catch(e) {
-            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ Ã¯Â¸Â API error: ' + e.message, '#ff6b6b', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_api_error');
+            addLog('[RAIN] API error: ' + e.message, '#ff6b6b', '[R]', 'rain_api_error');
             return false;
         }
     }
 
     function startRainBot() {
         if (!isLicensed) {
-            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ Ã¯Â¸Â License required!', '#f87171', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_license_required');
+            addLog('[!] License required!', '#f87171', '[!]', 'rain_license_required');
             return;
         }
         if (rainState.isRunning) {
-            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ Ã¯Â¸Â Already running', '#ffd700', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_already');
+            addLog('[!] Already running', '#ffd700', '[!]', 'rain_already');
             return;
         }
 
@@ -1906,9 +1729,6 @@
         rainState.failCount = 0;
         rainState.status = 'idle';
         rainState.lastJoinStatus = null;
-        rainState.chatOpened = false;
-        rainState.processCount = 0;
-        rainState.joinTime = null;
         rainState._lastNoJoinLog = null;
         rainState.lastPotId = null;
         
@@ -1918,16 +1738,15 @@
         DOM_CACHE.chatOpen = false;
         DOM_CACHE.lastScan = 0;
 
-        addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ¶Ã¯Â¸Â Rain started @' + rainState.username, '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_start');
-        addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ¡ API interceptor active', '#60a5fa', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_api');
-        addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ API-First: Scan every 15 seconds', '#60a5fa', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_scan');
+        addLog('[RAIN] Started @' + rainState.username, '#4ade80', '[R]', 'rain_start');
+        addLog('[RAIN] API-First: Scan every 15s', '#60a5fa', '[R]', 'rain_scan');
 
         setTimeout(function() {
             if (rainState.isRunning) {
                 var chatTab = findChatTab();
                 if (chatTab) {
                     forceClickButton(chatTab);
-                    addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ Chat tab opened', '#60a5fa', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_chat_open');
+                    addLog('[RAIN] Chat opened', '#60a5fa', '[R]', 'rain_chat_open');
                 }
             }
         }, 500);
@@ -1937,13 +1756,13 @@
             
             rainState.isScanning = true;
             updateRainUI();
-            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ Scanning...', '#60a5fa', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_scan_start');
+            addLog('[RAIN] Scanning...', '#60a5fa', '[R]', 'rain_scan_start');
             
             if (!isChatroomOpen()) {
                 var chatTab = findChatTab();
                 if (chatTab) {
                     forceClickButton(chatTab);
-                    addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ Re-opening chat', '#60a5fa', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_reopen_chat');
+                    addLog('[RAIN] Re-opening chat', '#60a5fa', '[R]', 'rain_reopen_chat');
                 }
             }
             
@@ -1951,7 +1770,7 @@
             if (addBtn) {
                 if (rainState.lastJoinStatus !== 'joined') {
                     rainState.lastJoinStatus = 'joined';
-                    addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ Already in rain pool - waiting...', '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_add_to_rain');
+                    addLog('[RAIN] Already in pool', '#4ade80', '[R]', 'rain_add_to_rain');
                     rainState.status = 'waiting';
                 }
                 rainState.isScanning = false;
@@ -1964,22 +1783,22 @@
             
             if (rainState.lastJoinStatus === 'joined') {
                 rainState.lastJoinStatus = null;
-                addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ "Add to Rain" gone! Checking "Join"...', '#60a5fa', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_add_gone');
+                addLog('[RAIN] Add to Rain gone!', '#60a5fa', '[R]', 'rain_add_gone');
                 rainState.status = 'searching';
                 updateRainUI();
             }
             
             if (rainState.lastPotId) {
-                addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ Joining via API...', '#ff922b', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_api_join');
+                addLog('[RAIN] Joining via API...', '#ff922b', '[R]', 'rain_api_join');
                 joinRainViaAPI(rainState.lastPotId).then(function(success) {
                     rainState.isScanning = false;
                     updateRainUI();
                     
                     if (!success) {
-                        addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ API failed, trying DOM...', '#ff922b', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_dom_fallback');
+                        addLog('[RAIN] API failed, trying DOM...', '#ff922b', '[R]', 'rain_dom_fallback');
                         var domSuccess = clickRainJoinDOM();
                         if (!domSuccess) {
-                            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ³ No rain available (DOM)', '#888', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_no_rain');
+                            addLog('[RAIN] No rain available', '#888', '[R]', 'rain_no_rain');
                             rainState.status = 'idle';
                         }
                     }
@@ -1991,12 +1810,12 @@
                 return;
             }
             
-            addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã°ÂÂÂ No potId, using DOM...', '#ff922b', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_no_potid');
+            addLog('[RAIN] No potId, using DOM...', '#ff922b', '[R]', 'rain_no_potid');
             var domSuccess = clickRainJoinDOM();
             if (!domSuccess) {
                 var now = Date.now();
                 if (!rainState._lastNoJoinLog || (now - rainState._lastNoJoinLog) > 30000) {
-                    addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ³ No JOIN button, waiting...', '#888', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_no_join');
+                    addLog('[RAIN] No JOIN button, waiting...', '#888', '[R]', 'rain_no_join');
                     rainState._lastNoJoinLog = now;
                 }
                 rainState.status = 'idle';
@@ -2024,8 +1843,6 @@
         rainState.isScanning = false;
         rainState.status = 'idle';
         rainState.lastJoinStatus = null;
-        rainState.chatOpened = false;
-        rainState.processCount = 0;
         rainState._lastNoJoinLog = null;
         rainState.lastPotId = null;
         
@@ -2039,7 +1856,7 @@
             clearInterval(rainState.interval);
             rainState.interval = null;
         }
-        addLog('Ã°ÂÂÂ§Ã¯Â¸Â Ã¢ÂÂ¹Ã¯Â¸Â Rain stopped', '#f87171', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_stop');
+        addLog('[RAIN] Stopped', '#f87171', '[R]', 'rain_stop');
         updateRainUI();
     }
 
@@ -2049,7 +1866,7 @@
     window.addEventListener('beforeunload', function(e) {
         if (wagerState.isRunning || rainState.isRunning) {
             saveFullState();
-            var msg = 'Ã¢ÂÂ Ã¯Â¸Â Bot sedang berjalan! Data akan disimpan. Refresh?';
+            var msg = 'Bot running! State saved.';
             e.preventDefault();
             e.returnValue = msg;
             return msg;
@@ -2060,19 +1877,13 @@
         if (e.key === 'F5') {
             e.preventDefault();
             e.stopPropagation();
-            addLog('Ã°ÂÂÂ« Refresh diblokir (F5)', '#ff6b6b', 'Ã°ÂÂÂ«', 'block_f5');
+            addLog('[BLOCK] F5', '#ff6b6b', '[B]', 'block_f5');
             return false;
         }
         if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
             e.preventDefault();
             e.stopPropagation();
-            addLog('Ã°ÂÂÂ« Refresh diblokir (Ctrl+R)', '#ff6b6b', 'Ã°ÂÂÂ«', 'block_ctrl_r');
-            return false;
-        }
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
-            e.preventDefault();
-            e.stopPropagation();
-            addLog('Ã°ÂÂÂ« Refresh diblokir (Ctrl+Shift+R)', '#ff6b6b', 'Ã°ÂÂÂ«', 'block_hard');
+            addLog('[BLOCK] Ctrl+R', '#ff6b6b', '[B]', 'block_ctrl_r');
             return false;
         }
     }, { passive: false, capture: true });
@@ -2085,7 +1896,7 @@
     }, { capture: true });
 
     // ============================================================
-    // SAVE & RESTORE STATE
+    // SAVE & RESTORE
     // ============================================================
     function saveFullState() {
         try {
@@ -2140,7 +1951,6 @@
                     username: rainState.username || currentUsername,
                     status: rainState.status || 'idle',
                     lastJoinStatus: rainState.lastJoinStatus || null,
-                    chatOpened: rainState.chatOpened || false,
                     lastPotId: rainState.lastPotId || null
                 },
                 timestamp: Date.now()
@@ -2235,7 +2045,7 @@
                 updateWagerUI();
                 
                 if (w.isRunning && !w.isPaused) {
-                    addLog('Ã¢ÂÂ¶Ã¯Â¸Â RESUME WAGER BOT OTOMATIS!', '#4ade80', 'Ã¢ÂÂ¶Ã¯Â¸Â', 'auto_resume');
+                    addLog('[AUTO] RESUME WAGER', '#4ade80', '[A]', 'auto_resume');
                     wagerState.isRunning = true;
                     wagerState.isPaused = false;
                     wagerState.isLooping = false;
@@ -2246,7 +2056,7 @@
                         }
                     }, 2000);
                 } else if (w.isRunning && w.isPaused) {
-                    addLog('Ã¢ÂÂ¸ Wager bot in PAUSED state', '#ff922b', 'Ã¢ÂÂ¸', 'auto_paused');
+                    addLog('[AUTO] WAGER PAUSED', '#ff922b', '[A]', 'auto_paused');
                     wagerState.isRunning = true;
                     wagerState.isPaused = true;
                     updateWagerUI();
@@ -2260,12 +2070,11 @@
                 rainState.username = r.username || currentUsername;
                 rainState.status = r.status || 'idle';
                 rainState.lastJoinStatus = r.lastJoinStatus || null;
-                rainState.chatOpened = r.chatOpened || false;
                 rainState.lastPotId = r.lastPotId || null;
                 updateRainUI();
                 
                 if (r.isRunning) {
-                    addLog('Ã°ÂÂÂ§Ã¯Â¸Â RESUME RAIN CATCHER OTOMATIS!', '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'rain_auto_resume');
+                    addLog('[AUTO] RESUME RAIN', '#4ade80', '[A]', 'rain_auto_resume');
                     rainState.isRunning = true;
                     rainState.isScanning = false;
                     rainState.status = 'searching';
@@ -2280,13 +2089,6 @@
                                 joinRainViaAPI(rainState.lastPotId).then(function() {
                                     rainState.isScanning = false;
                                     updateRainUI();
-                                    if (rainState.isRunning) {
-                                        setTimeout(function() {
-                                            if (rainState.isRunning) {
-                                                // Re-run loop
-                                            }
-                                        }, 15000);
-                                    }
                                 });
                             }
                         }
@@ -2294,7 +2096,7 @@
                 }
             }
             
-            addLog('Ã¢ÂÂ STATE RESTORED SUCCESSFULLY!', '#4ade80', 'Ã¢ÂÂ', 'restore_done');
+            addLog('[AUTO] STATE RESTORED', '#4ade80', '[A]', 'restore_done');
             return true;
             
         } catch(e) {
@@ -2317,7 +2119,7 @@
         var log = $('dicey-log');
         if (log) {
             log.innerHTML = '';
-            addLog('Ã°ÂÂÂ Log cleared', '#888', 'Ã°ÂÂ§Â¹', 'log_clear');
+            addLog('[LOG] Cleared', '#888', '[L]', 'log_clear');
         }
     });
     
@@ -2338,15 +2140,15 @@
                 entry.style.display = 'flex';
             } else if (logFilter === 'wager') {
                 var isWager = text.includes('BET') || text.includes('WIN') || text.includes('LOSS') || 
-                              text.includes('LAYER') || text.includes('WAGER') || text.includes('Ã°ÂÂÂ¯');
+                              text.includes('LAYER') || text.includes('WAGER') || text.includes('[W]');
                 entry.style.display = isWager ? 'flex' : 'none';
             } else if (logFilter === 'rain') {
                 var isRain = text.includes('RAIN') || text.includes('JOIN') || 
-                             text.includes('splash') || text.includes('Add to Rain') || text.includes('Ã°ÂÂÂ§Ã¯Â¸Â');
+                             text.includes('pool') || text.includes('[R]');
                 entry.style.display = isRain ? 'flex' : 'none';
             } else if (logFilter === 'system') {
-                var isSystem = text.includes('READY') || text.includes('START') || 
-                               text.includes('STOP') || text.includes('RESUME') || text.includes('Ã°ÂÂÂ');
+                var isSystem = text.includes('START') || text.includes('STOP') || 
+                               text.includes('RESUME') || text.includes('[A]');
                 entry.style.display = isSystem ? 'flex' : 'none';
             }
         });
@@ -2415,7 +2217,7 @@
         minimized = !minimized;
         var content = $('dicey-content');
         if (content) content.style.display = minimized ? 'none' : 'block';
-        this.textContent = minimized ? 'Ã¢ÂÂ²' : 'Ã¢ÂÂ¼';
+        this.textContent = minimized ? '+' : '-';
         container.style.height = minimized ? '44px' : '100%';
     });
 
@@ -2468,32 +2270,25 @@
     setTimeout(updateRainUI, 700);
     setTimeout(updateWagerTarget, 800);
     
-    addLog('Ã°ÂÂÂ DiceY engine v7.0 is READY', '#9ec07c', 'Ã°ÂÂÂ', 'init');
-    addLog('Ã°ÂÂÂ Enter license key to unlock bots', '#ffd700', 'Ã°ÂÂÂ', 'init_license');
-    addLog('Ã°ÂÂÂ° Balance: ~' + wagerState.currentBalance.toFixed(4) + ' ' + getCurrencyDisplay(), '#00e5c0', 'Ã°ÂÂÂ°', 'init_balance');
-    addLog('Ã°ÂÂÂ Layer 1: 98% chance, bet 0.01 ' + getCurrencyDisplay(), '#00e5c0', 'Ã°ÂÂÂ', 'init_l1');
-    addLog('Ã°ÂÂÂ Layer 2: 65% chance (inc +1%, max 99%)', '#ff922b', 'Ã°ÂÂÂ', 'init_l2');
-    addLog('Ã°ÂÂÂ Stop Loss: 90%', '#ff6b6b', 'Ã°ÂÂÂ', 'init_stop');
-    addLog('Ã°ÂÂÂ§Ã¯Â¸Â Rain Catcher Ready (API-First)', '#4ade80', 'Ã°ÂÂÂ§Ã¯Â¸Â', 'init_rain');
+    addLog('[INIT] DiceY Engine v7.0 READY', '#9ec07c', '[I]', 'init');
+    addLog('[INIT] Enter license to unlock', '#ffd700', '[I]', 'init_license');
+    addLog('[INIT] Balance: ~' + wagerState.currentBalance.toFixed(4) + ' ' + getCurrencyDisplay(), '#00e5c0', '[I]', 'init_balance');
 
     setTimeout(function() {
         var hasState = localStorage.getItem('dicey_full_state');
         if (hasState) {
-            addLog('Ã°ÂÂÂ¦ Found saved state, restoring...', '#60a5fa', 'Ã°ÂÂÂ¦', 'restore_check');
+            addLog('[INIT] Found saved state, restoring...', '#60a5fa', '[I]', 'restore_check');
             setTimeout(function() {
                 var restored = restoreAndResume();
                 if (restored) {
-                    addLog('Ã¢ÂÂ Bot resumed automatically!', '#4ade80', 'Ã¢ÂÂ', 'resume_done');
+                    addLog('[INIT] Bot resumed!', '#4ade80', '[I]', 'resume_done');
                 }
             }, 2000);
         }
     }, 3000);
 
-    console.log('Ã¢ÂÂ¡ DiceY Engine v7.0 is READY');
-    console.log('Ã°ÂÂÂ Enter license key + username to unlock');
-    console.log('Ã°ÂÂÂ List of valid licenses:');
-    console.log(LICENSES);
-    console.log('Ã°ÂÂÂ Rain: API-First, DOM Fallback');
-    console.log('Ã°ÂÂÂ Ctrl+Enter: start/stop wager | Ctrl+Space: pause');
+    console.log('DiceY Engine v7.0 READY');
+    console.log('Enter license + username to unlock');
+    console.log('Ctrl+Enter: start/stop | Ctrl+Space: pause');
 
 })();
