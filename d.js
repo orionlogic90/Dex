@@ -8,19 +8,25 @@
     // LICENSES DATABASE
     // ============================================================
     const LICENSES = {
-        "TRIAL001": {
-            user: "trial",
-            expiry: "2026-12-31",
-            plan: "trial",
-            created: "2026-07-15"
-        },
-        "DEMO2024": {
-            user: "demo",
-            expiry: "2026-12-31",
-            plan: "demo",
-            created: "2026-07-15"
-        }
-    };
+    "TRIAL001": {
+        "user": "trial",
+        "expiry": "2026-12-31",
+        "plan": "trial",
+        "created": "2026-07-15"
+    },
+    "DEMO2024": {
+        "user": "demo",
+        "expiry": "2026-12-31",
+        "plan": "demo",
+        "created": "2026-07-15"
+    },
+    "13N7F713Y6FW": {
+        "user": "ramadhan",
+        "expiry": "2027-07-15",
+        "plan": "lifetime",
+        "created": "2026-07-15"
+    }
+};
 
     // ============================================================
     // CHECK LICENSE
