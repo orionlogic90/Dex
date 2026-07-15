@@ -25,6 +25,12 @@
         "expiry": "2027-07-15",
         "plan": "lifetime",
         "created": "2026-07-15"
+    },
+    "ZXH3NJSJHEJC": {
+        "user": "dengkodice",
+        "expiry": "2027-07-15",
+        "plan": "lifetime",
+        "created": "2026-07-15"
     }
 };
 
