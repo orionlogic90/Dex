@@ -23,5 +23,19 @@
         "last_used": "2026-07-18T14:48:17.111059",
         "last_ip": "140.213.40.125",
         "last_hwid": "2bf02f2fb05e2cace603f9e4ec43ee22"
+    },
+    "DICEY-2026-WVNE-8LSE": {
+        "licensed_to": "ramadhanabd85@gmail.com",
+        "expiry": "2027-12-31",
+        "plan": "premium",
+        "features": [
+            "wager",
+            "rain",
+            "rewards",
+            "booster",
+            "autochat"
+        ],
+        "status": "active",
+        "created_at": "2026-07-18"
     }
 }
