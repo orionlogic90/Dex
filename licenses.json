@@ -42,10 +42,11 @@
         ],
         "hwids": [
             "467cf2408def84e5799cdce5011920ae",
-            "8779a74d24a9f2c7f8b81c1ce58147e3"
+            "8779a74d24a9f2c7f8b81c1ce58147e3",
+            "2cbe095bd0e3cc531c79be8e6374aa91"
         ],
-        "last_used": "2026-07-18T17:10:58.714920",
+        "last_used": "2026-07-18T17:49:15.279694",
         "last_ip": "112.215.243.223",
-        "last_hwid": "8779a74d24a9f2c7f8b81c1ce58147e3"
+        "last_hwid": "2cbe095bd0e3cc531c79be8e6374aa91"
     }
 }
