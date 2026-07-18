@@ -1,0 +1,10 @@
+{
+    "DICEY-2026-A7B9-C4D2": {
+        "licensed_to": "OrionLogic",
+        "expiry": "2027-12-31",
+        "max_accounts": 5,
+        "features": ["wager", "rain", "rewards", "booster", "autochat"],
+        "status": "active",
+        "created_at": "2026-07-18"
+    }
+}
