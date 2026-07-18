@@ -3,8 +3,23 @@
         "licensed_to": "OrionLogic",
         "expiry": "2027-12-31",
         "max_accounts": 5,
-        "features": ["wager", "rain", "rewards", "booster", "autochat"],
+        "features": [
+            "wager",
+            "rain",
+            "rewards",
+            "booster",
+            "autochat"
+        ],
         "status": "active",
-        "created_at": "2026-07-18"
+        "created_at": "2026-07-18",
+        "ips": [
+            "140.213.40.125"
+        ],
+        "hwids": [
+            "7cda4917bdf9f0935fa9a0711b3ebdf3"
+        ],
+        "last_used": "2026-07-18T14:31:28.887834",
+        "last_ip": "140.213.40.125",
+        "last_hwid": "7cda4917bdf9f0935fa9a0711b3ebdf3"
     }
 }
