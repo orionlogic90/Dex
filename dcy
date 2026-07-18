@@ -97,6 +97,24 @@
         "expiry": "2027-07-17",
         "plan": "lifetime",
         "created": "2026-07-17"
+    },
+    "6CQ7L1JJHYH9": {
+        "user": "halo_8b0c",
+        "expiry": "2027-07-18",
+        "plan": "lifetime",
+        "created": "2026-07-18"
+    },
+    "4LD1DJMII24W": {
+        "user": "halo_wolk",
+        "expiry": "2027-07-18",
+        "plan": "lifetime",
+        "created": "2026-07-18"
+    },
+    "LDUE69VLDRCF": {
+        "user": "halo_qvh7",
+        "expiry": "2027-07-18",
+        "plan": "lifetime",
+        "created": "2026-07-18"
     }
 };
 
