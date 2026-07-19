@@ -86,5 +86,19 @@
         "last_used": "2026-07-18T22:29:03.344192",
         "last_ip": "178.128.109.109",
         "last_hwid": "336d5ebc5436534e61d16e63ddfca327"
+    },
+    "DICEY-2026-HBY9-YGUB": {
+        "licensed_to": "rahmadsyah54@gmail.com",
+        "expiry": "2027-12-31",
+        "plan": "lifetime",
+        "features": [
+            "wager",
+            "rain",
+            "rewards",
+            "booster",
+            "autochat"
+        ],
+        "status": "active",
+        "created_at": "2026-07-19"
     }
 }
