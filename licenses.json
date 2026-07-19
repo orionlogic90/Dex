@@ -16,7 +16,8 @@
             "140.213.40.125",
             "36.78.124.17",
             "202.146.251.10",
-            "182.253.50.173"
+            "182.253.50.173",
+            "168.144.98.142"
         ],
         "hwids": [
             "7cda4917bdf9f0935fa9a0711b3ebdf3",
@@ -32,11 +33,12 @@
             "e4dcb5d231d06c05edf9d187475e5f1c",
             "50653145ae24cb4dbaed64cf4684938f",
             "415e1d9c42d3fa57dbd1a1d37d4b6083",
-            "2742603f7ce94b02fafc380b4fdb8efa"
+            "2742603f7ce94b02fafc380b4fdb8efa",
+            "336d5ebc5436534e61d16e63ddfca327"
         ],
-        "last_used": "2026-07-20T01:18:41.712217",
-        "last_ip": "182.253.50.173",
-        "last_hwid": "2742603f7ce94b02fafc380b4fdb8efa"
+        "last_used": "2026-07-19T11:34:38.432295",
+        "last_ip": "168.144.98.142",
+        "last_hwid": "336d5ebc5436534e61d16e63ddfca327"
     },
     "DICEY-2026-WVNE-8LSE": {
         "licensed_to": "ramadhanabd85@gmail.com",
