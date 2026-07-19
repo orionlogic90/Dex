@@ -119,5 +119,19 @@
         ],
         "status": "active",
         "created_at": "2026-07-19"
+    },
+    "DICEY-2026-VKVX-I6OW": {
+        "licensed_to": "rahmadsyah54@gmail.com",
+        "expiry": "2027-12-31",
+        "plan": "lifetime",
+        "features": [
+            "wager",
+            "rain",
+            "rewards",
+            "booster",
+            "autochat"
+        ],
+        "status": "active",
+        "created_at": "2026-07-19"
     }
 }
