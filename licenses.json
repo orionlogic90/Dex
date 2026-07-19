@@ -132,6 +132,15 @@
             "autochat"
         ],
         "status": "active",
-        "created_at": "2026-07-19"
+        "created_at": "2026-07-19",
+        "ips": [
+            "152.42.163.175"
+        ],
+        "hwids": [
+            "336d5ebc5436534e61d16e63ddfca327"
+        ],
+        "last_used": "2026-07-19T18:02:46.600285",
+        "last_ip": "152.42.163.175",
+        "last_hwid": "336d5ebc5436534e61d16e63ddfca327"
     }
 }
