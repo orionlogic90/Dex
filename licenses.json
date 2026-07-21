@@ -172,5 +172,19 @@
         "last_used": "2026-07-20T16:32:49.193894",
         "last_ip": "143.244.141.63",
         "last_hwid": "336d5ebc5436534e61d16e63ddfca327"
+    },
+    "DICEY-2026-VWMN-YFOO": {
+        "licensed_to": "pacultugu@gmail.com",
+        "expiry": "2028-12-31",
+        "plan": "lifetime",
+        "features": [
+            "wager",
+            "rain",
+            "rewards",
+            "booster",
+            "autochat"
+        ],
+        "status": "active",
+        "created_at": "2026-07-21"
     }
 }
