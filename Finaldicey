@@ -2724,7 +2724,7 @@
     // ============================================================
     // WAGER START/STOP/PAUSE/RESET
     // ============================================================
-    let prevWagerRunning = false;
+   // let prevWagerRunning = false;
 
     function startWagerBot() {
         if (!isLicensed) {
