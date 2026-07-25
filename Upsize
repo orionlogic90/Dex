@@ -8,8 +8,8 @@
     // LICENSES DATABASE
     // ============================================================
     const LICENSES = {
-        "CHEAPCHEATX": {
-            "user": "cheapcheatx",
+        "WARISAN99": {
+            "user": "Warisan99",
             "expiry": "2027-07-15",
             "plan": "lifetime",
             "created": "2026-07-15"
