@@ -1,5 +1,6 @@
 // ==================== CHEAPCHEATX v2.0 - BLACKJACK EDITION ====================
 // ==================== HARVEST → RECOVERY PURE DATA-BASED ====================
+// ==================== STRATEGI BASIC STRATEGY STANDARD ====================
 (function () {
     // ==================== 1. CONFIG ====================
     const CONFIG = {
@@ -8,7 +9,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 1, // Blackjack hanya 1 karena multi-step
+        wagerParallelCap: 1,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
@@ -20,11 +21,11 @@
 
     // ==================== 2. STATE ====================
     const STATE = {
-        // ===== BLACKJACK STREAK TRACKING =====
+        // ===== STREAK TRACKING =====
         lossStreak: 0,
         winStreak: 0,
-        harvestTrigger: 3,      // 3x loss → harvest
-        recoveryTrigger: 5,     // 5x loss → recovery
+        harvestTrigger: 3,
+        recoveryTrigger: 5,
         
         // ===== MODE =====
         isRunning: false,
@@ -40,11 +41,13 @@
         minimized: false,
         
         // ===== BLACKJACK STATE =====
-        bjGameId: null,
-        bjState: null,
-        bjAction: null,
-        bjInProgress: false,
-        bjLastResult: null, // 'win', 'loss', 'push'
+        bjActiveGame: false,
+        bjActiveGameId: null,
+        bjActiveState: null,
+        bjActionCount: 0,
+        bjMaxActions: 10,
+        bjForceStandAttempted: false,
+        bjLastResult: null,
         
         // ===== RECOVERY =====
         recovery: null,
@@ -57,7 +60,7 @@
         recoveryStartBalance: 0,
         
         // ===== HARVEST =====
-        harvestChance: 0, // Tidak digunakan, tapi tetap untuk kompatibilitas
+        harvestChance: 0,
         harvestBet: 0,
         harvestCount: 0,
         harvestStartBalance: 0,
@@ -67,7 +70,7 @@
         harvestWorstDrawdown: 0,
         harvestBaseBet: 0,
         harvestBetPercent: 0.25,
-        harvestMultiplier: 1,
+        harvestMultiplier: 1.5,
         
         // ===== BALANCE =====
         balance: 0,
@@ -93,7 +96,7 @@
         wagerWaitingForTrigger: false,
         
         // ===== NORMAL =====
-        normalChance: 99.98, // Untuk display saja
+        normalChance: 99.98,
         baseBetPercent: 0.125,
         minBet: 0.0014,
         maxBetCap: 0,
@@ -178,14 +181,22 @@
         return d <= 0 ? 0 : STATE.betTimestamps.length / d;
     }
 
+    function generateId() {
+        return Math.random().toString(36).substring(2, 15) + 
+               Math.random().toString(36).substring(2, 15);
+    }
+
+    // ==================== 4. BLACKJACK CARD UTILITY ====================
     function getCardValue(card) {
+        if (!card || !card.rank) return 0;
         const rank = card.rank;
         if (['K', 'Q', 'J'].includes(rank)) return 10;
         if (rank === 'A') return 11;
-        return parseInt(rank);
+        return parseInt(rank) || 0;
     }
 
     function getHandValue(cards) {
+        if (!cards || cards.length === 0) return 0;
         let total = 0;
         let aces = 0;
         for (let c of cards) {
@@ -200,36 +211,94 @@
         return total;
     }
 
-    function generateId() {
-        return Math.random().toString(36).substring(2, 15) + 
-               Math.random().toString(36).substring(2, 15);
+    // ==================== 5. BASIC STRATEGY ====================
+    function getHardAction(value, dealerValue) {
+        if (value >= 17) return 'stand';
+        if (value >= 13 && value <= 16) {
+            if (dealerValue >= 7) return 'hit';
+            return 'stand';
+        }
+        if (value === 12) {
+            if (dealerValue >= 4 && dealerValue <= 6) return 'stand';
+            return 'hit';
+        }
+        if (value === 11) {
+            if (dealerValue === 11) return 'hit';
+            return 'double';
+        }
+        if (value === 10) {
+            if (dealerValue >= 10) return 'hit';
+            return 'double';
+        }
+        if (value === 9) {
+            if (dealerValue >= 3 && dealerValue <= 6) return 'double';
+            return 'hit';
+        }
+        if (value <= 8) return 'hit';
+        return 'hit';
     }
 
-    // ==================== 4. BLACKJACK LOGIC ====================
-    
-    // 4.1 Parse Result dari State
-    function parseBlackjackResult(state) {
-        if (!state || !state.player || !state.dealer) return 'loss';
-        
-        const playerHand = state.player[0];
-        const dealerHand = state.dealer[0];
-        
-        if (!playerHand || !dealerHand) return 'loss';
-        
-        const playerValue = playerHand.value || getHandValue(playerHand.cards);
-        const dealerValue = dealerHand.value || getHandValue(dealerHand.cards);
-        
-        // Player bust
-        if (playerValue > 21) return 'loss';
-        // Dealer bust
-        if (dealerValue > 21) return 'win';
-        // Compare
-        if (playerValue > dealerValue) return 'win';
-        if (playerValue < dealerValue) return 'loss';
-        return 'push'; // Seri → dianggap LOSS
+    function getSoftAction(value, dealerValue) {
+        if (value >= 19) return 'stand';
+        if (value === 18) {
+            if (dealerValue >= 9) return 'hit';
+            return 'stand';
+        }
+        if (value === 17) {
+            if (dealerValue >= 3 && dealerValue <= 6) return 'double';
+            return 'hit';
+        }
+        if (value === 16) {
+            if (dealerValue >= 4 && dealerValue <= 6) return 'double';
+            return 'hit';
+        }
+        if (value === 15) {
+            if (dealerValue >= 4 && dealerValue <= 6) return 'double';
+            return 'hit';
+        }
+        if (value === 14) {
+            if (dealerValue === 5 || dealerValue === 6) return 'double';
+            return 'hit';
+        }
+        if (value === 13) {
+            if (dealerValue === 5 || dealerValue === 6) return 'double';
+            return 'hit';
+        }
+        if (value <= 12) {
+            if (dealerValue === 5 || dealerValue === 6) return 'double';
+            return 'hit';
+        }
+        return 'hit';
     }
 
-    // 4.2 Basic Strategy
+    function getPairAction(rank, dealerValue) {
+        if (rank === 'A') return 'split';
+        if (rank === 'K' || rank === 'Q' || rank === 'J' || rank === '10') return 'stand';
+        if (rank === '9') {
+            if (dealerValue === 7 || dealerValue === 10 || dealerValue === 11) return 'stand';
+            return 'split';
+        }
+        if (rank === '8') return 'split';
+        if (rank === '7') {
+            if (dealerValue >= 8) return 'hit';
+            return 'split';
+        }
+        if (rank === '6') {
+            if (dealerValue >= 7) return 'hit';
+            return 'split';
+        }
+        if (rank === '5') return 'double';
+        if (rank === '4') {
+            if (dealerValue === 5 || dealerValue === 6) return 'split';
+            return 'hit';
+        }
+        if (rank === '3' || rank === '2') {
+            if (dealerValue >= 8) return 'hit';
+            return 'split';
+        }
+        return 'hit';
+    }
+
     function getBlackjackAction(state) {
         if (!state || !state.player || !state.dealer) return 'stand';
         
@@ -238,104 +307,139 @@
         
         if (!player || !dealer || !player.cards || !dealer.cards) return 'stand';
         
+        const actions = player.actions || [];
+        
+        // Jika tidak bisa action, stand
+        if (!actions.includes('hit') && !actions.includes('double') && !actions.includes('split')) {
+            return 'stand';
+        }
+        
         const playerValue = player.value || getHandValue(player.cards);
         const dealerCard = dealer.cards[0];
         const dealerValue = getCardValue(dealerCard);
         const isPair = player.cards.length === 2 && 
                        player.cards[0].rank === player.cards[1].rank;
         const hasAce = player.cards.some(c => c.rank === 'A');
-        const softTotal = hasAce ? playerValue - 10 : playerValue;
         const rank = player.cards[0].rank;
         
-        // Cek apakah masih bisa action
-        const actions = player.actions || [];
-        if (!actions.includes('hit') && !actions.includes('double') && 
-            !actions.includes('split') && !actions.includes('stand')) {
-            return 'stand';
-        }
-        
-        // ---- PAIR SPLIT ----
+        // ===== PAIR SPLITTING =====
         if (isPair && actions.includes('split')) {
-            if (rank === 'A' || rank === '8') return 'split';
-            if (rank === '9' && ![7, 10, 11].includes(dealerValue)) return 'split';
-            if (rank === '7' && dealerValue <= 7) return 'split';
-            if (rank === '6' && dealerValue <= 6) return 'split';
-            if (rank === '4' && (dealerValue === 5 || dealerValue === 6)) return 'split';
-            if (rank === '3' && dealerValue <= 7) return 'split';
-            if (rank === '2' && dealerValue <= 7) return 'split';
+            const pairAction = getPairAction(rank, dealerValue);
+            if (pairAction === 'split') return 'split';
         }
         
-        // ---- SOFT TOTAL (ada Ace) ----
-        if (hasAce && player.cards.length === 2 && actions.includes('double')) {
-            if (softTotal >= 8) return 'stand';
-            if (softTotal === 7 && [3, 4, 5, 6].includes(dealerValue)) return 'double';
-            if (softTotal === 6 && [3, 4, 5, 6].includes(dealerValue)) return 'double';
-            if (softTotal === 5 && [4, 5, 6].includes(dealerValue)) return 'double';
-            if (softTotal === 4 && [5, 6].includes(dealerValue)) return 'double';
-            if (softTotal === 3 && [5, 6].includes(dealerValue)) return 'double';
-            if (softTotal === 2 && [5, 6].includes(dealerValue)) return 'double';
-        }
-        if (hasAce && player.cards.length === 2) {
-            if (softTotal >= 8) return 'stand';
-            if (softTotal === 7) {
-                if ([3, 4, 5, 6].includes(dealerValue)) return 'double';
-                return 'hit';
-            }
-            if (softTotal === 6) {
-                if ([3, 4, 5, 6].includes(dealerValue)) return 'double';
-                return 'hit';
-            }
-            if (softTotal === 5) {
-                if ([4, 5, 6].includes(dealerValue)) return 'double';
-                return 'hit';
-            }
-            if (softTotal <= 4) {
-                if ([5, 6].includes(dealerValue)) return 'double';
-                return 'hit';
+        // ===== DOUBLE =====
+        if (actions.includes('double')) {
+            // HARD DOUBLE
+            if (playerValue === 11 && dealerValue !== 11) return 'double';
+            if (playerValue === 10 && dealerValue < 10) return 'double';
+            if (playerValue === 9 && dealerValue >= 3 && dealerValue <= 6) return 'double';
+            
+            // SOFT DOUBLE
+            if (hasAce && player.cards.length === 2) {
+                const softTotal = playerValue - 10;
+                if (softTotal === 7 && dealerValue >= 3 && dealerValue <= 6) return 'double';
+                if (softTotal === 6 && dealerValue >= 4 && dealerValue <= 6) return 'double';
+                if (softTotal === 5 && dealerValue >= 4 && dealerValue <= 6) return 'double';
+                if (softTotal === 4 && (dealerValue === 5 || dealerValue === 6)) return 'double';
+                if (softTotal === 3 && (dealerValue === 5 || dealerValue === 6)) return 'double';
+                if (softTotal === 2 && (dealerValue === 5 || dealerValue === 6)) return 'double';
             }
         }
         
-        // ---- HARD TOTAL ----
-        if (playerValue >= 17) return 'stand';
-        if (playerValue >= 13 && playerValue <= 16) {
-            if (dealerValue >= 7) return 'hit';
-            return 'stand';
+        // ===== HARD TOTAL =====
+        if (!hasAce) {
+            return getHardAction(playerValue, dealerValue);
         }
-        if (playerValue === 12) {
-            if ([4, 5, 6].includes(dealerValue)) return 'stand';
-            return 'hit';
-        }
-        if (playerValue === 11) {
-            if (dealerValue === 11) return 'hit';
-            if (actions.includes('double')) return 'double';
-            return 'hit';
-        }
-        if (playerValue === 10) {
-            if (dealerValue >= 10) return 'hit';
-            if (actions.includes('double')) return 'double';
-            return 'hit';
-        }
-        if (playerValue === 9) {
-            if ([3, 4, 5, 6].includes(dealerValue) && actions.includes('double')) return 'double';
-            return 'hit';
-        }
-        if (playerValue <= 8) return 'hit';
         
-        return 'stand';
+        // ===== SOFT TOTAL =====
+        const softTotal = playerValue - 10;
+        return getSoftAction(softTotal, dealerValue);
     }
 
-    // 4.3 Place Blackjack Bet
+    // ==================== 6. PARSE BLACKJACK RESULT ====================
+    function parseBlackjackResult(state) {
+        if (!state || !state.player || !state.dealer) return 'loss';
+        
+        const player = state.player[0];
+        const dealer = state.dealer[0];
+        
+        if (!player || !dealer) return 'loss';
+        
+        const playerValue = player.value || getHandValue(player.cards);
+        const dealerValue = dealer.value || getHandValue(dealer.cards);
+        
+        // Player bust
+        if (playerValue > 21) return 'loss';
+        // Dealer bust
+        if (dealerValue > 21) return 'win';
+        // Compare
+        if (playerValue > dealerValue) return 'win';
+        if (playerValue < dealerValue) return 'loss';
+        return 'push';
+    }
+
+    // ==================== 7. PLACE BLACKJACK BET ====================
     async function placeBlackjackBet(amount) {
-        if (STATE.isDemo) {
-            // Demo mode: simulasi
-            return simulateBlackjack(amount);
-        }
+        const apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
         
         try {
-            // 1. BET
+            // ===== CEK ACTIVE GAME =====
+            if (STATE.bjActiveGame && STATE.bjActiveGameId) {
+                console.log('[BJ] Active game detected! Forcing STAND...');
+                
+                const standPayload = {
+                    action: 'stand',
+                    identifier: STATE.bjActiveGameId
+                };
+                
+                const standRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-access-token': accessToken,
+                        'x-lockdown-token': CONFIG.lockdownToken
+                    },
+                    body: JSON.stringify(standPayload)
+                });
+                
+                const standData = await standRes.json();
+                console.log('[BJ] Force Stand response:', standData);
+                
+                if (standData.error) {
+                    console.error('[BJ] Force Stand error:', standData.error);
+                    STATE.bjActiveGame = false;
+                    STATE.bjActiveGameId = null;
+                    STATE.bjActiveState = null;
+                } else {
+                    const result = parseBlackjackResult(standData.state);
+                    STATE.bjActiveGame = false;
+                    STATE.bjActiveGameId = null;
+                    STATE.bjActiveState = null;
+                    
+                    if (standData.state?.user?.wallets?.[0]) {
+                        STATE.balance = parseFloat(standData.state.user.wallets[0].balance);
+                    }
+                    
+                    return {
+                        result: result,
+                        state: standData.state,
+                        gameId: standData.id,
+                        amount: apiAmount,
+                        isWin: result === 'win',
+                        isPush: result === 'push',
+                        isLoss: result === 'loss',
+                        forcedStand: true
+                    };
+                }
+            }
+            
+            // ===== PLACE BET BARU =====
+            console.log('[BJ] Placing new bet:', apiAmount);
+            
             const betPayload = {
                 identifier: generateId(),
-                amount: parseFloat(amount.toFixed(8)),
+                amount: apiAmount,
                 currency: STATE.selectedCurrency
             };
             
@@ -350,53 +454,70 @@
             });
             
             const betData = await betRes.json();
-            if (betData.error || !betData.blackjackBet) {
+            console.log('[BJ] Bet response:', betData);
+            
+            if (betData.error) {
+                console.error('[BJ] Bet error:', betData.error);
+                STATE.bjActiveGame = false;
+                STATE.bjActiveGameId = null;
+                STATE.bjActiveState = null;
                 return null;
             }
             
-            const gameId = betData.blackjackBet.id;
-            let state = betData.blackjackBet.state;
+            const gameId = betData.id;
+            if (!gameId) {
+                console.error('[BJ] No game ID');
+                STATE.bjActiveGame = false;
+                return null;
+            }
             
-            // 2. LOOP ACTION sampai selesai
-            let action;
-            let maxActions = 10;
+            let state = betData.state;
+            if (!state || !state.player) {
+                console.error('[BJ] No state');
+                STATE.bjActiveGame = false;
+                return null;
+            }
+            
+            // ===== SET ACTIVE GAME =====
+            STATE.bjActiveGame = true;
+            STATE.bjActiveGameId = gameId;
+            STATE.bjActiveState = state;
+            STATE.bjActionCount = 0;
+            STATE.bjForceStandAttempted = false;
+            
+            // ===== LOOP ACTION =====
             let actionCount = 0;
+            const maxActions = STATE.bjMaxActions;
             
-            while (actionCount < maxActions) {
-                action = getBlackjackAction(state);
+            while (actionCount < maxActions && STATE.bjActiveGame) {
+                const player = state.player?.[0];
+                if (!player) break;
                 
-                // Jika stand atau sudah selesai
-                if (action === 'stand' || !state.player[0].actions.includes('hit')) {
+                const actions = player.actions || [];
+                console.log('[BJ] Actions available:', actions);
+                
+                const canAct = actions.includes('hit') || 
+                              actions.includes('double') || 
+                              actions.includes('split');
+                
+                if (!canAct) {
+                    console.log('[BJ] No more actions, game finished');
                     break;
                 }
                 
-                // Jika double, bet tambahan
-                if (action === 'double') {
-                    // Double bet
-                    const doublePayload = {
-                        action: 'double',
-                        identifier: gameId
-                    };
-                    const doubleRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-access-token': accessToken,
-                            'x-lockdown-token': CONFIG.lockdownToken
-                        },
-                        body: JSON.stringify(doublePayload)
-                    });
-                    const doubleData = await doubleRes.json();
-                    if (doubleData.error) break;
-                    state = doubleData.blackjackNext.state;
+                const action = getBlackjackAction(state);
+                console.log('[BJ] Action:', action);
+                
+                if (action === 'stand') {
                     break;
                 }
                 
-                // NEXT action
                 const nextPayload = {
                     action: action,
                     identifier: gameId
                 };
+                
+                console.log('[BJ] Next payload:', nextPayload);
                 
                 const nextRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
                     method: 'POST',
@@ -409,66 +530,86 @@
                 });
                 
                 const nextData = await nextRes.json();
-                if (nextData.error) break;
+                console.log('[BJ] Next response:', nextData);
                 
-                state = nextData.blackjackNext.state;
-                actionCount++;
-                
-                // Cek apakah sudah selesai (tidak ada action hit)
-                if (!state.player[0].actions || !state.player[0].actions.includes('hit')) {
-                    break;
+                if (nextData.error) {
+                    console.error('[BJ] Next error:', nextData.error);
+                    if (!STATE.bjForceStandAttempted) {
+                        STATE.bjForceStandAttempted = true;
+                        console.log('[BJ] Error, forcing stand...');
+                        
+                        const forceStandPayload = {
+                            action: 'stand',
+                            identifier: gameId
+                        };
+                        
+                        const forceStandRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'x-access-token': accessToken,
+                                'x-lockdown-token': CONFIG.lockdownToken
+                            },
+                            body: JSON.stringify(forceStandPayload)
+                        });
+                        
+                        const forceStandData = await forceStandRes.json();
+                        console.log('[BJ] Force stand result:', forceStandData);
+                        
+                        if (!forceStandData.error && forceStandData.state) {
+                            state = forceStandData.state;
+                            break;
+                        }
+                    }
+                    
+                    STATE.bjActiveGame = false;
+                    STATE.bjActiveGameId = null;
+                    STATE.bjActiveState = null;
+                    return null;
                 }
+                
+                state = nextData.state;
+                STATE.bjActiveState = state;
+                actionCount++;
+                STATE.bjActionCount = actionCount;
             }
             
-            // 3. PARSE RESULT
+            // ===== PARSE RESULT =====
             const result = parseBlackjackResult(state);
+            console.log('[BJ] Final result:', result);
             
-            // 4. UPDATE BALANCE dari response
-            if (state.user && state.user.wallets && state.user.wallets[0]) {
+            // ===== UPDATE BALANCE =====
+            if (state?.user?.wallets?.[0]) {
                 STATE.balance = parseFloat(state.user.wallets[0].balance);
+                console.log('[BJ] Balance updated:', STATE.balance);
             }
+            
+            // ===== RESET ACTIVE GAME =====
+            STATE.bjActiveGame = false;
+            STATE.bjActiveGameId = null;
+            STATE.bjActiveState = null;
             
             return {
                 result: result,
                 state: state,
                 gameId: gameId,
-                amount: amount,
+                amount: apiAmount,
                 isWin: result === 'win',
                 isPush: result === 'push',
-                isLoss: result === 'loss'
+                isLoss: result === 'loss',
+                forcedStand: false
             };
             
         } catch (error) {
+            console.error('[BJ] Exception:', error);
+            STATE.bjActiveGame = false;
+            STATE.bjActiveGameId = null;
+            STATE.bjActiveState = null;
             return null;
         }
     }
 
-    // 4.4 Simulasi Blackjack (Demo)
-    function simulateBlackjack(amount) {
-        // Simulasi dengan probabilitas blackjack ~42% win, ~8% push, ~50% loss
-        const rand = Math.random() * 100;
-        let result;
-        if (rand < 42) result = 'win';
-        else if (rand < 50) result = 'push';
-        else result = 'loss';
-        
-        const profit = result === 'win' ? amount : (result === 'push' ? 0 : -amount);
-        STATE.balance += profit;
-        if (STATE.balance < 0) STATE.balance = 0;
-        
-        return {
-            result: result,
-            state: null,
-            gameId: 'demo_' + generateId(),
-            amount: amount,
-            isWin: result === 'win',
-            isPush: result === 'push',
-            isLoss: result === 'loss'
-        };
-    }
-
-    // ==================== 5. STREAK TRACKING ====================
-    
+    // ==================== 8. STREAK TRACKING ====================
     function updateStreak(result) {
         const isWin = (result === 'win');
         const isPush = (result === 'push');
@@ -478,7 +619,6 @@
             STATE.winStreak++;
             STATE.wins++;
         } else {
-            // PUSH dianggap LOSS
             STATE.lossStreak++;
             STATE.winStreak = 0;
             if (isPush) {
@@ -489,18 +629,15 @@
         }
         
         STATE.bjLastResult = result;
+        console.log('[STREAK] Loss:', STATE.lossStreak, 'Win:', STATE.winStreak);
     }
 
     function checkMode() {
         const streak = STATE.lossStreak;
         
-        // Recovery mode (prioritas tertinggi)
         if (STATE.isRecoveryMode) return 'recovery';
-        
-        // Harvest mode
         if (STATE.isHarvesting) return 'harvest';
         
-        // Check trigger
         if (streak >= STATE.recoveryTrigger) {
             return 'start_recovery';
         }
@@ -511,8 +648,7 @@
         return 'normal';
     }
 
-    // ==================== 6. BET CALCULATION ====================
-    
+    // ==================== 9. BET CALCULATION ====================
     function calculateNormalBet(balance) {
         let bet = balance * (STATE.baseBetPercent / 100);
         bet = Math.max(bet, STATE.minBet);
@@ -524,7 +660,6 @@
         let bet = balance * (STATE.harvestBetPercent / 100);
         bet = Math.max(bet, STATE.minBet);
         if (STATE.maxBetCap > 0) bet = Math.min(bet, STATE.maxBetCap);
-        // MAX HARVEST BET = 0.5% balance (V2)
         bet = Math.min(bet, balance * 0.005);
         return bet;
     }
@@ -536,16 +671,14 @@
         const remainingSplits = Math.max(1, STATE.recoveryMaxSplits - STATE.recoveryCurrentSplit);
         const lossPerSplit = totalLoss / remainingSplits;
         
-        // Blackjack odds 2x, butuh bet = loss / 2
         let bet = lossPerSplit / 2;
         bet = Math.max(bet, STATE.minBet);
-        bet = Math.min(bet, balance * 0.0025); // MAX RECOVERY BET = 0.25% (V2)
+        bet = Math.min(bet, balance * 0.0025);
         if (STATE.maxBetCap > 0) bet = Math.min(bet, STATE.maxBetCap);
         return bet;
     }
 
-    // ==================== 7. HARVEST & RECOVERY ====================
-    
+    // ==================== 10. HARVEST & RECOVERY ====================
     function startHarvest() {
         STATE.isHarvesting = true;
         STATE.harvestCount++;
@@ -557,7 +690,8 @@
         STATE.harvestCurrentStreak = 0;
         STATE.harvestWorstDrawdown = 0;
         
-        sendTelegramMessage(`🌾 HARVEST #${STATE.harvestCount}\nLoss Streak: ${STATE.lossStreak}\nBet: ${STATE.harvestBet.toFixed(4)}`);
+        console.log('[HARVEST] Started #' + STATE.harvestCount + ' Bet:', STATE.harvestBet);
+        sendTelegramMessage('🌾 HARVEST #' + STATE.harvestCount + '\nLoss Streak: ' + STATE.lossStreak + '\nBet: ' + STATE.harvestBet.toFixed(4));
         updateAllUI();
     }
 
@@ -566,7 +700,6 @@
         STATE.recoveryCurrentSplit = 0;
         STATE.recoveryStartBalance = STATE.balance;
         
-        // Total loss yang harus dipulihkan
         const lossFromStart = STATE.startBalance - STATE.balance;
         STATE.recoveryTotalLoss = Math.max(0, lossFromStart);
         STATE.recoveryLossPerSplit = STATE.recoveryTotalLoss / STATE.recoveryMaxSplits;
@@ -586,39 +719,36 @@
         STATE.harvestBet = calculateRecoveryBet(STATE.balance);
         STATE.harvestStartBalance = STATE.balance;
         
-        sendTelegramMessage(`🔄 RECOVERY START\nLoss Streak: ${STATE.lossStreak}\nTotal Loss: ${STATE.recoveryTotalLoss.toFixed(4)}\nSplit: 1/${STATE.recoveryMaxSplits}`);
+        console.log('[RECOVERY] Started Total Loss:', STATE.recoveryTotalLoss);
+        sendTelegramMessage('🔄 RECOVERY START\nLoss Streak: ' + STATE.lossStreak + '\nTotal Loss: ' + STATE.recoveryTotalLoss.toFixed(4) + '\nSplit: 1/' + STATE.recoveryMaxSplits);
         updateAllUI();
     }
 
     function handleHarvestResult(result, betAmount) {
         const isWin = (result === 'win');
-        const isPush = (result === 'push');
-        const isLoss = (result === 'loss');
         
-        // Push dianggap loss untuk streak
-        const effectiveWin = isWin;
-        
-        if (effectiveWin) {
-            // HARVEST SUCCESS
+        if (isWin) {
             const profit = STATE.balance - STATE.harvestStartBalance;
             addHarvestEntry('WIN', profit);
             STATE.isHarvesting = false;
             STATE.isAfterRecovery = true;
             STATE.lossStreak = 0;
             
-            sendTelegramMessage(`✅ HARVEST WIN #${STATE.harvestCount}\nProfit: ${profit.toFixed(4)}`);
+            console.log('[HARVEST] WIN! Profit:', profit);
+            sendTelegramMessage('✅ HARVEST WIN #' + STATE.harvestCount + '\nProfit: ' + profit.toFixed(4));
             updateAllUI();
             return;
         }
         
-        // LOSS atau PUSH di harvest
-        STATE.harvestBet = STATE.harvestBet * 1.5; // Martingale style
+        // LOSS atau PUSH
+        STATE.harvestBet = STATE.harvestBet * STATE.harvestMultiplier;
         STATE.harvestBet = Math.min(STATE.harvestBet, STATE.balance * 0.005);
         if (STATE.maxBetCap > 0) STATE.harvestBet = Math.min(STATE.harvestBet, STATE.maxBetCap);
         
+        console.log('[HARVEST] LOSS, new bet:', STATE.harvestBet);
+        
         // Check cutloss
         if (STATE.lossStreak >= STATE.recoveryTrigger) {
-            // Loss terlalu dalam → masuk recovery
             const loss = STATE.balance - STATE.harvestStartBalance;
             addHarvestEntry('CUT LOSS', loss);
             STATE.isHarvesting = false;
@@ -626,7 +756,6 @@
             return;
         }
         
-        // Check max cutloss multiplier
         const cutLimit = STATE.recoveryCutlossMultiplier * 2;
         if (STATE.lossStreak >= cutLimit) {
             const loss = STATE.balance - STATE.harvestStartBalance;
@@ -634,27 +763,21 @@
             STATE.isHarvesting = false;
             STATE.isRecoveryMode = false;
             resetToBreakeven();
-            sendTelegramMessage(`✂️ HARVEST CUTLOSS\nLoss: ${loss.toFixed(4)}`);
+            sendTelegramMessage('✂️ HARVEST CUTLOSS\nLoss: ' + loss.toFixed(4));
             updateAllUI();
         }
     }
 
     function handleRecoveryResult(result, betAmount) {
         const isWin = (result === 'win');
-        const isPush = (result === 'push');
-        const isLoss = (result === 'loss');
         
         if (!STATE.recovery) return;
         
-        const effectiveWin = isWin;
-        
-        if (effectiveWin) {
-            // Satu split berhasil
+        if (isWin) {
             STATE.recoveryCurrentSplit++;
             STATE.recoveryTotalLoss -= betAmount * 2;
             
             if (STATE.recoveryTotalLoss <= 0 || STATE.balance >= STATE.startBalance) {
-                // RECOVERY SUCCESS
                 const profit = STATE.balance - STATE.recoveryStartBalance;
                 addHarvestEntry('RECOVERY WIN', profit);
                 STATE.isRecoveryMode = false;
@@ -664,27 +787,29 @@
                 STATE.isAfterRecovery = true;
                 resetWagerSesi();
                 
-                sendTelegramMessage(`✅ RECOVERY SUCCESS!\nProfit: ${profit.toFixed(4)}`);
+                console.log('[RECOVERY] SUCCESS! Profit:', profit);
+                sendTelegramMessage('✅ RECOVERY SUCCESS!\nProfit: ' + profit.toFixed(4));
                 updateAllUI();
                 return;
             }
             
-            // Lanjut split berikutnya
             STATE.recoveryLossPerSplit = STATE.recoveryTotalLoss / 
                 Math.max(1, STATE.recoveryMaxSplits - STATE.recoveryCurrentSplit);
             STATE.harvestBet = calculateRecoveryBet(STATE.balance);
             
-            sendTelegramMessage(`🔄 RECOVERY SPLIT ${STATE.recoveryCurrentSplit + 1}/${STATE.recoveryMaxSplits}`);
+            console.log('[RECOVERY] Split ' + (STATE.recoveryCurrentSplit + 1) + '/' + STATE.recoveryMaxSplits);
+            sendTelegramMessage('🔄 RECOVERY SPLIT ' + (STATE.recoveryCurrentSplit + 1) + '/' + STATE.recoveryMaxSplits);
             updateAllUI();
             return;
         }
         
-        // LOSS atau PUSH di recovery
+        // LOSS atau PUSH
         STATE.recoveryTotalLoss += betAmount;
         STATE.recovery.betLossInSplit += betAmount;
         STATE.recovery.lossStreak++;
         
-        // Cutloss jika terlalu dalam
+        console.log('[RECOVERY] LOSS, total loss:', STATE.recoveryTotalLoss);
+        
         const cutLimit = STATE.recoveryCutlossMultiplier;
         if (STATE.recovery.lossStreak >= cutLimit) {
             const loss = STATE.balance - STATE.recoveryStartBalance;
@@ -694,12 +819,12 @@
             STATE.recovery = null;
             resetToBreakeven();
             
-            sendTelegramMessage(`🛑 RECOVERY CUTLOSS!\nLoss Streak: ${STATE.recovery.lossStreak}\nLoss: ${loss.toFixed(4)}`);
+            console.log('[RECOVERY] CUTLOSS! Loss:', loss);
+            sendTelegramMessage('🛑 RECOVERY CUTLOSS!\nLoss Streak: ' + STATE.recovery.lossStreak + '\nLoss: ' + loss.toFixed(4));
             updateAllUI();
             return;
         }
         
-        // Update bet untuk split berikutnya
         STATE.harvestBet = calculateRecoveryBet(STATE.balance);
         updateAllUI();
     }
@@ -746,8 +871,7 @@
         if (counter) counter.textContent = STATE.harvestingEntries.length;
     }
 
-    // ==================== 8. RESET FUNCTIONS ====================
-    
+    // ==================== 11. RESET FUNCTIONS ====================
     function resetToBreakeven() {
         var currentBalance = STATE.balance;
         var lossTolerancePct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -779,9 +903,9 @@
         STATE.recoveryCurrentSplit = 0;
         STATE.recoveryTotalLoss = 0;
         STATE.isTrailingActive = false;
-        STATE.bjGameId = null;
-        STATE.bjState = null;
-        STATE.bjInProgress = false;
+        STATE.bjActiveGame = false;
+        STATE.bjActiveGameId = null;
+        STATE.bjActiveState = null;
         
         STATE.stats = {
             profit: 0, wagered: STATE.wagered, startBal: currentBalance,
@@ -799,7 +923,7 @@
         STATE.wagerWaitingForTrigger = false;
         
         updateAllUI();
-        sendTelegramMessage(`🔄 SESSION RESET (BREAKEVEN)\nBalance: ${currentBalance.toFixed(4)}`);
+        sendTelegramMessage('🔄 SESSION RESET (BREAKEVEN)\nBalance: ' + currentBalance.toFixed(4));
     }
 
     function resetWagerSesi() {
@@ -814,7 +938,43 @@
         updateAllUI();
     }
 
-    // ==================== 9. FIAT RATE (Sama seperti sebelumnya) ====================
+    function fullReset() {
+        STATE.isRunning = false;
+        STATE.isPaused = false;
+        STATE.isHarvesting = false;
+        STATE.isRecoveryMode = false;
+        STATE.isTrailingActive = false;
+        STATE.isResting = false;
+        STATE.bjActiveGame = false;
+        STATE.bjActiveGameId = null;
+        STATE.bjActiveState = null;
+        STATE.wagerTotalAccumulated = 0;
+        STATE.wagerSesiCounter = 0;
+        STATE.wagerStop = false;
+        STATE.wagerWaitingForTrigger = false;
+        STATE.bets = 0;
+        STATE.wins = 0;
+        STATE.losses = 0;
+        STATE.pushes = 0;
+        STATE.profit = 0;
+        STATE.wagered = 0;
+        STATE.highestProfit = 0;
+        STATE.maxDrawdownVal = 0;
+        STATE.harvestCount = 0;
+        STATE.lossStreak = 0;
+        STATE.winStreak = 0;
+        STATE.recovery = null;
+        STATE.recoveryCurrentSplit = 0;
+        STATE.recoveryTotalLoss = 0;
+        STATE.betTimestamps = [];
+        STATE.startTime = null;
+        STATE.sessionStartTime = null;
+        STATE.harvestingEntries = [];
+        toggleStartStop(false);
+        updateAllUI();
+    }
+
+    // ==================== 12. FIAT RATE ====================
     function getCoinGeckoId(coin) {
         var map = {
             "USDT": "tether", "USDC": "usd-coin", "DAI": "dai",
@@ -830,12 +990,12 @@
     async function fetchPriceToIDR(coin) {
         try {
             var cgId = getCoinGeckoId(coin);
-            var res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=idr`);
+            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
             var data = await res.json();
             if (data[cgId] && data[cgId].idr) return data[cgId].idr;
         } catch(e) {}
         try {
-            var coinRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}USDT`);
+            var coinRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + coin + 'USDT');
             var coinData = await coinRes.json();
             var idrRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR');
             var idrData = await idrRes.json();
@@ -855,7 +1015,7 @@
             STATE.minBet = STATE.minBetIdr / rate;
             if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
             var infoEl = document.getElementById("minbet-info");
-            if (infoEl) infoEl.innerHTML = "≈ " + STATE.minBet.toFixed(8) + " " + STATE.selectedCurrency.toUpperCase();
+            if (infoEl) infoEl.innerHTML = '≈ ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase();
             return true;
         }
         return false;
@@ -865,7 +1025,7 @@
         return targetUSD;
     }
 
-    // ==================== 10. SYNC USER INFO ====================
+    // ==================== 13. SYNC USER INFO ====================
     async function syncUserInfo() {
         if (!accessToken || accessToken.length < 30) return false;
         var query = 'query{user{name balances{available{amount currency}}}}';
@@ -909,12 +1069,12 @@
         return false;
     }
 
-    // ==================== 11. TELEGRAM ====================
+    // ==================== 14. TELEGRAM ====================
     async function sendTelegramMessage(message) {
         if (!CONFIG.tgBotToken || !CONFIG.tgChatId) return;
         try {
-            var formatted = "```\n" + message + "\n```";
-            await fetch(`https://api.telegram.org/bot${CONFIG.tgBotToken}/sendMessage`, {
+            var formatted = '```\n' + message + '\n```';
+            await fetch('https://api.telegram.org/bot' + CONFIG.tgBotToken + '/sendMessage', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -930,27 +1090,27 @@
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
-        var status = STATE.isHarvesting ? (STATE.isRecoveryMode ? "🔄 RECOVERY" : "🌾 HARVEST") : 
-                    (STATE.isTrailingActive ? "🔱 TRAIL L" + STATE.trailingLevel : "⚡ NORMAL");
+        var status = STATE.isHarvesting ? (STATE.isRecoveryMode ? '🔄 RECOVERY' : '🌾 HARVEST') : 
+                    (STATE.isTrailingActive ? '🔱 TRAIL L' + STATE.trailingLevel : '⚡ NORMAL');
         
-        var message = "💰 CHEAPCHEATX BLACKJACK v2.0\n" +
+        var message = '💰 CHEAPCHEATX BLACKJACK v2.0\n' +
                       '"Your Stake Wagered Partner"\n' +
-                      "User: " + STATE.stakeUser + "\n" +
-                      "Time: " + runTime + "\n" +
-                      "Balance: " + STATE.balance.toFixed(2) + " " + STATE.selectedCurrency.toUpperCase() + "\n" +
-                      "Total Wager: " + STATE.wagerTotalAccumulated.toFixed(2) + " / " + STATE.wagerTotalTarget.toFixed(2) + "\n" +
-                      "Sesi Wager: " + STATE.wagerSesiCounter.toFixed(2) + " / " + STATE.wagerSesiTarget.toFixed(2) + "\n" +
-                      "Profit: " + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(2) + " (" + profitPct.toFixed(2) + "%)\n" +
-                      "Wagered: " + STATE.wagered.toFixed(2) + " " + STATE.selectedCurrency.toUpperCase() + "\n" +
-                      "Bets: " + STATE.bets + " | WR: " + winRate.toFixed(0) + "%\n" +
-                      "Loss Streak: " + STATE.lossStreak + "x\n" +
-                      "Status: " + status + "\n" +
-                      "Harvest: " + STATE.harvestCount + "\n" +
-                      "⚡ Blackjack Mode: ON";
+                      'User: ' + STATE.stakeUser + '\n' +
+                      'Time: ' + runTime + '\n' +
+                      'Balance: ' + STATE.balance.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
+                      'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(2) + ' / ' + STATE.wagerTotalTarget.toFixed(2) + '\n' +
+                      'Sesi Wager: ' + STATE.wagerSesiCounter.toFixed(2) + ' / ' + STATE.wagerSesiTarget.toFixed(2) + '\n' +
+                      'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(2) + ' (' + profitPct.toFixed(2) + '%)\n' +
+                      'Wagered: ' + STATE.wagered.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
+                      'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
+                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
+                      'Status: ' + status + '\n' +
+                      'Harvest: ' + STATE.harvestCount + '\n' +
+                      '🎰 Blackjack Mode: ON';
         await sendTelegramMessage(message);
     }
 
-    // ==================== 12. UI UPDATES ====================
+    // ==================== 15. UI UPDATES ====================
     function updateAllUI() {
         updateStatsDisplay();
         updateWagerDisplay();
@@ -971,49 +1131,49 @@
         var betSpeed = getBetSpeed();
         
         var status;
-        if (STATE.isHarvesting) status = STATE.isRecoveryMode ? "🔄 RECOVERY" : "🌾 HARVEST";
-        else if (STATE.isTrailingActive) status = "🔱 TRAIL L" + STATE.trailingLevel;
-        else status = "⚡ NORMAL";
+        if (STATE.isHarvesting) status = STATE.isRecoveryMode ? '🔄 RECOVERY' : '🌾 HARVEST';
+        else if (STATE.isTrailingActive) status = '🔱 TRAIL L' + STATE.trailingLevel;
+        else status = '⚡ NORMAL';
         
         var sessionProgress = STATE.startBalance > 0 ? 
             clamp(((STATE.profit / (STATE.startBalance * STATE.targetPct / 100)) * 100), 0, 100) : 0;
         var sessionTarget = STATE.startBalance * STATE.targetPct / 100;
         
-        var splitDisplay = "—", cutlossDisplay = "0";
+        var splitDisplay = '—', cutlossDisplay = '0';
         if (STATE.recovery && STATE.recovery.active) {
-            splitDisplay = (STATE.recoveryCurrentSplit + 1) + "/" + STATE.recoveryMaxSplits;
+            splitDisplay = (STATE.recoveryCurrentSplit + 1) + '/' + STATE.recoveryMaxSplits;
             cutlossDisplay = STATE.recovery.lossStreak || 0;
         }
         
         var map = {
             "st-user": STATE.stakeUser,
             "st-running-time": runTime,
-            "st-balance": STATE.balance.toFixed(2) + " " + STATE.selectedCurrency.toUpperCase(),
+            "st-balance": STATE.balance.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase(),
             "st-session-num": STATE.sessionNumber,
-            "st-session-target": STATE.targetPct + "% (" + sessionTarget.toFixed(2) + " " + STATE.selectedCurrency.toUpperCase() + ")",
-            "st-session-progress": sessionProgress.toFixed(1) + "%",
-            "st-session-start": STATE.sessionStartTime ? STATE.sessionStartTime.toLocaleTimeString() : "-",
+            "st-session-target": STATE.targetPct + '% (' + sessionTarget.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase() + ')',
+            "st-session-progress": sessionProgress.toFixed(1) + '%',
+            "st-session-start": STATE.sessionStartTime ? STATE.sessionStartTime.toLocaleTimeString() : '-',
             "st-sessions-done": STATE.sessionsCompleted,
-            "st-profit": (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(2) + " (" + (profitPct >= 0 ? '+' : '') + profitPct.toFixed(2) + "%)",
+            "st-profit": (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(2) + ' (' + (profitPct >= 0 ? '+' : '') + profitPct.toFixed(2) + '%)',
             "st-wagered": STATE.wagered.toFixed(2),
-            "st-bets": STATE.bets + " | WR " + winRate.toFixed(0) + "% | PUSH " + STATE.pushes,
-            "st-speed": betSpeed.toFixed(1) + "b/s",
-            "st-chance": status + " | LS: " + STATE.lossStreak + "x",
+            "st-bets": STATE.bets + ' | WR ' + winRate.toFixed(0) + '% | PUSH ' + STATE.pushes,
+            "st-speed": betSpeed.toFixed(1) + 'b/s',
+            "st-chance": status + ' | LS: ' + STATE.lossStreak + 'x',
             "st-gaphits": STATE.pushes.toString(),
-            "st-timer": STATE.isResetting ? "⏰ " + STATE.resetCountdownRemaining + "s" : "--",
+            "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
             "st-split-progress": splitDisplay,
             "st-cutloss-count": cutlossDisplay,
-            "st-loss-per-split": STATE.recoveryTotalLoss ? STATE.recoveryTotalLoss.toFixed(4) : "0"
+            "st-loss-per-split": STATE.recoveryTotalLoss ? STATE.recoveryTotalLoss.toFixed(4) : '0'
         };
         for (var id in map) {
             var el = document.getElementById(id);
             if (el) el.textContent = map[id];
         }
         var profitEl = document.getElementById("st-profit");
-        if (profitEl) profitEl.style.color = STATE.profit >= 0 ? "#00A86B" : "#FF4757";
+        if (profitEl) profitEl.style.color = STATE.profit >= 0 ? '#00A86B' : '#FF4757';
         
         var bar = document.getElementById("st-session-progress-bar");
-        if (bar) bar.style.width = sessionProgress + "%";
+        if (bar) bar.style.width = sessionProgress + '%';
     }
 
     function updateWagerDisplay() {
@@ -1045,12 +1205,12 @@
     function drawGapVisual() {
         var container = document.getElementById("gapVisual");
         if (!container) return;
-        var modeText = STATE.isHarvesting ? (STATE.isRecoveryMode ? "🔄 RECOVERY" : "🌾 HARVEST") : "⚡ NORMAL";
-        var splitDisplay = "—", cutlossDisplay = "0", lossPerSplitDisplay = "0";
+        var modeText = STATE.isHarvesting ? (STATE.isRecoveryMode ? '🔄 RECOVERY' : '🌾 HARVEST') : '⚡ NORMAL';
+        var splitDisplay = '—', cutlossDisplay = '0', lossPerSplitDisplay = '0';
         if (STATE.recovery && STATE.recovery.active) {
-            splitDisplay = (STATE.recoveryCurrentSplit + 1) + "/" + STATE.recoveryMaxSplits;
+            splitDisplay = (STATE.recoveryCurrentSplit + 1) + '/' + STATE.recoveryMaxSplits;
             cutlossDisplay = STATE.recovery.lossStreak || 0;
-            lossPerSplitDisplay = STATE.recoveryTotalLoss ? STATE.recoveryTotalLoss.toFixed(4) : "0";
+            lossPerSplitDisplay = STATE.recoveryTotalLoss ? STATE.recoveryTotalLoss.toFixed(4) : '0';
         }
         container.innerHTML = `
             <div class="stats-block" style="margin-top:10px;">
@@ -1068,8 +1228,8 @@
         `;
     }
 
-    // ==================== 13. LOGGING ====================
-    function logBet(betNumber, amount, result, profit) {
+    // ==================== 16. LOGGING ====================
+    function logBet(betNumber, amount, result, profit, label) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
         var entry = document.createElement("div");
@@ -1078,10 +1238,11 @@
             ";display:flex;justify-content:space-between;gap:8px;align-items:center;";
         var resultColor = result === 'win' ? '#00e5c0' : (result === 'push' ? '#ff922b' : '#ff6b81');
         var resultIcon = result === 'win' ? '✅' : (result === 'push' ? '➖' : '❌');
+        var labelText = label || '';
         entry.innerHTML = `
             <span style="color:#606060;min-width:35px;font-size:9px;">#${betNumber}</span>
             <span style="color:#a0a0a0;min-width:65px;font-size:9px;">${amount.toFixed(4)}</span>
-            <span style="color:${resultColor};min-width:50px;font-size:9px;">${resultIcon} ${result}</span>
+            <span style="color:${resultColor};min-width:50px;font-size:9px;">${resultIcon} ${result} ${labelText}</span>
             <span style="color:${profit >= 0 ? '#00e5c0' : '#ff6b81'};font-weight:bold;min-width:65px;font-size:9px;text-align:right;">${profit >= 0 ? '+' : ''}${profit.toFixed(4)}</span>
         `;
         logBox.insertBefore(entry, logBox.firstChild);
@@ -1090,130 +1251,7 @@
         }
     }
 
-    // ==================== 14. UI CONTROLS ====================
-    function toggleStartStop(starting) {
-        var startBtn = document.getElementById("p-start");
-        var stopBtn = document.getElementById("p-stop");
-        var pauseBtn = document.getElementById("p-pause");
-        var statusEl = document.getElementById("botStatus");
-        var dotEl = document.getElementById("statusDot");
-        if (starting) {
-            if (startBtn) startBtn.disabled = true;
-            if (stopBtn) stopBtn.disabled = false;
-            if (pauseBtn) pauseBtn.disabled = false;
-            if (statusEl) statusEl.textContent = "RUN";
-            if (dotEl) dotEl.style.background = "#00A86B";
-        } else {
-            if (startBtn) startBtn.disabled = false;
-            if (stopBtn) stopBtn.disabled = true;
-            if (pauseBtn) pauseBtn.disabled = true;
-            if (statusEl) statusEl.textContent = "STOP";
-            if (dotEl) dotEl.style.background = "#FF4757";
-        }
-    }
-
-    function fullReset() {
-        STATE.isRunning = false;
-        STATE.isPaused = false;
-        STATE.isHarvesting = false;
-        STATE.isRecoveryMode = false;
-        STATE.isTrailingActive = false;
-        STATE.isResting = false;
-        STATE.bjInProgress = false;
-        STATE.bjGameId = null;
-        STATE.bjState = null;
-        STATE.wagerTotalAccumulated = 0;
-        STATE.wagerSesiCounter = 0;
-        STATE.wagerStop = false;
-        STATE.wagerWaitingForTrigger = false;
-        STATE.bets = 0;
-        STATE.wins = 0;
-        STATE.losses = 0;
-        STATE.pushes = 0;
-        STATE.profit = 0;
-        STATE.wagered = 0;
-        STATE.highestProfit = 0;
-        STATE.maxDrawdownVal = 0;
-        STATE.harvestCount = 0;
-        STATE.lossStreak = 0;
-        STATE.winStreak = 0;
-        STATE.recovery = null;
-        STATE.recoveryCurrentSplit = 0;
-        STATE.recoveryTotalLoss = 0;
-        STATE.betTimestamps = [];
-        STATE.startTime = null;
-        STATE.sessionStartTime = null;
-        STATE.harvestingEntries = [];
-        toggleStartStop(false);
-        updateAllUI();
-    }
-
-    // ==================== 15. RUN LOOP ====================
-    async function runLoop() {
-        if (!STATE.isRunning || STATE.isPaused) return;
-        
-        // Check wager target
-        if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
-            STATE.isRunning = false;
-            STATE.wagerStop = true;
-            toggleStartStop(false);
-            sendTelegramMessage("✅ TOTAL WAGER TARGET REACHED!\nTotal: " + STATE.wagerTotalAccumulated.toFixed(2));
-            return;
-        }
-        
-        // Check mode
-        var mode = checkMode();
-        var currentBalance = STATE.balance;
-        var betAmount, result;
-        
-        switch(mode) {
-            case 'start_harvest':
-                startHarvest();
-                // Fall through ke harvest
-                
-            case 'harvest':
-                if (!STATE.isHarvesting) {
-                    startHarvest();
-                }
-                betAmount = STATE.harvestBet || calculateHarvestBet(currentBalance);
-                result = await placeBlackjackBet(betAmount);
-                if (result) {
-                    processBlackjackResult(result, betAmount, 'harvest');
-                }
-                setTimeout(runLoop, STATE.delayHarvest);
-                return;
-                
-            case 'start_recovery':
-                if (!STATE.isRecoveryMode) {
-                    startRecovery();
-                }
-                // Fall through ke recovery
-                
-            case 'recovery':
-                if (!STATE.isRecoveryMode) {
-                    startRecovery();
-                }
-                betAmount = STATE.harvestBet || calculateRecoveryBet(currentBalance);
-                result = await placeBlackjackBet(betAmount);
-                if (result) {
-                    processBlackjackResult(result, betAmount, 'recovery');
-                }
-                setTimeout(runLoop, STATE.delayRecovery);
-                return;
-                
-            case 'normal':
-            default:
-                betAmount = calculateNormalBet(currentBalance);
-                result = await placeBlackjackBet(betAmount);
-                if (result) {
-                    processBlackjackResult(result, betAmount, 'normal');
-                }
-                setTimeout(runLoop, STATE.delayNormal);
-                return;
-        }
-    }
-
-    // ==================== 16. PROCESS BLACKJACK RESULT ====================
+    // ==================== 17. PROCESS BLACKJACK RESULT ====================
     function processBlackjackResult(result, betAmount, mode) {
         if (!result) return;
         
@@ -1221,8 +1259,10 @@
         const isPush = result.isPush;
         const isLoss = result.isLoss;
         const resultType = isWin ? 'win' : (isPush ? 'push' : 'loss');
+        const forcedStand = result.forcedStand || false;
         
-        // Update balance sudah dilakukan di placeBlackjackBet
+        console.log('[PROCESS] Result:', resultType, 'Mode:', mode, 'Forced:', forcedStand);
+        
         STATE.bets++;
         STATE.wagered += betAmount;
         
@@ -1245,51 +1285,125 @@
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
         
-        // Update streak
         updateStreak(resultType);
+        console.log('[PROCESS] Loss streak:', STATE.lossStreak);
         
-        // Log
-        logBet(STATE.bets, betAmount, resultType, profit);
+        var label = forcedStand ? '🚫 FORCED' : '';
+        logBet(STATE.bets, betAmount, resultType, profit, label);
         
-        // Handle berdasarkan mode
         switch(mode) {
             case 'harvest':
+            case 'start_harvest':
                 handleHarvestResult(resultType, betAmount);
                 break;
             case 'recovery':
+            case 'start_recovery':
                 handleRecoveryResult(resultType, betAmount);
                 break;
             case 'normal':
             default:
-                // Check jika streak mencapai trigger
                 if (STATE.lossStreak >= STATE.harvestTrigger && !STATE.isHarvesting) {
+                    console.log('[PROCESS] Trigger harvest!');
                     startHarvest();
                 }
                 break;
         }
         
-        // Update UI
         updateAllUI();
         
-        // Cek trailing (jika ada)
-        if (STATE.isTrailingActive) updateTrailing();
-    }
-
-    // ==================== 17. TRAILING (Sederhana) ====================
-    function updateTrailing() {
-        if (!STATE.isTrailingActive) return;
-        var currentBalance = STATE.balance;
-        if (currentBalance > STATE.balancePeak) STATE.balancePeak = currentBalance;
-        var gapThreshold = STATE.balancePeak * (1 - (STATE.gapPct / 100.0));
-        if (currentBalance <= gapThreshold) {
-            STATE.isTrailingActive = false;
-            STATE.trailingLevel = 0;
-            sendTelegramMessage("🔱 TRAILING STOP\nProfit secured: " + STATE.profit.toFixed(4));
-            drawGapVisual();
+        if (forcedStand) {
+            console.log('[PROCESS] Forced stand completed, ready for next bet');
         }
     }
 
-    // ==================== 18. SPLASH ====================
+    // ==================== 18. RUN LOOP ====================
+    async function runLoop() {
+        if (!STATE.isRunning || STATE.isPaused) return;
+        
+        console.log('[RUN] Loop start | Balance:', STATE.balance, 'LossStreak:', STATE.lossStreak);
+        
+        if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
+            STATE.isRunning = false;
+            STATE.wagerStop = true;
+            toggleStartStop(false);
+            sendTelegramMessage('✅ TOTAL WAGER TARGET REACHED!\nTotal: ' + STATE.wagerTotalAccumulated.toFixed(2));
+            return;
+        }
+        
+        var mode = checkMode();
+        console.log('[RUN] Mode:', mode);
+        var currentBalance = STATE.balance;
+        var betAmount;
+        
+        switch(mode) {
+            case 'start_harvest':
+            case 'harvest':
+                if (!STATE.isHarvesting) startHarvest();
+                betAmount = STATE.harvestBet || calculateHarvestBet(currentBalance);
+                break;
+                
+            case 'start_recovery':
+            case 'recovery':
+                if (!STATE.isRecoveryMode) startRecovery();
+                betAmount = STATE.harvestBet || calculateRecoveryBet(currentBalance);
+                break;
+                
+            case 'normal':
+            default:
+                betAmount = calculateNormalBet(currentBalance);
+                break;
+        }
+        
+        console.log('[RUN] Bet amount:', betAmount);
+        
+        const result = await placeBlackjackBet(betAmount);
+        
+        if (result) {
+            console.log('[RUN] Result:', result.result, 'Forced Stand:', result.forcedStand || false);
+            processBlackjackResult(result, betAmount, mode);
+        } else {
+            console.log('[RUN] Bet failed or invalid, placing new bet immediately...');
+            STATE.bjActiveGame = false;
+            STATE.bjActiveGameId = null;
+            STATE.bjActiveState = null;
+        }
+        
+        let delay;
+        if (mode === 'recovery' || mode === 'start_recovery') {
+            delay = STATE.delayRecovery;
+        } else if (mode === 'harvest' || mode === 'start_harvest') {
+            delay = STATE.delayHarvest;
+        } else {
+            delay = STATE.delayNormal;
+        }
+        
+        console.log('[RUN] Next loop in', delay, 'ms');
+        setTimeout(runLoop, delay);
+    }
+
+    // ==================== 19. UI CONTROLS ====================
+    function toggleStartStop(starting) {
+        var startBtn = document.getElementById("p-start");
+        var stopBtn = document.getElementById("p-stop");
+        var pauseBtn = document.getElementById("p-pause");
+        var statusEl = document.getElementById("botStatus");
+        var dotEl = document.getElementById("statusDot");
+        if (starting) {
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+            if (pauseBtn) pauseBtn.disabled = false;
+            if (statusEl) statusEl.textContent = "RUN";
+            if (dotEl) dotEl.style.background = "#00A86B";
+        } else {
+            if (startBtn) startBtn.disabled = false;
+            if (stopBtn) stopBtn.disabled = true;
+            if (pauseBtn) pauseBtn.disabled = true;
+            if (statusEl) statusEl.textContent = "STOP";
+            if (dotEl) dotEl.style.background = "#FF4757";
+        }
+    }
+
+    // ==================== 20. SPLASH ====================
     function showSplash() {
         if (sessionStorage.getItem('cheapcheatx_splash_seen')) return;
         var splash = document.createElement('div');
@@ -1323,11 +1437,8 @@
         };
     }
 
-    // ==================== 19. CREATE UI ====================
+    // ==================== 21. CREATE UI ====================
     function createUI() {
-        // [SAME UI AS BEFORE with minor changes]
-        // Saya akan reuse UI dari versi sebelumnya dengan beberapa penyesuaian
-        
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
         
@@ -1489,7 +1600,7 @@
                         </div>
                         <div class="grid-2">
                             <div class="md-field"><label>✂️ CUTLOSS MULTIPLIER</label><input type="number" id="p-recovery-cutloss-multiplier" value="5" step="0.5" min="2" max="20"></div>
-                            <div class="md-field"><label>📉 MAX LOSS BEFORE RESET</label><input type="number" id="p-max-loss-reset" value="10" step="1" min="3" max="30"></div>
+                            <div class="md-field"><label>📉 HARVEST MULTIPLIER</label><input type="number" id="p-harvest-multiplier" value="1.5" step="0.1" min="1.1" max="5"></div>
                         </div>
                         <div style="font-size:8px;color:#ff6b81;margin-top:4px;">🛡️ V2: Max Harvest 0.5% · Max Recovery 0.25% balance</div>
                         <div style="font-size:8px;color:#ff922b;margin-top:4px;">🔄 Push (Seri) dianggap LOSS</div>
@@ -1602,7 +1713,7 @@
                     document.getElementById("p-start").disabled = false;
                     await updateFiatRatesOnce();
                     updateAllUI();
-                    sendTelegramMessage("✅ LOGIN SUCCESS\nUser: " + STATE.stakeUser);
+                    sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
                 }
             };
         }
@@ -1617,7 +1728,7 @@
             };
         }
         
-        // ==================== START BUTTON ====================
+        // START BUTTON
         var startBtn = document.getElementById("p-start");
         if (startBtn) {
             startBtn.onclick = async function() {
@@ -1641,6 +1752,7 @@
                 STATE.baseBetPercent = safeFloat("p-basebet-normal", 0.125);
                 STATE.recoveryMaxSplits = safeInt("p-recovery-max-splits", 3);
                 STATE.recoveryCutlossMultiplier = safeFloat("p-recovery-cutloss-multiplier", 5);
+                STATE.harvestMultiplier = safeFloat("p-harvest-multiplier", 1.5);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
                 STATE.stopLossPct = safeFloat("p-stop-pct", 100);
                 STATE.maxBetCap = safeFloat("p-max-cap", 0);
@@ -1657,8 +1769,8 @@
                 if (STATE.isDemo) {
                     var tokenEl2 = document.getElementById("p-token");
                     if (!tokenEl2 || tokenEl2.value.trim().length < 30) {
-                        sendTelegramMessage("⚠️ DEMO MODE: Token diperlukan untuk API call!");
-                        alert("⚠️ DEMO MODE: Masukkan API Token terlebih dahulu!");
+                        sendTelegramMessage('⚠️ DEMO MODE: Token diperlukan untuk API call!');
+                        alert('⚠️ DEMO MODE: Masukkan API Token terlebih dahulu!');
                         return;
                     }
                     accessToken = tokenEl2.value.trim();
@@ -1676,7 +1788,7 @@
                     STATE.minBet = STATE.minBetIdr / 16000;
                     if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
                     await syncUserInfo();
-                    sendTelegramMessage("🎮 FLASH/DEMO MODE ACTIVE\nBalance: " + balance.toFixed(2) + " (virtual)\nAPI: Real Blackjack with amount 0");
+                    sendTelegramMessage('🎮 FLASH/DEMO MODE ACTIVE\nBalance: ' + balance.toFixed(2) + ' (virtual)\nAPI: Real Blackjack with amount 0');
                 } else {
                     await updateFiatRatesOnce();
                     if (STATE.fiatRates.idr > 0) {
@@ -1686,7 +1798,7 @@
                     await syncUserInfo();
                     balance = STATE.balance;
                     if (!balance || balance === 0) {
-                        sendTelegramMessage("❌ Balance 0! Check your wallet.");
+                        sendTelegramMessage('❌ Balance 0! Check your wallet.');
                         return;
                     }
                 }
@@ -1703,6 +1815,9 @@
                 STATE.wagerWaitingForTrigger = false;
                 STATE.lossStreak = 0;
                 STATE.winStreak = 0;
+                STATE.bjActiveGame = false;
+                STATE.bjActiveGameId = null;
+                STATE.bjActiveState = null;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1716,21 +1831,18 @@
                 STATE.isRunning = true;
                 STATE.isPaused = false;
                 STATE.betTimestamps = [];
-                STATE.dailyStartBalance = balance;
-                STATE.dailyProfit = 0;
-                STATE.dailyTargetReached = false;
                 
                 toggleStartStop(true);
                 updateAllUI();
                 
-                var modeText = STATE.isDemo ? "🎮 FLASH/DEMO (API amount: 0)" : "💰 REAL";
-                sendTelegramMessage("💰 CHEAPCHEATX BLACKJACK v2.0 STARTED\n" + modeText + "\nBalance: " + balance.toFixed(2) + "\nHarvest Trigger: " + STATE.harvestTrigger + "x Loss\nRecovery Trigger: " + STATE.recoveryTrigger + "x Loss\n🔄 Push = LOSS\n🛡️ V2: 1/4 BET SIZE!");
+                var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
+                sendTelegramMessage('💰 CHEAPCHEATX BLACKJACK v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(2) + '\nHarvest Trigger: ' + STATE.harvestTrigger + 'x Loss\nRecovery Trigger: ' + STATE.recoveryTrigger + 'x Loss\n🔄 Push = LOSS\n🛡️ V2: 1/4 BET SIZE!');
                 
                 runLoop();
             };
         }
         
-        // Pause
+        // PAUSE
         var pauseBtn = document.getElementById("p-pause");
         if (pauseBtn) {
             pauseBtn.onclick = function() {
@@ -1745,16 +1857,16 @@
             };
         }
         
-        // Stop
+        // STOP
         var stopBtn = document.getElementById("p-stop");
         if (stopBtn) {
             stopBtn.onclick = function() {
                 fullReset();
-                sendTelegramMessage("🛑 BOT STOPPED");
+                sendTelegramMessage('🛑 BOT STOPPED');
             };
         }
         
-        // Reset
+        // RESET
         var resetBtn = document.getElementById("p-reset");
         if (resetBtn) {
             resetBtn.onclick = function() {
@@ -1763,7 +1875,7 @@
             };
         }
         
-        // Currency
+        // CURRENCY
         var currencyEl = document.getElementById("p-currency");
         if (currencyEl) {
             currencyEl.onchange = function() {
@@ -1774,7 +1886,7 @@
             };
         }
         
-        // Config change events
+        // CONFIG EVENTS
         document.getElementById("p-harvest-trigger").onchange = function() {
             STATE.harvestTrigger = safeInt("p-harvest-trigger", 3);
             updateAllUI();
@@ -1787,10 +1899,14 @@
             STATE.harvestBetPercent = safeFloat("p-basebet-harvest", 0.25);
             updateAllUI();
         };
+        document.getElementById("p-harvest-multiplier").onchange = function() {
+            STATE.harvestMultiplier = safeFloat("p-harvest-multiplier", 1.5);
+            updateAllUI();
+        };
         document.getElementById("p-wager-total-target-usd").oninput = updateAllUI;
         document.getElementById("p-wager-loss-tolerance-pct").oninput = updateLossToleranceDisplay;
         
-        // OpenTab global
+        // OPEN TAB
         window.openTab = function(tabName) {
             document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
             var target = document.getElementById('tab-' + tabName);
@@ -1800,7 +1916,7 @@
             if (tabName === 'history') setTimeout(renderHarvestingEntries, 100);
         };
         
-        // Drag
+        // DRAG
         var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
         function dragMouseDown(e) {
             if (e.target.closest && (e.target.closest('button') || e.target.closest('input') || e.target.closest('select'))) return;
@@ -1833,7 +1949,7 @@
         }
         function closeDragElement() { document.onmouseup = null; document.onmousemove = null; }
         
-        // ==================== INIT ====================
+        // INIT
         var saved = localStorage.getItem('apitoken');
         if (saved) {
             accessToken = saved;
@@ -1853,7 +1969,7 @@
         showSplash();
     }
 
-    // ==================== 20. START ====================
+    // ==================== 22. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
