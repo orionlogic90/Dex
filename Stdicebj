@@ -1,6 +1,23 @@
-// ==================== CHEAPCHEATX v2.0 - BLACKJACK EDITION ====================
-// ==================== HARVEST → RECOVERY PURE DATA-BASED ====================
-// ==================== STRATEGI BASIC STRATEGY STANDARD ====================
+// ========================================================================
+// CHEAPCHEATX v2.0 - BLACKJACK EDITION - FULL FEATURE
+// ========================================================================
+// Fitur Lengkap:
+// - Blackjack Auto Bet + Basic Strategy (Hit/Stand/Double/Split)
+// - Harvest Mode (trigger 3x loss) + Recovery Mode (trigger 5x loss)
+// - Push = LOSS
+// - VIP Progress Tracking
+// - Rakeback & Reload Bonus
+// - Unclaimed Bonus List & Auto Claim
+// - Monitor Channel Telegram (user input channel)
+// - Auto Claim Bonus Code dari Telegram
+// - User Pilih Currency Claim
+// - Vault Balance Tracking
+// - Raffle Ticket Tracking
+// - Telegram Report Periodik
+// - Flash Mode (amount: 0)
+// - V2 Bet Size (1/4)
+// ========================================================================
+
 (function () {
     // ==================== 1. CONFIG ====================
     const CONFIG = {
@@ -21,7 +38,7 @@
 
     // ==================== 2. STATE ====================
     const STATE = {
-        // ===== STREAK TRACKING =====
+        // ===== STREAK =====
         lossStreak: 0,
         winStreak: 0,
         harvestTrigger: 3,
@@ -40,7 +57,7 @@
         darkMode: false,
         minimized: false,
         
-        // ===== BLACKJACK STATE =====
+        // ===== BLACKJACK =====
         bjActiveGame: false,
         bjActiveGameId: null,
         bjActiveState: null,
@@ -84,6 +101,40 @@
         pushes: 0,
         betTimestamps: [],
         
+        // ===== VIP & BONUS =====
+        vipProgress: 0,
+        vipFlag: 'none',
+        rakebackBalances: {},
+        reloadBonus: {
+            value: 0,
+            active: false,
+            lastClaim: null,
+            expireAt: null
+        },
+        bonusCodeClaimed: [],
+        bonusClaimCurrency: 'usdt',
+        bonusAutoClaim: true,
+        unclaimedBonuses: [],
+        
+        // ===== VAULT =====
+        vaultBalances: {},
+        vaultTotal: 0,
+        
+        // ===== RAFFLE =====
+        raffleTickets: 0,
+        raffleData: {},
+        raffleIds: [
+            '299d4c87-d395-4386-8022-4a3072ad09a7' // Undian Mingguan $75k
+        ],
+        
+        // ===== TELEGRAM CHANNEL =====
+        tgChannelUsername: '',
+        tgChannelId: null,
+        tgChannelEnabled: false,
+        tgChannelLastMessageId: 0,
+        tgChannelPollingInterval: 30000,
+        _channelMonitorStarted: false,
+        
         // ===== WAGER =====
         wagerTotalAccumulated: 0,
         wagerSesiCounter: 0,
@@ -102,13 +153,6 @@
         maxBetCap: 0,
         targetPct: 5,
         stopLossPct: 100,
-        dailyTargetPct: 25,
-        dailyStopLossPct: 100,
-        dailyProfit: 0,
-        dailyStartBalance: 0,
-        dailyTargetReached: false,
-        dailyResetHour: 0,
-        lastDailyReset: 0,
         
         // ===== DELAY =====
         delayNormal: 10,
@@ -119,17 +163,6 @@
         sessionNumber: 1,
         sessionsCompleted: 0,
         sessionStartTime: null,
-        sessionResult: "",
-        resetCountdownRemaining: 0,
-        isResetting: false,
-        
-        worstDrawdown: 0,
-        worstDrawdownChance: 0,
-        worstDrawdownLS: 0,
-        worstBet: 0,
-        highestProfit: 0,
-        maxDrawdownVal: 0,
-        
         harvestingEntries: [],
         
         fiatRates: { usdt: 0, idr: 0 },
@@ -184,6 +217,10 @@
     function generateId() {
         return Math.random().toString(36).substring(2, 15) + 
                Math.random().toString(36).substring(2, 15);
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     // ==================== 4. BLACKJACK CARD UTILITY ====================
@@ -309,7 +346,6 @@
         
         const actions = player.actions || [];
         
-        // Jika tidak bisa action, stand
         if (!actions.includes('hit') && !actions.includes('double') && !actions.includes('split')) {
             return 'stand';
         }
@@ -322,20 +358,18 @@
         const hasAce = player.cards.some(c => c.rank === 'A');
         const rank = player.cards[0].rank;
         
-        // ===== PAIR SPLITTING =====
+        // PAIR SPLITTING
         if (isPair && actions.includes('split')) {
             const pairAction = getPairAction(rank, dealerValue);
             if (pairAction === 'split') return 'split';
         }
         
-        // ===== DOUBLE =====
+        // DOUBLE
         if (actions.includes('double')) {
-            // HARD DOUBLE
             if (playerValue === 11 && dealerValue !== 11) return 'double';
             if (playerValue === 10 && dealerValue < 10) return 'double';
             if (playerValue === 9 && dealerValue >= 3 && dealerValue <= 6) return 'double';
             
-            // SOFT DOUBLE
             if (hasAce && player.cards.length === 2) {
                 const softTotal = playerValue - 10;
                 if (softTotal === 7 && dealerValue >= 3 && dealerValue <= 6) return 'double';
@@ -347,12 +381,12 @@
             }
         }
         
-        // ===== HARD TOTAL =====
+        // HARD TOTAL
         if (!hasAce) {
             return getHardAction(playerValue, dealerValue);
         }
         
-        // ===== SOFT TOTAL =====
+        // SOFT TOTAL
         const softTotal = playerValue - 10;
         return getSoftAction(softTotal, dealerValue);
     }
@@ -369,30 +403,719 @@
         const playerValue = player.value || getHandValue(player.cards);
         const dealerValue = dealer.value || getHandValue(dealer.cards);
         
-        // Player bust
         if (playerValue > 21) return 'loss';
-        // Dealer bust
         if (dealerValue > 21) return 'win';
-        // Compare
         if (playerValue > dealerValue) return 'win';
         if (playerValue < dealerValue) return 'loss';
         return 'push';
     }
 
-    // ==================== 7. PLACE BLACKJACK BET ====================
+    // ==================== 7. TELEGRAM FUNCTIONS ====================
+    async function sendTelegramMessage(message) {
+        if (!CONFIG.tgBotToken || !CONFIG.tgChatId) return;
+        try {
+            var formatted = '```\n' + message + '\n```';
+            await fetch('https://api.telegram.org/bot' + CONFIG.tgBotToken + '/sendMessage', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: CONFIG.tgChatId,
+                    text: formatted,
+                    parse_mode: 'Markdown'
+                })
+            });
+        } catch(e) {}
+    }
+
+    // ==================== 8. VIP & BONUS ====================
+    async function fetchVipProgress() {
+        if (!accessToken) return;
+        try {
+            const query = `query VipProgressMeta {
+                user {
+                    id
+                    flagProgress {
+                        flag
+                        progress
+                    }
+                }
+            }`;
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query, variables: {} })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.user?.flagProgress) {
+                STATE.vipProgress = data.data.user.flagProgress.progress * 100;
+                STATE.vipFlag = data.data.user.flagProgress.flag || 'none';
+                updateVipDisplay();
+            }
+        } catch(e) { console.error('[VIP] Error:', e); }
+    }
+
+    async function fetchRakebackInfo() {
+        if (!accessToken) return;
+        try {
+            const query = `query UserRakeback {
+                user {
+                    id
+                    isBanned
+                    isSuspended
+                    rakeback {
+                        enabled
+                        balances {
+                            currency
+                            availableAmount
+                        }
+                    }
+                    reload {
+                        id
+                        value
+                        active
+                        claimInterval
+                        lastClaim
+                        expireAt
+                    }
+                }
+            }`;
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query, variables: {} })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.user) {
+                const user = data.data.user;
+                if (user.rakeback) {
+                    STATE.rakebackBalances = {};
+                    user.rakeback.balances.forEach(b => {
+                        STATE.rakebackBalances[b.currency] = b.availableAmount;
+                    });
+                }
+                if (user.reload) {
+                    STATE.reloadBonus = {
+                        value: user.reload.value || 0,
+                        active: user.reload.active || false,
+                        lastClaim: user.reload.lastClaim,
+                        expireAt: user.reload.expireAt
+                    };
+                }
+                updateBonusDisplay();
+            }
+        } catch(e) { console.error('[BONUS] Error:', e); }
+    }
+
+    // ==================== 9. UNCLAIMED BONUS ====================
+    async function getUnclaimedBonuses(limit = 10, offset = 0) {
+        if (!accessToken) return [];
+        try {
+            const query = `query UserBonusUnclaimedList($limit: Int, $offset: Int) {
+                userBonusUnclaimedList(limit: $limit, offset: $offset) {
+                    amount
+                    currency
+                    redeemed
+                    claimedAt
+                    value
+                    bonusCode {
+                        id
+                        code
+                        note
+                        active
+                        createdAt
+                        expiresAt
+                    }
+                }
+            }`;
+            
+            const variables = { limit, offset };
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query, variables })
+            });
+            
+            const data = await res.json();
+            STATE.unclaimedBonuses = data?.data?.userBonusUnclaimedList || [];
+            return STATE.unclaimedBonuses;
+        } catch(e) {
+            console.error('[BONUS] Unclaimed error:', e);
+            return [];
+        }
+    }
+
+    async function autoClaimAllBonuses() {
+        if (!accessToken) return;
+        
+        try {
+            const bonuses = await getUnclaimedBonuses(50, 0);
+            
+            if (!bonuses || bonuses.length === 0) {
+                await sendTelegramMessage('🎁 No unclaimed bonuses available.');
+                return;
+            }
+            
+            let claimed = 0;
+            let failed = 0;
+            let totalValue = 0;
+            let report = '🎁 AUTO CLAIM BONUSES\n';
+            
+            for (let bonus of bonuses) {
+                if (bonus.bonusCode && bonus.bonusCode.active) {
+                    const code = bonus.bonusCode.code;
+                    const result = await claimBonusCode(code, 'drop', STATE.bonusClaimCurrency);
+                    
+                    if (result?.success) {
+                        claimed++;
+                        totalValue += result.value || 0;
+                        report += `\n✅ ${code}: ${result.value || '?'} ${result.currency || STATE.bonusClaimCurrency.toUpperCase()}`;
+                    } else {
+                        failed++;
+                        report += `\n❌ ${code}: ${result?.error || 'Unknown error'}`;
+                    }
+                    
+                    await sleep(1000);
+                }
+            }
+            
+            report += `\n\nTotal: ${claimed} claimed, ${failed} failed`;
+            report += `\nTotal Value: ${totalValue.toFixed(4)} ${STATE.bonusClaimCurrency.toUpperCase()}`;
+            
+            await sendTelegramMessage(report);
+            await syncUserInfo();
+            await fetchVaultBalance();
+            updateAllUI();
+            
+        } catch(e) {
+            console.error('[BONUS] Auto claim error:', e);
+            await sendTelegramMessage(`❌ Auto claim error: ${e.message}`);
+        }
+    }
+
+    async function monitorUnclaimedBonuses() {
+        if (!accessToken) return;
+        
+        try {
+            const bonuses = await getUnclaimedBonuses(10, 0);
+            
+            if (bonuses && bonuses.length > 0) {
+                const activeBonuses = bonuses.filter(b => b.bonusCode?.active);
+                
+                if (activeBonuses.length > 0) {
+                    let report = '🎁 UNCLAIMED BONUSES DETECTED!\n';
+                    for (let b of activeBonuses) {
+                        report += `\n📌 ${b.bonusCode.code}: ${b.amount || '?'} ${b.currency || 'USDT'}`;
+                        if (b.bonusCode.expiresAt) {
+                            report += ` (Exp: ${new Date(b.bonusCode.expiresAt).toLocaleDateString()})`;
+                        }
+                    }
+                    report += '\n\nAuto claiming...';
+                    await sendTelegramMessage(report);
+                    
+                    if (STATE.bonusAutoClaim) {
+                        await autoClaimAllBonuses();
+                    }
+                }
+            }
+        } catch(e) {
+            console.error('[BONUS] Monitor error:', e);
+        }
+    }
+
+    // ==================== 10. BONUS CODE CLAIM ====================
+    async function checkBonusCodeInfo(code, couponType) {
+        if (!accessToken || !code) return null;
+        try {
+            const query = `query BonusCodeInformation($code: String!, $couponType: CouponType!) {
+                bonusCodeInformation(code: $code, couponType: $couponType) {
+                    availabilityStatus
+                    bonusValue
+                    cryptoMultiplier
+                }
+            }`;
+            
+            const variables = {
+                code: code.trim(),
+                couponType: couponType || "drop"
+            };
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query, variables })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.bonusCodeInformation) {
+                return {
+                    status: data.data.bonusCodeInformation.availabilityStatus,
+                    value: data.data.bonusCodeInformation.bonusValue,
+                    multiplier: data.data.bonusCodeInformation.cryptoMultiplier
+                };
+            }
+            return null;
+        } catch(e) {
+            console.error('[BONUS] Check error:', e);
+            return null;
+        }
+    }
+
+    async function claimBonusCode(code, couponType, currency) {
+        if (!accessToken || !code) return null;
+        try {
+            const claimCurrency = currency || STATE.bonusClaimCurrency || 'usdt';
+            
+            const mutation = `mutation ClaimBonusCode($code: String!, $couponType: CouponType!, $currency: CurrencyEnum!) {
+                claimBonusCode(code: $code, couponType: $couponType, currency: $currency) {
+                    id
+                    bonusValue
+                    currency
+                    cryptoMultiplier
+                    claimedAt
+                }
+            }`;
+            
+            const variables = {
+                code: code.trim(),
+                couponType: couponType || "drop",
+                currency: claimCurrency.toLowerCase()
+            };
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query: mutation, variables })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.claimBonusCode) {
+                const result = data.data.claimBonusCode;
+                return {
+                    success: true,
+                    id: result.id,
+                    value: result.bonusValue,
+                    currency: result.currency,
+                    multiplier: result.cryptoMultiplier,
+                    claimedAt: result.claimedAt
+                };
+            }
+            if (data?.errors) {
+                return { success: false, error: data.errors[0]?.message || 'Unknown error' };
+            }
+            return { success: false, error: 'No response' };
+        } catch(e) {
+            console.error('[CLAIM] Error:', e);
+            return { success: false, error: e.message };
+        }
+    }
+
+    function extractBonusCode(text) {
+        if (!text) return null;
+        const patterns = [
+            /code[:\s]+([a-zA-Z0-9_\-]{8,20})/i,
+            /bonus[:\s]+([a-zA-Z0-9_\-]{8,20})/i,
+            /claim[:\s]+([a-zA-Z0-9_\-]{8,20})/i,
+            /([a-zA-Z0-9_\-]{10,20})/
+        ];
+        for (let pattern of patterns) {
+            const match = text.match(pattern);
+            if (match && match[1]) {
+                const code = match[1].trim();
+                const commonWords = ['drop', 'bonus', 'code', 'claim', 'https', 'http', 'telegram'];
+                if (!commonWords.includes(code.toLowerCase())) {
+                    return code;
+                }
+            }
+        }
+        return null;
+    }
+
+    // ==================== 11. VAULT ====================
+    async function fetchVaultBalance() {
+        if (!accessToken) return;
+        try {
+            const query = `query UserBalances {
+                user {
+                    balances {
+                        available { amount currency }
+                        vault { amount currency }
+                    }
+                }
+            }`;
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query, variables: {} })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.user?.balances) {
+                STATE.vaultBalances = {};
+                let total = 0;
+                data.data.user.balances.forEach(b => {
+                    if (b.vault && b.vault.amount > 0) {
+                        STATE.vaultBalances[b.vault.currency] = b.vault.amount;
+                        total += b.vault.amount;
+                    }
+                });
+                STATE.vaultTotal = total;
+                updateVaultDisplay();
+            }
+        } catch(e) {
+            console.error('[VAULT] Error:', e);
+        }
+    }
+
+    async function depositToVault(currency, amount) {
+        if (!accessToken || !amount || amount <= 0) return null;
+        try {
+            const mutation = `mutation CreateVaultDeposit($currency: CurrencyEnum!, $amount: Float!) {
+                createVaultDeposit(currency: $currency, amount: $amount) {
+                    id
+                    amount
+                    currency
+                }
+            }`;
+            
+            const variables = {
+                currency: currency.toLowerCase(),
+                amount: amount
+            };
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query: mutation, variables })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.createVaultDeposit) {
+                await fetchVaultBalance();
+                return data.data.createVaultDeposit;
+            }
+            return null;
+        } catch(e) {
+            console.error('[VAULT] Deposit error:', e);
+            return null;
+        }
+    }
+
+    // ==================== 12. RAFFLE ====================
+    async function checkRaffleTickets(raffleId) {
+        if (!accessToken || !raffleId) return null;
+        try {
+            const query = `query TicketList($raffleId: String!, $offset: Int, $limit: Int) {
+                raffle(raffleId: $raffleId) {
+                    id
+                    name
+                    raffleUser {
+                        ticketCount
+                        ticketList(limit: $limit, offset: $offset) {
+                            ticketNumber
+                            raffle { name }
+                        }
+                    }
+                }
+            }`;
+            
+            const variables = {
+                raffleId: raffleId,
+                limit: 12,
+                offset: 0
+            };
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query, variables })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.raffle) {
+                return {
+                    id: data.data.raffle.id,
+                    name: data.data.raffle.name,
+                    ticketCount: data.data.raffle.raffleUser?.ticketCount || 0,
+                    tickets: data.data.raffle.raffleUser?.ticketList || []
+                };
+            }
+            return null;
+        } catch(e) {
+            console.error('[RAFFLE] Error:', e);
+            return null;
+        }
+    }
+
+    async function checkAllRaffles() {
+        let totalTickets = 0;
+        let report = '🎟️ RAFFLE STATUS\n';
+        
+        for (let id of STATE.raffleIds) {
+            const result = await checkRaffleTickets(id);
+            if (result) {
+                STATE.raffleData[result.id] = result;
+                report += `\n${result.name}: ${result.ticketCount} tickets`;
+                totalTickets += result.ticketCount;
+            }
+        }
+        
+        STATE.raffleTickets = totalTickets;
+        report += `\n\nTotal: ${totalTickets} tickets`;
+        
+        updateRaffleDisplay();
+        return report;
+    }
+
+    // ==================== 13. TELEGRAM CHANNEL MONITOR ====================
+    async function connectTelegramChannel() {
+        const channelInput = document.getElementById('p-tg-channel');
+        if (!channelInput) return;
+        
+        const username = channelInput.value.trim();
+        if (!username) {
+            await sendTelegramMessage('⚠️ Masukkan channel username!');
+            return;
+        }
+        
+        let cleanUsername = username;
+        if (cleanUsername.startsWith('@')) {
+            cleanUsername = cleanUsername.substring(1);
+        }
+        
+        STATE.tgChannelUsername = cleanUsername;
+        
+        try {
+            const url = `https://api.telegram.org/bot${CONFIG.tgBotToken}/getChat`;
+            const params = new URLSearchParams({
+                chat_id: '@' + cleanUsername
+            });
+            
+            const res = await fetch(url + '?' + params);
+            const data = await res.json();
+            
+            if (data.ok && data.result) {
+                STATE.tgChannelId = data.result.id;
+                STATE.tgChannelEnabled = true;
+                STATE.tgChannelLastMessageId = 0;
+                
+                await getChannelMessages();
+                
+                const statusEl = document.getElementById('tg-channel-status');
+                if (statusEl) {
+                    statusEl.innerHTML = `📡 Status: ✅ Connected to @${cleanUsername} (ID: ${STATE.tgChannelId})`;
+                    statusEl.style.color = '#00e5c0';
+                }
+                
+                await sendTelegramMessage(`📡 Channel connected: @${cleanUsername}\nMonitoring started...`);
+            } else {
+                const statusEl = document.getElementById('tg-channel-status');
+                if (statusEl) {
+                    statusEl.innerHTML = `❌ Failed to connect: ${data.description || 'Unknown error'}`;
+                    statusEl.style.color = '#ff6b81';
+                }
+            }
+        } catch(e) {
+            console.error('[TG] Connect error:', e);
+            const statusEl = document.getElementById('tg-channel-status');
+            if (statusEl) {
+                statusEl.innerHTML = `❌ Error: ${e.message}`;
+                statusEl.style.color = '#ff6b81';
+            }
+        }
+    }
+
+    async function getChannelMessages() {
+        if (!STATE.tgChannelId || !STATE.tgChannelEnabled) return;
+        
+        try {
+            const url = `https://api.telegram.org/bot${CONFIG.tgBotToken}/getUpdates`;
+            const params = new URLSearchParams({
+                offset: STATE.tgChannelLastMessageId + 1,
+                timeout: 5,
+                allowed_updates: ['channel_post']
+            });
+            
+            const res = await fetch(url + '?' + params);
+            const data = await res.json();
+            
+            if (!data.ok || !data.result) return;
+            
+            for (let update of data.result) {
+                if (update.update_id > STATE.tgChannelLastMessageId) {
+                    STATE.tgChannelLastMessageId = update.update_id;
+                }
+                
+                const post = update.channel_post;
+                if (post && post.chat && post.chat.id === STATE.tgChannelId) {
+                    const text = post.text || post.caption || '';
+                    const bonusCode = extractBonusCode(text);
+                    if (bonusCode) {
+                        await handleBonusCodeFromChannel(bonusCode, text, post);
+                    }
+                }
+            }
+        } catch(e) {
+            console.error('[TG] Get channel messages error:', e);
+        }
+    }
+
+    async function handleBonusCodeFromChannel(code, rawMessage, postData) {
+        if (STATE.bonusCodeClaimed.includes(code)) {
+            console.log('[BONUS] Already claimed:', code);
+            return;
+        }
+        
+        if (!accessToken) {
+            await sendTelegramMessage(`⚠️ Bonus code detected from channel!\nCode: \`${code}\`\n❌ But not logged in to claim.`);
+            return;
+        }
+        
+        if (!STATE.bonusAutoClaim) {
+            await sendTelegramMessage(`📢 Bonus code detected from channel!\nCode: \`${code}\`\n⏳ Auto claim is disabled.`);
+            return;
+        }
+        
+        try {
+            const info = await checkBonusCodeInfo(code, 'drop');
+            if (!info || info.status === 'bonusCodeInactive') {
+                await sendTelegramMessage(`📢 Bonus code from channel: \`${code}\`\n❌ Status: ${info?.status || 'Inactive'}`);
+                return;
+            }
+            
+            if (info.status === 'alreadyUsed' || info.status === 'alreadyClaimed') {
+                STATE.bonusCodeClaimed.push(code);
+                await sendTelegramMessage(`📢 Bonus code from channel: \`${code}\`\n⏳ Already used/claimed.`);
+                return;
+            }
+            
+            const claimResult = await claimBonusCode(code, 'drop', STATE.bonusClaimCurrency);
+            
+            if (claimResult?.success) {
+                STATE.bonusCodeClaimed.push(code);
+                const msg = `🎉 BONUS CODE CLAIMED FROM CHANNEL!\n` +
+                            `Code: \`${code}\`\n` +
+                            `Value: ${claimResult.value || '?'} ${claimResult.currency || STATE.bonusClaimCurrency.toUpperCase()}\n` +
+                            `Multiplier: ${claimResult.multiplier || '1x'}\n` +
+                            `Claimed: ${new Date(claimResult.claimedAt).toLocaleString()}`;
+                await sendTelegramMessage(msg);
+                await syncUserInfo();
+                await fetchVaultBalance();
+                await checkAllRaffles();
+                updateAllUI();
+            } else {
+                const errorMsg = claimResult?.error || 'Unknown error';
+                await sendTelegramMessage(`❌ Failed to claim bonus from channel\nCode: \`${code}\`\nCurrency: ${STATE.bonusClaimCurrency.toUpperCase()}\nError: ${errorMsg}`);
+            }
+        } catch(e) {
+            console.error('[BONUS] Handle channel error:', e);
+            await sendTelegramMessage(`❌ Error processing bonus from channel: ${e.message}`);
+        }
+    }
+
+    async function startChannelMonitor() {
+        console.log('[CHANNEL] Starting channel monitor...');
+        while (true) {
+            if (STATE.tgChannelEnabled && STATE.tgChannelId) {
+                await getChannelMessages();
+            }
+            await sleep(STATE.tgChannelPollingInterval);
+        }
+    }
+
+    async function testChannel() {
+        if (!STATE.tgChannelId) {
+            await sendTelegramMessage('⚠️ Connect channel dulu!');
+            return;
+        }
+        await sendTelegramMessage(`🧪 Testing channel @${STATE.tgChannelUsername}...`);
+        await getChannelMessages();
+        await sendTelegramMessage('✅ Test completed.');
+    }
+
+    // ==================== 14. SYNC USER INFO ====================
+    async function syncUserInfo() {
+        if (!accessToken || accessToken.length < 30) return false;
+        var query = 'query{user{name balances{available{amount currency}}}}';
+        try {
+            var res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-access-token": accessToken },
+                body: JSON.stringify({ query: query })
+            });
+            var json = await res.json();
+            if (json && json.data && json.data.user) {
+                STATE.stakeUser = json.data.user.name;
+                var bals = json.data.user.balances || [];
+                var sel = document.getElementById("p-currency");
+                if (sel && sel.options.length === 0) {
+                    var fallback = ["USDT", "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT"];
+                    for (var j = 0; j < fallback.length; j++) {
+                        var opt2 = document.createElement("option");
+                        opt2.value = fallback[j].toLowerCase();
+                        opt2.textContent = fallback[j];
+                        sel.appendChild(opt2);
+                    }
+                    sel.value = STATE.selectedCurrency;
+                }
+                STATE.selectedCurrency = sel ? sel.value : "usdt";
+                var active = null;
+                for (var k = 0; k < bals.length; k++) {
+                    if (bals[k].available.currency.toLowerCase() === STATE.selectedCurrency.toLowerCase()) {
+                        active = bals[k];
+                        break;
+                    }
+                }
+                if (active) {
+                    STATE.balance = parseFloat(active.available.amount);
+                    STATE.startBalance = STATE.balance;
+                }
+                return true;
+            }
+        } catch(e) { return false; }
+        return false;
+    }
+
+    // ==================== 15. PLACE BLACKJACK BET ====================
     async function placeBlackjackBet(amount) {
         const apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
         
         try {
-            // ===== CEK ACTIVE GAME =====
             if (STATE.bjActiveGame && STATE.bjActiveGameId) {
                 console.log('[BJ] Active game detected! Forcing STAND...');
-                
                 const standPayload = {
                     action: 'stand',
                     identifier: STATE.bjActiveGameId
                 };
-                
                 const standRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
                     method: 'POST',
                     headers: {
@@ -402,12 +1125,8 @@
                     },
                     body: JSON.stringify(standPayload)
                 });
-                
                 const standData = await standRes.json();
-                console.log('[BJ] Force Stand response:', standData);
-                
                 if (standData.error) {
-                    console.error('[BJ] Force Stand error:', standData.error);
                     STATE.bjActiveGame = false;
                     STATE.bjActiveGameId = null;
                     STATE.bjActiveState = null;
@@ -416,11 +1135,9 @@
                     STATE.bjActiveGame = false;
                     STATE.bjActiveGameId = null;
                     STATE.bjActiveState = null;
-                    
                     if (standData.state?.user?.wallets?.[0]) {
                         STATE.balance = parseFloat(standData.state.user.wallets[0].balance);
                     }
-                    
                     return {
                         result: result,
                         state: standData.state,
@@ -434,15 +1151,12 @@
                 }
             }
             
-            // ===== PLACE BET BARU =====
             console.log('[BJ] Placing new bet:', apiAmount);
-            
             const betPayload = {
                 identifier: generateId(),
                 amount: apiAmount,
                 currency: STATE.selectedCurrency
             };
-            
             const betRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/bet', {
                 method: 'POST',
                 headers: {
@@ -452,12 +1166,9 @@
                 },
                 body: JSON.stringify(betPayload)
             });
-            
             const betData = await betRes.json();
-            console.log('[BJ] Bet response:', betData);
             
             if (betData.error) {
-                console.error('[BJ] Bet error:', betData.error);
                 STATE.bjActiveGame = false;
                 STATE.bjActiveGameId = null;
                 STATE.bjActiveState = null;
@@ -466,59 +1177,36 @@
             
             const gameId = betData.id;
             if (!gameId) {
-                console.error('[BJ] No game ID');
                 STATE.bjActiveGame = false;
                 return null;
             }
             
             let state = betData.state;
             if (!state || !state.player) {
-                console.error('[BJ] No state');
                 STATE.bjActiveGame = false;
                 return null;
             }
             
-            // ===== SET ACTIVE GAME =====
             STATE.bjActiveGame = true;
             STATE.bjActiveGameId = gameId;
             STATE.bjActiveState = state;
             STATE.bjActionCount = 0;
             STATE.bjForceStandAttempted = false;
             
-            // ===== LOOP ACTION =====
             let actionCount = 0;
             const maxActions = STATE.bjMaxActions;
             
             while (actionCount < maxActions && STATE.bjActiveGame) {
                 const player = state.player?.[0];
                 if (!player) break;
-                
                 const actions = player.actions || [];
-                console.log('[BJ] Actions available:', actions);
-                
-                const canAct = actions.includes('hit') || 
-                              actions.includes('double') || 
-                              actions.includes('split');
-                
-                if (!canAct) {
-                    console.log('[BJ] No more actions, game finished');
-                    break;
-                }
+                const canAct = actions.includes('hit') || actions.includes('double') || actions.includes('split');
+                if (!canAct) break;
                 
                 const action = getBlackjackAction(state);
-                console.log('[BJ] Action:', action);
+                if (action === 'stand') break;
                 
-                if (action === 'stand') {
-                    break;
-                }
-                
-                const nextPayload = {
-                    action: action,
-                    identifier: gameId
-                };
-                
-                console.log('[BJ] Next payload:', nextPayload);
-                
+                const nextPayload = { action: action, identifier: gameId };
                 const nextRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
                     method: 'POST',
                     headers: {
@@ -528,21 +1216,12 @@
                     },
                     body: JSON.stringify(nextPayload)
                 });
-                
                 const nextData = await nextRes.json();
-                console.log('[BJ] Next response:', nextData);
                 
                 if (nextData.error) {
-                    console.error('[BJ] Next error:', nextData.error);
                     if (!STATE.bjForceStandAttempted) {
                         STATE.bjForceStandAttempted = true;
-                        console.log('[BJ] Error, forcing stand...');
-                        
-                        const forceStandPayload = {
-                            action: 'stand',
-                            identifier: gameId
-                        };
-                        
+                        const forceStandPayload = { action: 'stand', identifier: gameId };
                         const forceStandRes = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
                             method: 'POST',
                             headers: {
@@ -552,39 +1231,28 @@
                             },
                             body: JSON.stringify(forceStandPayload)
                         });
-                        
                         const forceStandData = await forceStandRes.json();
-                        console.log('[BJ] Force stand result:', forceStandData);
-                        
                         if (!forceStandData.error && forceStandData.state) {
                             state = forceStandData.state;
                             break;
                         }
                     }
-                    
                     STATE.bjActiveGame = false;
                     STATE.bjActiveGameId = null;
                     STATE.bjActiveState = null;
                     return null;
                 }
-                
                 state = nextData.state;
                 STATE.bjActiveState = state;
                 actionCount++;
                 STATE.bjActionCount = actionCount;
             }
             
-            // ===== PARSE RESULT =====
             const result = parseBlackjackResult(state);
-            console.log('[BJ] Final result:', result);
-            
-            // ===== UPDATE BALANCE =====
             if (state?.user?.wallets?.[0]) {
                 STATE.balance = parseFloat(state.user.wallets[0].balance);
-                console.log('[BJ] Balance updated:', STATE.balance);
             }
             
-            // ===== RESET ACTIVE GAME =====
             STATE.bjActiveGame = false;
             STATE.bjActiveGameId = null;
             STATE.bjActiveState = null;
@@ -609,7 +1277,7 @@
         }
     }
 
-    // ==================== 8. STREAK TRACKING ====================
+    // ==================== 16. STREAK TRACKING ====================
     function updateStreak(result) {
         const isWin = (result === 'win');
         const isPush = (result === 'push');
@@ -648,7 +1316,7 @@
         return 'normal';
     }
 
-    // ==================== 9. BET CALCULATION ====================
+    // ==================== 17. BET CALCULATION ====================
     function calculateNormalBet(balance) {
         let bet = balance * (STATE.baseBetPercent / 100);
         bet = Math.max(bet, STATE.minBet);
@@ -678,7 +1346,7 @@
         return bet;
     }
 
-    // ==================== 10. HARVEST & RECOVERY ====================
+    // ==================== 18. HARVEST & RECOVERY ====================
     function startHarvest() {
         STATE.isHarvesting = true;
         STATE.harvestCount++;
@@ -740,14 +1408,12 @@
             return;
         }
         
-        // LOSS atau PUSH
         STATE.harvestBet = STATE.harvestBet * STATE.harvestMultiplier;
         STATE.harvestBet = Math.min(STATE.harvestBet, STATE.balance * 0.005);
         if (STATE.maxBetCap > 0) STATE.harvestBet = Math.min(STATE.harvestBet, STATE.maxBetCap);
         
         console.log('[HARVEST] LOSS, new bet:', STATE.harvestBet);
         
-        // Check cutloss
         if (STATE.lossStreak >= STATE.recoveryTrigger) {
             const loss = STATE.balance - STATE.harvestStartBalance;
             addHarvestEntry('CUT LOSS', loss);
@@ -803,7 +1469,6 @@
             return;
         }
         
-        // LOSS atau PUSH
         STATE.recoveryTotalLoss += betAmount;
         STATE.recovery.betLossInSplit += betAmount;
         STATE.recovery.lossStreak++;
@@ -871,7 +1536,7 @@
         if (counter) counter.textContent = STATE.harvestingEntries.length;
     }
 
-    // ==================== 11. RESET FUNCTIONS ====================
+    // ==================== 19. RESET FUNCTIONS ====================
     function resetToBreakeven() {
         var currentBalance = STATE.balance;
         var lossTolerancePct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -974,143 +1639,7 @@
         updateAllUI();
     }
 
-    // ==================== 12. FIAT RATE ====================
-    function getCoinGeckoId(coin) {
-        var map = {
-            "USDT": "tether", "USDC": "usd-coin", "DAI": "dai",
-            "BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin",
-            "SOL": "solana", "XRP": "ripple", "ADA": "cardano",
-            "DOGE": "dogecoin", "TRX": "tron", "DOT": "polkadot",
-            "MATIC": "polygon", "LTC": "litecoin", "BCH": "bitcoin-cash",
-            "LINK": "chainlink", "UNI": "uniswap", "ATOM": "cosmos"
-        };
-        return map[coin] || coin.toLowerCase();
-    }
-
-    async function fetchPriceToIDR(coin) {
-        try {
-            var cgId = getCoinGeckoId(coin);
-            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
-            var data = await res.json();
-            if (data[cgId] && data[cgId].idr) return data[cgId].idr;
-        } catch(e) {}
-        try {
-            var coinRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + coin + 'USDT');
-            var coinData = await coinRes.json();
-            var idrRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR');
-            var idrData = await idrRes.json();
-            if (coinData.price && idrData.price) {
-                return parseFloat(coinData.price) * parseFloat(idrData.price);
-            }
-        } catch(e) {}
-        return null;
-    }
-
-    async function updateFiatRatesOnce() {
-        if (STATE.fiatRateFetched) return;
-        var rate = await fetchPriceToIDR(STATE.selectedCurrency.toUpperCase());
-        if (rate !== null && rate > 0) {
-            STATE.fiatRates.idr = rate;
-            STATE.fiatRateFetched = true;
-            STATE.minBet = STATE.minBetIdr / rate;
-            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
-            var infoEl = document.getElementById("minbet-info");
-            if (infoEl) infoEl.innerHTML = '≈ ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase();
-            return true;
-        }
-        return false;
-    }
-
-    function convertWagerTargetToCrypto(targetUSD) {
-        return targetUSD;
-    }
-
-    // ==================== 13. SYNC USER INFO ====================
-    async function syncUserInfo() {
-        if (!accessToken || accessToken.length < 30) return false;
-        var query = 'query{user{name balances{available{amount currency}}}}';
-        try {
-            var res = await fetch(CONFIG.apiUrl + '/graphql', {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-access-token": accessToken },
-                body: JSON.stringify({ query: query })
-            });
-            var json = await res.json();
-            if (json && json.data && json.data.user) {
-                STATE.stakeUser = json.data.user.name;
-                var bals = json.data.user.balances || [];
-                var sel = document.getElementById("p-currency");
-                if (sel && sel.options.length === 0) {
-                    var fallback = ["USDT", "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT"];
-                    for (var j = 0; j < fallback.length; j++) {
-                        var opt2 = document.createElement("option");
-                        opt2.value = fallback[j].toLowerCase();
-                        opt2.textContent = fallback[j];
-                        sel.appendChild(opt2);
-                    }
-                    sel.value = STATE.selectedCurrency;
-                }
-                STATE.selectedCurrency = sel ? sel.value : "usdt";
-                var active = null;
-                for (var k = 0; k < bals.length; k++) {
-                    if (bals[k].available.currency.toLowerCase() === STATE.selectedCurrency.toLowerCase()) {
-                        active = bals[k];
-                        break;
-                    }
-                }
-                if (active) {
-                    STATE.balance = parseFloat(active.available.amount);
-                    STATE.startBalance = STATE.balance;
-                }
-                await updateFiatRatesOnce();
-                return true;
-            }
-        } catch(e) { return false; }
-        return false;
-    }
-
-    // ==================== 14. TELEGRAM ====================
-    async function sendTelegramMessage(message) {
-        if (!CONFIG.tgBotToken || !CONFIG.tgChatId) return;
-        try {
-            var formatted = '```\n' + message + '\n```';
-            await fetch('https://api.telegram.org/bot' + CONFIG.tgBotToken + '/sendMessage', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    chat_id: CONFIG.tgChatId,
-                    text: formatted,
-                    parse_mode: 'Markdown'
-                })
-            });
-        } catch(e) {}
-    }
-
-    async function sendSessionReport() {
-        var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
-        var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
-        var runTime = getDuration();
-        var status = STATE.isHarvesting ? (STATE.isRecoveryMode ? '🔄 RECOVERY' : '🌾 HARVEST') : 
-                    (STATE.isTrailingActive ? '🔱 TRAIL L' + STATE.trailingLevel : '⚡ NORMAL');
-        
-        var message = '💰 CHEAPCHEATX BLACKJACK v2.0\n' +
-                      '"Your Stake Wagered Partner"\n' +
-                      'User: ' + STATE.stakeUser + '\n' +
-                      'Time: ' + runTime + '\n' +
-                      'Balance: ' + STATE.balance.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
-                      'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(2) + ' / ' + STATE.wagerTotalTarget.toFixed(2) + '\n' +
-                      'Sesi Wager: ' + STATE.wagerSesiCounter.toFixed(2) + ' / ' + STATE.wagerSesiTarget.toFixed(2) + '\n' +
-                      'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(2) + ' (' + profitPct.toFixed(2) + '%)\n' +
-                      'Wagered: ' + STATE.wagered.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
-                      'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
-                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
-                      'Status: ' + status + '\n' +
-                      'Harvest: ' + STATE.harvestCount + '\n' +
-                      '🎰 Blackjack Mode: ON';
-        await sendTelegramMessage(message);
-    }
-
-    // ==================== 15. UI UPDATES ====================
+    // ==================== 20. UI UPDATES ====================
     function updateAllUI() {
         updateStatsDisplay();
         updateWagerDisplay();
@@ -1145,6 +1674,14 @@
             cutlossDisplay = STATE.recovery.lossStreak || 0;
         }
         
+        var vaultDisplay = Object.entries(STATE.vaultBalances)
+            .filter(([k, v]) => v > 0)
+            .map(([k, v]) => `${k.toUpperCase()}: ${v.toFixed(4)}`)
+            .join(' | ') || 'Empty';
+        
+        var unclaimedBonusText = STATE.unclaimedBonuses.length > 0 ? 
+            `🎁 ${STATE.unclaimedBonuses.length} unclaimed` : '🎁 No unclaimed';
+        
         var map = {
             "st-user": STATE.stakeUser,
             "st-running-time": runTime,
@@ -1163,7 +1700,10 @@
             "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
             "st-split-progress": splitDisplay,
             "st-cutloss-count": cutlossDisplay,
-            "st-loss-per-split": STATE.recoveryTotalLoss ? STATE.recoveryTotalLoss.toFixed(4) : '0'
+            "st-loss-per-split": STATE.recoveryTotalLoss ? STATE.recoveryTotalLoss.toFixed(4) : '0',
+            "st-vault": vaultDisplay,
+            "st-raffle": '🎟️ ' + STATE.raffleTickets + ' tickets',
+            "st-unclaimed-bonus": unclaimedBonusText
         };
         for (var id in map) {
             var el = document.getElementById(id);
@@ -1174,6 +1714,59 @@
         
         var bar = document.getElementById("st-session-progress-bar");
         if (bar) bar.style.width = sessionProgress + '%';
+        
+        updateVipDisplay();
+        updateBonusDisplay();
+        updateVaultDisplay();
+        updateRaffleDisplay();
+        updateBonusClaimStatus();
+    }
+
+    function updateVipDisplay() {
+        const el = document.getElementById('st-vip-progress');
+        if (el) {
+            const flag = STATE.vipFlag === 'none' ? 'No Flag' : STATE.vipFlag.toUpperCase();
+            el.textContent = `${flag} | ${STATE.vipProgress.toFixed(1)}%`;
+        }
+        const bar = document.getElementById('vip-progress-bar');
+        if (bar) {
+            bar.style.width = Math.min(STATE.vipProgress, 100) + '%';
+        }
+    }
+
+    function updateBonusDisplay() {
+        const el = document.getElementById('st-bonus-info');
+        if (el) {
+            const reloadStatus = STATE.reloadBonus.active ? '✅ Active' : '⏳ Inactive';
+            const rakeback = STATE.rakebackBalances.usdt || 0;
+            const rakebackDisplay = rakeback > 0 ? rakeback.toFixed(4) : '0';
+            el.textContent = `💰 Rakeback: ${rakebackDisplay} USDT | Reload: ${reloadStatus}`;
+        }
+    }
+
+    function updateVaultDisplay() {
+        const el = document.getElementById('st-vault');
+        if (el) {
+            const entries = Object.entries(STATE.vaultBalances)
+                .filter(([k, v]) => v > 0)
+                .map(([k, v]) => `${k.toUpperCase()}: ${v.toFixed(4)}`)
+                .join(' | ');
+            el.textContent = entries || 'Empty';
+        }
+    }
+
+    function updateRaffleDisplay() {
+        const el = document.getElementById('st-raffle');
+        if (el) {
+            el.textContent = '🎟️ ' + STATE.raffleTickets + ' tickets';
+        }
+    }
+
+    function updateBonusClaimStatus() {
+        const el = document.getElementById('bonus-claim-status');
+        if (el) {
+            el.textContent = `💱 Currency: ${STATE.bonusClaimCurrency.toUpperCase()} | Auto Claim: ${STATE.bonusAutoClaim ? '✅ ON' : '❌ OFF'}`;
+        }
     }
 
     function updateWagerDisplay() {
@@ -1228,7 +1821,7 @@
         `;
     }
 
-    // ==================== 16. LOGGING ====================
+    // ==================== 21. LOGGING ====================
     function logBet(betNumber, amount, result, profit, label) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -1251,7 +1844,7 @@
         }
     }
 
-    // ==================== 17. PROCESS BLACKJACK RESULT ====================
+    // ==================== 22. PROCESS BLACKJACK RESULT ====================
     function processBlackjackResult(result, betAmount, mode) {
         if (!result) return;
         
@@ -1316,7 +1909,40 @@
         }
     }
 
-    // ==================== 18. RUN LOOP ====================
+    // ==================== 23. SESSION REPORT ====================
+    async function sendSessionReport() {
+        var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
+        var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
+        var runTime = getDuration();
+        var status = STATE.isHarvesting ? (STATE.isRecoveryMode ? '🔄 RECOVERY' : '🌾 HARVEST') : 
+                    (STATE.isTrailingActive ? '🔱 TRAIL L' + STATE.trailingLevel : '⚡ NORMAL');
+        
+        var vaultDisplay = Object.entries(STATE.vaultBalances)
+            .filter(([k, v]) => v > 0)
+            .map(([k, v]) => `${k.toUpperCase()}: ${v.toFixed(4)}`)
+            .join(' | ') || 'Empty';
+        
+        var message = '💰 CHEAPCHEATX BLACKJACK v2.0\n' +
+                      '"Your Stake Wagered Partner"\n' +
+                      'User: ' + STATE.stakeUser + '\n' +
+                      'Time: ' + runTime + '\n' +
+                      'Balance: ' + STATE.balance.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
+                      'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(2) + ' / ' + STATE.wagerTotalTarget.toFixed(2) + '\n' +
+                      'Sesi Wager: ' + STATE.wagerSesiCounter.toFixed(2) + ' / ' + STATE.wagerSesiTarget.toFixed(2) + '\n' +
+                      'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(2) + ' (' + profitPct.toFixed(2) + '%)\n' +
+                      'Wagered: ' + STATE.wagered.toFixed(2) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
+                      'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '% | Push: ' + STATE.pushes + '\n' +
+                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
+                      'Status: ' + status + '\n' +
+                      'Harvest: ' + STATE.harvestCount + '\n' +
+                      '🏦 Vault: ' + vaultDisplay + '\n' +
+                      '🎟️ Raffle: ' + STATE.raffleTickets + ' tickets\n' +
+                      '🎁 Unclaimed: ' + STATE.unclaimedBonuses.length + '\n' +
+                      '🎰 Blackjack Mode: ON';
+        await sendTelegramMessage(message);
+    }
+
+    // ==================== 24. RUN LOOP ====================
     async function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1381,7 +2007,7 @@
         setTimeout(runLoop, delay);
     }
 
-    // ==================== 19. UI CONTROLS ====================
+    // ==================== 25. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1403,41 +2029,7 @@
         }
     }
 
-    // ==================== 20. SPLASH ====================
-    function showSplash() {
-        if (sessionStorage.getItem('cheapcheatx_splash_seen')) return;
-        var splash = document.createElement('div');
-        splash.id = 'splash-overlay';
-        splash.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:999999;display:flex;justify-content:center;align-items:center;font-family:Segoe UI,monospace;backdrop-filter:blur(8px);';
-        splash.innerHTML = `
-            <div style="background:linear-gradient(145deg,#1a1a2e,#16213e);border-radius:24px;padding:40px 50px;max-width:550px;width:90%;border:2px solid #ff6b81;box-shadow:0 0 60px rgba(255,107,129,0.2);text-align:center;animation:splashFadeIn 0.8s ease;">
-                <div style="font-size:34px;font-weight:800;color:#ff6b81;letter-spacing:3px;text-shadow:0 0 30px rgba(255,107,129,0.2);">CHEAPCHEATX</div>
-                <div style="font-size:14px;color:#a0a0a0;margin:4px 0 12px;font-weight:300;letter-spacing:2px;">"Your Stake Wagered Partner"</div>
-                <div style="font-size:16px;color:#00e5c0;margin-bottom:8px;">🎰 BLACKJACK EDITION</div>
-                <div style="height:2px;background:linear-gradient(90deg,transparent,#ff6b81,transparent);margin:10px 0 16px;opacity:0.5;"></div>
-                <div style="font-size:18px;color:#e0e0e0;font-style:italic;font-weight:300;margin-bottom:18px;">🎯 Harvest → Recovery · Pure Data-Based</div>
-                <div style="text-align:left;background:rgba(0,0,0,0.3);border-radius:12px;padding:12px 16px;margin-bottom:18px;border:1px solid rgba(255,107,129,0.12);font-size:11px;color:#c0c0c0;">
-                    <div>🃏 Game: <strong>BLACKJACK</strong></div>
-                    <div>📉 Trigger: 3x Loss → Harvest, 5x Loss → Recovery</div>
-                    <div>🔄 Push (Seri) dianggap LOSS</div>
-                    <div>📊 Basic Strategy: Hit/Stand/Double/Split</div>
-                    <div>🛡️ V2: 1/4 BET SIZE!</div>
-                    <div>📉 Max Bet: 0.5% (Harvest) · 0.25% (Recovery)</div>
-                    <div>💱 Auto Convert: Support 80+ Coins</div>
-                </div>
-                <button id="splash-start" style="background:linear-gradient(135deg,#ff6b81,#e74c6f);border:none;padding:14px 40px;border-radius:12px;font-size:16px;font-weight:700;color:#1a1a2e;cursor:pointer;width:100%;letter-spacing:1px;box-shadow:0 4px 20px rgba(255,107,129,0.3);font-family:Segoe UI,sans-serif;">🚀 START</button>
-                <div style="font-size:9px;color:#606060;margin-top:12px;">⚡ v2.0 Blackjack · 1/4 Bet Size · Built with ❤️</div>
-            </div>
-            <style>@keyframes splashFadeIn{0%{opacity:0;transform:scale(0.9) translateY(20px)}100%{opacity:1;transform:scale(1) translateY(0)}}</style>
-        `;
-        document.body.appendChild(splash);
-        document.getElementById('splash-start').onclick = function() {
-            splash.remove();
-            sessionStorage.setItem('cheapcheatx_splash_seen', 'true');
-        };
-    }
-
-    // ==================== 21. CREATE UI ====================
+    // ==================== 26. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1499,8 +2091,6 @@
             .harvesting-loss { color: var(--danger); }
             .harvesting-chance { background: rgba(255,107,129,0.2); padding: 2px 6px; border-radius: 10px; font-size: 8px; font-weight: bold; }
             .harvesting-empty { text-align: center; padding: 20px; color: var(--text-light); font-size: 9px; }
-            .hunt-table { max-height: 400px; overflow-y: auto; font-size: 10px; }
-            .hunt-stats { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 6px 8px; background: var(--bg); border-radius: 6px; margin-top: 8px; font-size: 9px; }
             .md-field { margin-bottom: 8px; }
             .md-field label { display: block; font-size: 9px; font-weight: 500; margin-bottom: 3px; color: var(--text-light); }
             .md-field input, .md-field select { width: 100%; padding: 6px; font-size: 10px; }
@@ -1557,6 +2147,10 @@
                         <div class="line"><span class="label">User</span><span class="value" id="st-user">-</span></div>
                         <div class="line"><span class="label">Balance</span><span class="value" id="st-balance">0</span></div>
                         <div class="divider"></div>
+                        <div class="line"><span class="label">👑 VIP PROGRESS</span><span class="value" id="st-vip-progress">-</span></div>
+                        <div class="progress-bar"><div class="progress-fill" id="vip-progress-bar" style="width:0%;background:#ff922b;"></div></div>
+                        <div class="line"><span class="label">🎁 BONUS</span><span class="value" id="st-bonus-info">-</span></div>
+                        <div class="divider"></div>
                         <div class="line"><span class="label">📋 SESSION #</span><span class="value" id="st-session-num">1</span></div>
                         <div class="line"><span class="label">🎯 TARGET</span><span class="value" id="st-session-target">5% (0.00 USDT)</span></div>
                         <div class="progress-bar"><div class="progress-fill" id="st-session-progress-bar"></div></div>
@@ -1577,6 +2171,10 @@
                         <div class="line"><span class="label">📊 SPLIT</span><span class="value" id="st-split-progress">—</span></div>
                         <div class="line"><span class="label">✂️ CUTLOSS</span><span class="value" id="st-cutloss-count">0</span></div>
                         <div class="line"><span class="label">📉 LOSS/SPLIT</span><span class="value" id="st-loss-per-split">0</span></div>
+                        <div class="divider"></div>
+                        <div class="line"><span class="label">🏦 VAULT</span><span class="value" id="st-vault">Empty</span></div>
+                        <div class="line"><span class="label">🎟️ RAFFLE</span><span class="value" id="st-raffle">0 tickets</span></div>
+                        <div class="line"><span class="label">🎁 UNCLAIMED</span><span class="value" id="st-unclaimed-bonus">-</span></div>
                     </div>
                     <div id="wagerDisplay" style="background:var(--bg);padding:4px 8px;border-radius:6px;margin-top:6px;font-size:9px;">📊 Total: 0.00 / 0.00</div>
                     <div id="gapVisual"></div>
@@ -1589,7 +2187,7 @@
                         </div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🌾 HARVEST & RECOVERY (Pure Data-Based)</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🌾 HARVEST & RECOVERY</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 HARVEST TRIGGER (Loss)</label><input type="number" id="p-harvest-trigger" value="3" step="1" min="1" max="20"></div>
                             <div class="md-field"><label>🎯 RECOVERY TRIGGER (Loss)</label><input type="number" id="p-recovery-trigger" value="5" step="1" min="2" max="30"></div>
@@ -1604,6 +2202,63 @@
                         </div>
                         <div style="font-size:8px;color:#ff6b81;margin-top:4px;">🛡️ V2: Max Harvest 0.5% · Max Recovery 0.25% balance</div>
                         <div style="font-size:8px;color:#ff922b;margin-top:4px;">🔄 Push (Seri) dianggap LOSS</div>
+                    </div>
+                    <div class="stats-block">
+                        <div style="font-weight:bold;margin-bottom:8px;">🎁 BONUS CODE CLAIM</div>
+                        <div class="grid-2">
+                            <div class="md-field">
+                                <label>💱 Currency</label>
+                                <select id="p-bonus-currency">
+                                    <option value="usdt">USDT</option>
+                                    <option value="btc">BTC</option>
+                                    <option value="eth">ETH</option>
+                                    <option value="bnb">BNB</option>
+                                    <option value="sol">SOL</option>
+                                    <option value="xrp">XRP</option>
+                                    <option value="ada">ADA</option>
+                                    <option value="doge">DOGE</option>
+                                    <option value="trx">TRX</option>
+                                    <option value="ltc">LTC</option>
+                                    <option value="usdc">USDC</option>
+                                    <option value="idr">IDR</option>
+                                </select>
+                            </div>
+                            <div class="md-field">
+                                <label>📢 Auto Claim</label>
+                                <select id="p-bonus-auto-claim">
+                                    <option value="true">✅ ENABLED</option>
+                                    <option value="false">❌ DISABLED</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="font-size:8px;color:var(--text-light);margin-top:4px;" id="bonus-claim-status">💱 Currency: USDT | Auto Claim: ✅ ON</div>
+                    </div>
+                    <div class="stats-block">
+                        <div style="font-weight:bold;margin-bottom:8px;">🎁 UNCLAIMED BONUSES</div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button id="p-check-bonuses" class="btn-login" style="flex:1;">🔍 CHECK</button>
+                            <button id="p-claim-all" class="btn-login" style="flex:1;background:#00e5c0;color:black;">🎯 CLAIM ALL</button>
+                        </div>
+                        <div style="font-size:9px;color:var(--text-light);margin-top:6px;" id="bonus-list-status">📋 No unclaimed bonuses</div>
+                    </div>
+                    <div class="stats-block">
+                        <div style="font-weight:bold;margin-bottom:8px;">📡 TELEGRAM CHANNEL MONITOR</div>
+                        <div class="grid-2">
+                            <div class="md-field">
+                                <label>📢 Channel Username</label>
+                                <input type="text" id="p-tg-channel" placeholder="@bonuschannel" value="">
+                            </div>
+                            <div class="md-field">
+                                <label>⏱️ Polling Interval (detik)</label>
+                                <input type="number" id="p-tg-interval" value="30" step="5" min="5" max="300">
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:6px;">
+                            <button id="p-tg-connect" class="btn-login" style="flex:1;">🔗 CONNECT</button>
+                            <button id="p-tg-test" class="btn-login" style="flex:1;">🧪 TEST</button>
+                            <button id="p-tg-stop" class="btn-login" style="flex:1;background:#ff6b81;">⛔ STOP</button>
+                        </div>
+                        <div style="font-size:8px;color:var(--text-light);margin-top:6px;" id="tg-channel-status">📡 Status: Not Connected</div>
                     </div>
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🎯 WAGER FARMING</div>
@@ -1650,7 +2305,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎰 CHEAPCHEATX BLACKJACK v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Pure Data-Based<br>🔄 Push (Seri) = LOSS<br>📉 Trigger: 3x Loss → Harvest, 5x Loss → Recovery<br>🛡️ V2: 1/4 BET SIZE!</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎰 CHEAPCHEATX BLACKJACK v2.0<br>"Your Stake Wagered Partner"<br><br>📊 All Features Active<br>🔄 Push (Seri) = LOSS<br>📉 Trigger: 3x Loss → Harvest, 5x Loss → Recovery<br>🛡️ V2: 1/4 BET SIZE!</div></div>
                 </div>
                 <div id="tab-history" class="tab-content">
                     <div class="harvesting-panel">
@@ -1698,7 +2353,7 @@
             updateAllUI();
         };
         
-        // Token
+        // ===== TOKEN =====
         var loginBtn = document.getElementById("p-login");
         if (loginBtn) {
             loginBtn.onclick = async function() {
@@ -1711,9 +2366,19 @@
                 var success = await syncUserInfo();
                 if (success) {
                     document.getElementById("p-start").disabled = false;
-                    await updateFiatRatesOnce();
+                    await fetchVipProgress();
+                    await fetchRakebackInfo();
+                    await fetchVaultBalance();
+                    await checkAllRaffles();
+                    await getUnclaimedBonuses(10, 0);
                     updateAllUI();
                     sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
+                    
+                    // Start channel monitor
+                    if (!STATE._channelMonitorStarted) {
+                        STATE._channelMonitorStarted = true;
+                        startChannelMonitor();
+                    }
                 }
             };
         }
@@ -1723,12 +2388,72 @@
             refreshBtn.onclick = async function() {
                 if (!accessToken) return;
                 await syncUserInfo();
-                await updateFiatRatesOnce();
+                await fetchVipProgress();
+                await fetchRakebackInfo();
+                await fetchVaultBalance();
+                await checkAllRaffles();
+                await getUnclaimedBonuses(10, 0);
                 updateAllUI();
             };
         }
         
-        // START BUTTON
+        // ===== BONUS CURRENCY =====
+        document.getElementById('p-bonus-currency').onchange = function() {
+            STATE.bonusClaimCurrency = this.value;
+            updateBonusClaimStatus();
+            updateAllUI();
+        };
+        
+        document.getElementById('p-bonus-auto-claim').onchange = function() {
+            STATE.bonusAutoClaim = this.value === 'true';
+            updateBonusClaimStatus();
+            updateAllUI();
+        };
+        
+        // ===== UNCLAIMED BONUS =====
+        document.getElementById('p-check-bonuses').onclick = async function() {
+            const bonuses = await getUnclaimedBonuses(10, 0);
+            const el = document.getElementById('bonus-list-status');
+            if (!bonuses || bonuses.length === 0) {
+                el.textContent = '📋 No unclaimed bonuses';
+                el.style.color = 'var(--text-light)';
+            } else {
+                let text = `📋 ${bonuses.length} unclaimed bonuses: `;
+                text += bonuses.map(b => `${b.bonusCode?.code || '?'} (${b.amount || '?'} ${b.currency || 'USDT'})`).join(', ');
+                el.textContent = text;
+                el.style.color = '#ff922b';
+            }
+        };
+        
+        document.getElementById('p-claim-all').onclick = async function() {
+            await autoClaimAllBonuses();
+        };
+        
+        // ===== TELEGRAM CHANNEL =====
+        document.getElementById('p-tg-connect').onclick = async function() {
+            await connectTelegramChannel();
+        };
+        
+        document.getElementById('p-tg-test').onclick = async function() {
+            await testChannel();
+        };
+        
+        document.getElementById('p-tg-stop').onclick = function() {
+            STATE.tgChannelEnabled = false;
+            STATE.tgChannelId = null;
+            const statusEl = document.getElementById('tg-channel-status');
+            if (statusEl) {
+                statusEl.innerHTML = '📡 Status: ⛔ Stopped';
+                statusEl.style.color = '#ff6b81';
+            }
+            sendTelegramMessage('⛔ Channel monitoring stopped.');
+        };
+        
+        document.getElementById('p-tg-interval').onchange = function() {
+            STATE.tgChannelPollingInterval = safeInt('p-tg-interval', 30) * 1000;
+        };
+        
+        // ===== START =====
         var startBtn = document.getElementById("p-start");
         if (startBtn) {
             startBtn.onclick = async function() {
@@ -1790,11 +2515,6 @@
                     await syncUserInfo();
                     sendTelegramMessage('🎮 FLASH/DEMO MODE ACTIVE\nBalance: ' + balance.toFixed(2) + ' (virtual)\nAPI: Real Blackjack with amount 0');
                 } else {
-                    await updateFiatRatesOnce();
-                    if (STATE.fiatRates.idr > 0) {
-                        STATE.minBet = STATE.minBetIdr / STATE.fiatRates.idr;
-                        if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
-                    }
                     await syncUserInfo();
                     balance = STATE.balance;
                     if (!balance || balance === 0) {
@@ -1806,7 +2526,7 @@
                 STATE.startBalance = balance;
                 STATE.balance = balance;
                 STATE.peakBalanceEver = balance;
-                STATE.wagerTotalTarget = convertWagerTargetToCrypto(targetUSD);
+                STATE.wagerTotalTarget = targetUSD;
                 STATE.wagerLossTolerance = (lossPct / 100) * balance;
                 STATE.wagerSesiStartBal = balance;
                 STATE.wagerTotalAccumulated = 0;
@@ -1832,6 +2552,13 @@
                 STATE.isPaused = false;
                 STATE.betTimestamps = [];
                 
+                await fetchVipProgress();
+                await fetchRakebackInfo();
+                await fetchVaultBalance();
+                await checkAllRaffles();
+                await getUnclaimedBonuses(10, 0);
+                await monitorUnclaimedBonuses();
+                
                 toggleStartStop(true);
                 updateAllUI();
                 
@@ -1842,7 +2569,7 @@
             };
         }
         
-        // PAUSE
+        // ===== PAUSE =====
         var pauseBtn = document.getElementById("p-pause");
         if (pauseBtn) {
             pauseBtn.onclick = function() {
@@ -1857,7 +2584,7 @@
             };
         }
         
-        // STOP
+        // ===== STOP =====
         var stopBtn = document.getElementById("p-stop");
         if (stopBtn) {
             stopBtn.onclick = function() {
@@ -1866,7 +2593,7 @@
             };
         }
         
-        // RESET
+        // ===== RESET =====
         var resetBtn = document.getElementById("p-reset");
         if (resetBtn) {
             resetBtn.onclick = function() {
@@ -1875,18 +2602,16 @@
             };
         }
         
-        // CURRENCY
+        // ===== CURRENCY =====
         var currencyEl = document.getElementById("p-currency");
         if (currencyEl) {
             currencyEl.onchange = function() {
                 STATE.selectedCurrency = this.value;
-                STATE.fiatRateFetched = false;
-                updateFiatRatesOnce();
                 updateAllUI();
             };
         }
         
-        // CONFIG EVENTS
+        // ===== CONFIG EVENTS =====
         document.getElementById("p-harvest-trigger").onchange = function() {
             STATE.harvestTrigger = safeInt("p-harvest-trigger", 3);
             updateAllUI();
@@ -1906,7 +2631,7 @@
         document.getElementById("p-wager-total-target-usd").oninput = updateAllUI;
         document.getElementById("p-wager-loss-tolerance-pct").oninput = updateLossToleranceDisplay;
         
-        // OPEN TAB
+        // ===== OPEN TAB =====
         window.openTab = function(tabName) {
             document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
             var target = document.getElementById('tab-' + tabName);
@@ -1916,7 +2641,7 @@
             if (tabName === 'history') setTimeout(renderHarvestingEntries, 100);
         };
         
-        // DRAG
+        // ===== DRAG =====
         var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
         function dragMouseDown(e) {
             if (e.target.closest && (e.target.closest('button') || e.target.closest('input') || e.target.closest('select'))) return;
@@ -1949,12 +2674,17 @@
         }
         function closeDragElement() { document.onmouseup = null; document.onmousemove = null; }
         
-        // INIT
+        // ===== INIT =====
         var saved = localStorage.getItem('apitoken');
         if (saved) {
             accessToken = saved;
             document.getElementById("p-token").value = saved;
             syncUserInfo().then(function() {
+                fetchVipProgress();
+                fetchRakebackInfo();
+                fetchVaultBalance();
+                checkAllRaffles();
+                getUnclaimedBonuses(10, 0);
                 updateAllUI();
             });
         }
@@ -1965,11 +2695,18 @@
         setInterval(function() {
             renderHarvestingEntries();
         }, 5000);
-        
-        showSplash();
+        setInterval(function() {
+            if (accessToken) {
+                fetchVipProgress();
+                fetchRakebackInfo();
+                fetchVaultBalance();
+                checkAllRaffles();
+                monitorUnclaimedBonuses();
+            }
+        }, 120000);
     }
 
-    // ==================== 22. START ====================
+    // ==================== 27. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
