@@ -1,5 +1,7 @@
 // ============================================================
-// DICEY ENGINE v8.0 - SIMPLE WAGER + RAIN CATCHER
+// DICEY ENGINE v8.0 - DICE 98% + D'ALEMBERT RECOVERY (DICE 49.5% → 75%)
+// FULL SCRIPT - TANPA CORS OVERRIDE, PAKAI FETCH LANGSUNG
+// RUN IN CONSOLE AT https://dicey.com
 // ============================================================
 (function() {
     'use strict';
@@ -16,15 +18,9 @@
         'ME': 0.50
     };
 
-    function getCoinPrice(currency) {
-        return COIN_PRICES[currency] || 1;
-    }
-
-    function getConvertedTarget() {
-        const baseTarget = 33.33;
-        const currency = getCurrency();
-        const price = getCoinPrice(currency);
-        return baseTarget / price;
+    function getCurrency() {
+        const el = document.getElementById('dicey-currency');
+        return el ? el.value : 'USDC';
     }
 
     // ============================================================
@@ -32,10 +28,6 @@
     // ============================================================
     function randomDelay(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-
-    function randomFloat(min, max) {
-        return Math.random() * (max - min) + min;
     }
 
     function sleep(ms) {
@@ -54,17 +46,8 @@
 
     function $(id) { return document.getElementById(id); }
 
-    function getCurrency() {
-        const el = $('dicey-currency');
-        return el ? el.value : 'USDC';
-    }
-
-    function getCurrencyDisplay() {
-        return getCurrency().toUpperCase();
-    }
-
     // ============================================================
-    // FETCH FUNCTIONS
+    // FETCH BALANCE - LANGSUNG!
     // ============================================================
     async function fetchBalance() {
         try {
@@ -101,39 +84,150 @@
             return 0;
 
         } catch(e) {
+            console.log('[BALANCE] Error:', e);
             return 0;
         }
     }
 
     // ============================================================
-    // PLACE BET
+    // FETCH USER INFO + VIP PROGRESS
     // ============================================================
-    async function placeBetWithRetry(betAmount, chance, maxRetries) {
-        maxRetries = maxRetries || 3;
-        
-        for (var attempt = 1; attempt <= maxRetries; attempt++) {
+    async function fetchUserInfo() {
+        try {
+            const jwtResponse = await fetch('https://api.dicey.com/graphql', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    operationName: 'IntercomJwt',
+                    query: `query IntercomJwt { intercomJwt { jwt } }`
+                })
+            });
+            const jwtData = await jwtResponse.json();
+            const jwt = jwtData?.data?.intercomJwt?.jwt;
+            
+            if (!jwt) {
+                console.log('[USER] No JWT found');
+                return null;
+            }
+            
+            const payload = jwt.split('.')[1];
+            const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+            
+            const username = decoded.username || decoded.name || decoded.user_name || 'Unknown';
+            const userId = decoded.user_id || decoded.sub || decoded.id || '';
+            const email = decoded.email || '';
+            
+            let tier = 'Bronze I';
+            let vipPoints = 0;
+            let vipProgress = 0;
+            let nextTarget = 10000;
+            
             try {
-                var result = await placeBet(betAmount, chance);
-                if (result.success) {
-                    return result;
-                }
+                const vipResponse = await fetch('https://api.dicey.com/graphql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        operationName: 'GetUserVipStatus',
+                        query: `
+                            query GetUserVipStatus {
+                                getUserVipStatus {
+                                    userVipStatus {
+                                        tierLevel
+                                        tierSubLevel
+                                        tierPoints
+                                        progressPercent
+                                    }
+                                }
+                            }
+                        `
+                    })
+                });
+                const vipData = await vipResponse.json();
+                const vip = vipData?.data?.getUserVipStatus?.userVipStatus;
                 
-                if (attempt < maxRetries) {
-                    var delay = randomDelay(1000, 3000);
-                    await sleep(delay);
+                if (vip) {
+                    tier = (vip.tierLevel || 'Bronze') + ' ' + (vip.tierSubLevel || 'I');
+                    vipPoints = vip.tierPoints || 0;
+                    vipProgress = vip.progressPercent || 0;
+                    
+                    const targets = [10000, 25000, 50000, 75000, 100000, 150000, 250000, 350000, 500000, 750000, 1000000];
+                    for (var i = 0; i < targets.length; i++) {
+                        if (vipPoints < targets[i]) {
+                            nextTarget = targets[i];
+                            break;
+                        }
+                    }
                 }
             } catch(e) {
-                if (attempt < maxRetries) {
-                    await sleep(randomDelay(1000, 3000));
-                } else {
-                    return { success: false, error: e.message };
-                }
+                console.log('[USER] VIP fetch error:', e);
             }
+            
+            return {
+                username: username,
+                userId: userId,
+                email: email,
+                tier: tier,
+                vipPoints: vipPoints,
+                vipProgress: vipProgress,
+                nextTarget: nextTarget
+            };
+            
+        } catch(e) {
+            console.log('[USER] Error:', e);
+            return null;
         }
-        return { success: false, error: 'Max retries exceeded' };
     }
 
-    async function placeBet(betAmount, chance) {
+    // ============================================================
+    // UPDATE USER INFO UI
+    // ============================================================
+    async function updateUserInfoUI() {
+        const userInfo = await fetchUserInfo();
+        
+        const usernameEl = document.getElementById('dicey-username-display');
+        const tierEl = document.getElementById('dicey-tier-display');
+        const pointsEl = document.getElementById('dicey-vip-points');
+        const progressEl = document.getElementById('dicey-vip-progress');
+        
+        if (!userInfo) {
+            if (usernameEl) { usernameEl.textContent = '-'; usernameEl.style.color = '#4ade80'; }
+            if (tierEl) { tierEl.textContent = '-'; tierEl.style.color = '#ffd700'; }
+            if (pointsEl) pointsEl.textContent = '0 pts → 10,000';
+            if (progressEl) progressEl.style.width = '0%';
+            return;
+        }
+        
+        if (usernameEl) {
+            usernameEl.textContent = userInfo.username;
+            usernameEl.style.color = '#4ade80';
+        }
+        
+        if (tierEl) {
+            tierEl.textContent = userInfo.tier;
+            tierEl.style.color = '#ffd700';
+        }
+        
+        if (pointsEl) {
+            const pts = userInfo.vipPoints || 0;
+            const target = userInfo.nextTarget || 10000;
+            pointsEl.textContent = pts.toFixed(0) + ' pts → ' + target.toLocaleString();
+            pointsEl.style.color = '#ffd700';
+        }
+        
+        if (progressEl) {
+            const pct = Math.min(userInfo.vipProgress || 0, 100);
+            progressEl.style.width = pct + '%';
+        }
+        
+        console.log('[USER] Info updated:', userInfo.username, userInfo.tier);
+    }
+
+    // ============================================================
+    // PLACE DICE BET - LANGSUNG!
+    // ============================================================
+    async function placeDiceBet(betAmount, chance) {
         var cryptoCurrency = getCurrency();
         var rollMode = 'Under';
         var targetNumber = Math.floor((chance / 100) * 10000);
@@ -150,75 +244,26 @@
             }
         };
 
-        var payload = {
-            operationName: "PlaceDiceBet",
-            query: query,
-            variables: variables
-        };
-
         try {
             var response = await fetch('https://api.dicey.com/graphql', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': 'application/graphql-response+json, application/graphql+json, application/json',
+                    'Accept': 'application/json',
                     'Origin': 'https://dicey.com'
                 },
                 credentials: 'include',
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                throw new Error('HTTP ' + response.status);
-            }
-
-            var data = await response.json();
-            if (data.errors) {
-                throw new Error(data.errors[0].message);
-            }
-            return { success: true, data: data.data.placeDiceBet };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-
-    // ============================================================
-    // PLACE LIMBO BET
-    // ============================================================
-    async function placeLimboBet(betAmount, targetMultiplier) {
-        const cryptoCurrency = getCurrency();
-
-        const query = `mutation PlaceLimboBet($input: LimboBetInput!) {
-            placeLimboBet(input: $input) {
-                betAmount targetMultiplier rolledMultiplier multiplier profit isWin roundId activityId timestamp winAmount __typename
-            }
-        }`;
-
-        const variables = {
-            input: {
-                betAmount: String(betAmount),
-                cryptoCurrency: cryptoCurrency,
-                nonce: generateUUID(),
-                targetMultiplier: targetMultiplier
-            }
-        };
-
-        try {
-            const response = await fetch('https://api.dicey.com/graphql', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
                 body: JSON.stringify({
-                    operationName: 'PlaceLimboBet',
+                    operationName: 'PlaceDiceBet',
                     query: query,
                     variables: variables
                 })
             });
 
             if (!response.ok) throw new Error('HTTP ' + response.status);
-            const data = await response.json();
+            var data = await response.json();
             if (data.errors) throw new Error(data.errors[0].message);
-            return { success: true, data: data.data.placeLimboBet };
+            return { success: true, data: data.data.placeDiceBet };
         } catch (error) {
             return { success: false, error: error.message };
         }
@@ -251,13 +296,13 @@
     // WAGER MODES
     // ============================================================
     const WAGER_MODES = {
-        AMAN: { bet: 0.01, chance: 98, name: '🛡️ AMAN', desc: '0.01 @ 98%' },
-        CEPAT: { bet: 0.02, chance: 95, name: '⚡ CEPAT', desc: '0.02 @ 95%' },
-        EXTREME: { bet: 0.03, chance: 92, name: '🔥 EXTREME', desc: '0.03 @ 92%' }
+        AMAN: { bet: 0.01, chance: 98, name: '🛡️ AMAN' },
+        CEPAT: { bet: 0.02, chance: 98, name: '⚡ CEPAT' },
+        EXTREME: { bet: 0.03, chance: 98, name: '🔥 EXTREME' }
     };
 
     // ============================================================
-    // SIMPLE STATE
+    // STATE
     // ============================================================
     let simpleState = {
         running: false,
@@ -273,91 +318,91 @@
         wins: 0,
         losses: 0,
         currentStreak: 0,
-        currentLayer: 1,
-        recoveryLoss: 0,
         timerInterval: null,
         isLooping: false
     };
 
     // ============================================================
-    // RECOVERY STATE - D'ALEMBERT HYBRID
+    // RECOVERY STATE - D'ALEMBERT (DICE 49.5% → 75%)
     // ============================================================
     let recoveryState = {
         active: false,
-        payout: 2.02,
         bet: 0.01,
         baseBet: 0.01,
         unit: 0.01,
+        chance: 49.5,
+        safeChance: 75,
         lossCount: 0,
         consecutiveLoss: 0,
         isSafeMode: false,
         maxBet: 0.10,
-        recovered: false
+        recovered: false,
+        hasPlacedBet: false
     };
 
     // ============================================================
-    // RAIN STATE
-    // ============================================================
-    const RAIN_CONFIG = {
-        MIN_WAGER_FOR_ENTRY: 33.33,
-        MAX_ENTRIES: 3,
-        CHECK_INTERVAL: 5000
-    };
-
-    let rainState = {
-        isRunning: false,
-        joinedRains: new Set(),
-        wagered: 0,
-        entries: 0,
-        checkInterval: null,
-        lastWin: null
-    };
-
-    // ============================================================
-    // RECOVERY HANDLER
+    // RECOVERY HANDLER - D'ALEMBERT (DICE 49.5% → 75%)
     // ============================================================
     async function handleRecoveryMode() {
-        if (recoveryState.recovered) {
-            recoveryState.recovered = false;
-            return;
-        }
+        const baseBetInput = document.getElementById('recovery-base-bet');
+        const unitInput = document.getElementById('recovery-unit');
+        
+        let baseBet = parseFloat(baseBetInput?.value) || 0.01;
+        let unit = parseFloat(unitInput?.value) || 0.01;
+        
+        const maxBetInput = document.getElementById('recovery-max-bet');
+        let maxBet = parseFloat(maxBetInput?.value) || 0.10;
         
         recoveryState.active = true;
-        recoveryState.bet = 0.01;
+        recoveryState.bet = baseBet;
         recoveryState.lossCount = 0;
         recoveryState.consecutiveLoss = 0;
         recoveryState.isSafeMode = false;
-        recoveryState.payout = 2.02;
+        recoveryState.chance = 49.5;
+        recoveryState.safeChance = 75;
+        recoveryState.recovered = false;
+        recoveryState.baseBet = baseBet;
+        recoveryState.unit = unit;
+        recoveryState.maxBet = maxBet;
+        recoveryState.hasPlacedBet = false;
         
-        addLog('🔄 Entering recovery mode', '#ff922b', '[🔄]');
+        addLog('🔄 Recovery: DICE 49.5% → 75% (2 losses)', '#ff922b', '[🔄]');
+        addLog('[REC] Base: ' + baseBet.toFixed(4) + ' | Unit: ' + unit.toFixed(4) + ' | Max: ' + maxBet.toFixed(4), '#60a5fa', '[📊]');
         
-        let maxAttempts = 20;
+        let maxAttempts = 30;
         let attempts = 0;
+        let recovered = false;
         
-        while (recoveryState.active && attempts < maxAttempts) {
+        while (recoveryState.active && attempts < maxAttempts && !recovered) {
             attempts++;
             
-            if (recoveryState.lossCount <= 0 && recoveryState.bet <= recoveryState.baseBet) {
-                recoveryState.active = false;
-                recoveryState.recovered = true;
-                addLog('✅ Recovery complete!', '#4ade80', '[✅]');
-                return;
+            if (recoveryState.hasPlacedBet) {
+                if (recoveryState.bet <= recoveryState.baseBet && recoveryState.lossCount <= 0) {
+                    recovered = true;
+                    addLog('✅ Recovery complete! Back to L1', '#4ade80', '[✅]');
+                    recoveryState.active = false;
+                    recoveryState.recovered = false;
+                    return;
+                }
             }
             
             if (!recoveryState.isSafeMode && recoveryState.consecutiveLoss >= 2) {
                 recoveryState.isSafeMode = true;
-                recoveryState.payout = 1.3;
-                recoveryState.bet = recoveryState.baseBet + (recoveryState.lossCount * recoveryState.unit);
-                addLog('🔄 2 losses → 1.3x safe mode', '#60a5fa', '[🔄]');
+                recoveryState.chance = 75;
+                addLog('🔄 2 losses → SWITCH to 75%', '#60a5fa', '[🔄]');
             }
             
             if (recoveryState.bet > recoveryState.maxBet) {
                 addLog('🚨 Max bet reached, resetting', '#ff6b6b', '[🚨]');
                 recoveryState.active = false;
+                recoveryState.recovered = false;
                 return;
             }
             
-            const result = await placeLimboBet(recoveryState.bet, recoveryState.payout);
+            addLog('[REC] 📤 DICE ' + recoveryState.chance + '% | Bet: ' + recoveryState.bet.toFixed(4), '#60a5fa', '[📤]');
+            const result = await placeDiceBet(recoveryState.bet, recoveryState.chance);
+            
+            recoveryState.hasPlacedBet = true;
             
             if (result.success) {
                 const data = result.data;
@@ -373,43 +418,34 @@
                     recoveryState.bet = Math.max(recoveryState.baseBet, recoveryState.bet - recoveryState.unit);
                     recoveryState.lossCount = Math.max(0, recoveryState.lossCount - 1);
                     recoveryState.consecutiveLoss = 0;
-                    
-                    if (recoveryState.isSafeMode && recoveryState.bet <= recoveryState.baseBet) {
-                        recoveryState.isSafeMode = false;
-                        recoveryState.payout = 2.02;
-                        recoveryState.bet = recoveryState.baseBet;
-                        recoveryState.lossCount = 0;
-                        addLog('✅ Back to 2.02x', '#4ade80', '[✅]');
-                    }
-                    
-                    addLog('[REC] ✅ ' + recoveryState.payout + 'x | ' + recoveryState.bet.toFixed(3), '#4ade80', '[W]');
-                    
+                    addLog('[REC] ✅ WIN | Bet: ' + recoveryState.bet.toFixed(4), '#4ade80', '[W]');
                 } else {
                     recoveryState.bet = Math.min(recoveryState.maxBet, recoveryState.bet + recoveryState.unit);
                     recoveryState.lossCount++;
                     recoveryState.consecutiveLoss++;
-                    
-                    addLog('[REC] ❌ ' + recoveryState.payout + 'x | ' + recoveryState.bet.toFixed(3), '#ff6b6b', '[L]');
+                    addLog('[REC] ❌ LOSS | Bet: ' + recoveryState.bet.toFixed(4), '#ff6b6b', '[L]');
                 }
                 
-                updateSimpleUI();
+                updateUI();
+            } else {
+                addLog('[REC] ❌ Error: ' + result.error, '#ff6b6b', '[❌]');
+                await sleep(500);
+                continue;
             }
             
             await sleep(100 + Math.random() * 200);
         }
         
-        if (attempts >= maxAttempts) {
-            addLog('⚠️ Recovery timeout', '#ff922b', '[⚠️]');
-            recoveryState.active = false;
-        }
+        recoveryState.active = false;
+        recoveryState.recovered = false;
     }
 
     // ============================================================
-    // SIMPLE WAGER LOOP
+    // MAIN LOOP - DICE 98%
     // ============================================================
-    async function simpleWagerLoop() {
+    async function mainLoop() {
         if (!simpleState.running || simpleState.paused || simpleState.isLooping) {
-            setTimeout(simpleWagerLoop, 100);
+            setTimeout(mainLoop, 100);
             return;
         }
         
@@ -418,7 +454,7 @@
         try {
             if (simpleState.wagered >= simpleState.target) {
                 addLog('🎯 TARGET ' + simpleState.target + ' USDC REACHED! ✅', '#4ade80', '[🎯]');
-                stopSimpleWager();
+                stopBot();
                 simpleState.isLooping = false;
                 return;
             }
@@ -426,7 +462,7 @@
             const balance = await fetchBalance();
             if (balance < 0.01) {
                 addLog('❌ Insufficient balance!', '#ff6b6b', '[❌]');
-                stopSimpleWager();
+                stopBot();
                 simpleState.isLooping = false;
                 return;
             }
@@ -434,9 +470,9 @@
             
             const mode = WAGER_MODES[simpleState.mode];
             const betAmount = mode.bet;
-            const chance = mode.chance;
+            const chance = 98;
             
-            const result = await placeBetWithRetry(betAmount, chance);
+            const result = await placeDiceBet(betAmount, chance);
             
             if (result.success) {
                 const data = result.data;
@@ -451,21 +487,20 @@
                 if (isWin) {
                     simpleState.wins++;
                     simpleState.currentStreak = simpleState.currentStreak > 0 ? simpleState.currentStreak + 1 : 1;
+                    addLog('✅ DICE 98% ' + betAmount.toFixed(3) + ' | +' + profit.toFixed(4) + ' | ' + simpleState.wagered.toFixed(2) + '/' + simpleState.target, '#4ade80', '[W]');
                 } else {
                     simpleState.losses++;
                     simpleState.currentStreak = simpleState.currentStreak < 0 ? simpleState.currentStreak - 1 : -1;
+                    addLog('❌ DICE 98% ' + betAmount.toFixed(3) + ' | ' + profit.toFixed(4) + ' | ' + simpleState.wagered.toFixed(2) + '/' + simpleState.target, '#ff6b6b', '[L]');
+                    
+                    simpleState.isLooping = false;
+                    recoveryState.recovered = false;
+                    recoveryState.active = false;
                     await handleRecoveryMode();
+                    simpleState.isLooping = true;
                 }
                 
-                updateSimpleUI();
-                
-                addLog(
-                    (isWin ? '✅' : '❌') + ' ' + betAmount.toFixed(3) + ' | ' + 
-                    (profit >= 0 ? '+' : '') + profit.toFixed(4) + ' | ' + 
-                    simpleState.wagered.toFixed(2) + '/' + simpleState.target,
-                    isWin ? '#4ade80' : '#ff6b6b',
-                    isWin ? '[W]' : '[L]'
-                );
+                updateUI();
             }
             
         } catch (e) {
@@ -473,14 +508,13 @@
         }
         
         simpleState.isLooping = false;
-        
-        setTimeout(simpleWagerLoop, 100 + Math.random() * 200);
+        setTimeout(mainLoop, 100 + Math.random() * 200);
     }
 
     // ============================================================
-    // WAGER CONTROLS
+    // CONTROLS
     // ============================================================
-    function startSimpleWager() {
+    function startBot() {
         if (simpleState.running && !simpleState.paused) {
             addLog('⚠️ Already running', '#ff922b', '[⚠️]');
             return;
@@ -498,8 +532,6 @@
             simpleState.wins = 0;
             simpleState.losses = 0;
             simpleState.currentStreak = 0;
-            simpleState.currentLayer = 1;
-            simpleState.recoveryLoss = 0;
             simpleState.startBalance = simpleState.currentBalance;
             simpleState.startTime = Date.now();
             recoveryState.recovered = false;
@@ -518,27 +550,28 @@
         if (simpleState.timerInterval) {
             clearInterval(simpleState.timerInterval);
         }
-        simpleState.timerInterval = setInterval(updateSimpleUI, 1000);
+        simpleState.timerInterval = setInterval(updateUI, 1000);
         
-        updateSimpleUI();
-        simpleWagerLoop();
+        updateUI();
+        mainLoop();
     }
 
-    function pauseSimpleWager() {
+    function pauseBot() {
         if (!simpleState.running) {
             addLog('⚠️ Bot not running', '#ff922b', '[⚠️]');
             return;
         }
         simpleState.paused = !simpleState.paused;
         addLog(simpleState.paused ? '⏸️ PAUSED' : '▶️ RESUMED', '#ff922b', simpleState.paused ? '[⏸️]' : '[▶️]');
-        updateSimpleUI();
+        updateUI();
     }
 
-    function stopSimpleWager() {
+    function stopBot() {
         simpleState.running = false;
         simpleState.paused = false;
         simpleState.isLooping = false;
         recoveryState.active = false;
+        recoveryState.recovered = false;
         
         if (simpleState.timerInterval) {
             clearInterval(simpleState.timerInterval);
@@ -546,13 +579,13 @@
         }
         
         addLog('⏹️ STOP | Wagered: ' + simpleState.wagered.toFixed(2) + ' | Profit: ' + simpleState.profit.toFixed(4), '#ff6b6b', '[⏹️]');
-        updateSimpleUI();
+        updateUI();
     }
 
     // ============================================================
     // UPDATE UI
     // ============================================================
-    function updateSimpleUI() {
+    function updateUI() {
         const progress = Math.min((simpleState.wagered / simpleState.target) * 100, 100);
         
         const bar = document.getElementById('simple-progress');
@@ -592,19 +625,27 @@
             if (timer) timer.textContent = hours + ':' + minutes + ':' + seconds;
         }
         
-        const layer = document.getElementById('stats-layer');
-        if (layer) layer.textContent = simpleState.currentLayer || 1;
-        
         const chance = document.getElementById('stats-chance');
         if (chance) {
-            const mode = WAGER_MODES[simpleState.mode];
-            chance.textContent = mode ? mode.chance + '%' : '98%';
+            if (recoveryState.active) {
+                chance.textContent = recoveryState.chance + '%';
+                chance.style.color = '#ff922b';
+            } else {
+                chance.textContent = '98%';
+                chance.style.color = '#ffd700';
+            }
         }
         
         const bet = document.getElementById('stats-bet');
         if (bet) {
-            const mode = WAGER_MODES[simpleState.mode];
-            bet.textContent = mode ? mode.bet.toFixed(4) : '0.0100';
+            if (recoveryState.active) {
+                bet.textContent = recoveryState.bet.toFixed(4);
+                bet.style.color = '#ff922b';
+            } else {
+                const mode = WAGER_MODES[simpleState.mode];
+                bet.textContent = mode ? mode.bet.toFixed(4) : '0.0100';
+                bet.style.color = '#ffd700';
+            }
         }
         
         const streak = document.getElementById('stats-streak');
@@ -629,14 +670,32 @@
         
         const recovery = document.getElementById('stats-recovery');
         if (recovery) {
-            recovery.textContent = simpleState.recoveryLoss.toFixed(4);
-            recovery.style.color = simpleState.recoveryLoss > 0 ? '#4ade80' : '#ff922b';
+            if (recoveryState.active) {
+                recovery.textContent = recoveryState.lossCount + ' | ' + (recoveryState.isSafeMode ? '75%' : '49.5%');
+                recovery.style.color = '#ff922b';
+            } else {
+                recovery.textContent = '0';
+                recovery.style.color = '#4ade80';
+            }
         }
     }
 
     // ============================================================
-    // RAIN FUNCTIONS
+    // RAIN CATCHER
     // ============================================================
+    const RAIN_CONFIG = {
+        MIN_WAGER_FOR_ENTRY: 33.33,
+        MAX_ENTRIES: 3,
+        CHECK_INTERVAL: 5000
+    };
+
+    let rainState = {
+        isRunning: false,
+        joinedRains: new Set(),
+        wagered: 0,
+        lastWin: null
+    };
+
     async function fetchRainSchedule() {
         try {
             const response = await fetch('https://api.dicey.com/graphql', {
@@ -739,7 +798,7 @@
                 currentBet = Math.min(remaining, 0.01);
             }
             
-            const result = await placeBetWithRetry(currentBet, chance);
+            const result = await placeDiceBet(currentBet, chance);
             
             if (result.success) {
                 wagered += currentBet;
@@ -1008,7 +1067,7 @@
     }
 
     // ============================================================
-    // BUILD UI - NO LICENSE, NO CFG
+    // BUILD UI
     // ============================================================
     function buildUI() {
         const container = document.createElement('div');
@@ -1072,42 +1131,22 @@
                                 style="width:100%;padding:4px 6px;border-radius:4px;border:1px solid #3a3a3a;
                                 background:#0f0f0a;color:#f8f8f2;font-size:9px;">
                                 <option value="AMAN">🛡️ AMAN (0.01 @ 98%)</option>
-                                <option value="CEPAT">⚡ CEPAT (0.02 @ 95%)</option>
-                                <option value="EXTREME">🔥 EXTREME (0.03 @ 92%)</option>
+                                <option value="CEPAT">⚡ CEPAT (0.02 @ 98%)</option>
+                                <option value="EXTREME">🔥 EXTREME (0.03 @ 98%)</option>
                             </select>
                         </div>
                     </div>
 
                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px;">
-                        <button id="simple-start" 
-                            style="padding:10px 0;border:none;border-radius:6px;background:#4ade80;
-                            color:#000;font-weight:700;font-size:13px;cursor:pointer;">
-                            ▶️ START
-                        </button>
-                        <button id="simple-pause" 
-                            style="padding:10px 0;border:none;border-radius:6px;background:#ff922b;
-                            color:#000;font-weight:700;font-size:13px;cursor:pointer;">
-                            ⏸️ PAUSE
-                        </button>
-                        <button id="simple-stop" 
-                            style="padding:10px 0;border:none;border-radius:6px;background:#ff6b6b;
-                            color:#000;font-weight:700;font-size:13px;cursor:pointer;">
-                            ⏹️ STOP
-                        </button>
+                        <button id="simple-start" style="padding:10px 0;border:none;border-radius:6px;background:#4ade80;color:#000;font-weight:700;font-size:13px;cursor:pointer;">▶️ START</button>
+                        <button id="simple-pause" style="padding:10px 0;border:none;border-radius:6px;background:#ff922b;color:#000;font-weight:700;font-size:13px;cursor:pointer;">⏸️ PAUSE</button>
+                        <button id="simple-stop" style="padding:10px 0;border:none;border-radius:6px;background:#ff6b6b;color:#000;font-weight:700;font-size:13px;cursor:pointer;">⏹️ STOP</button>
                     </div>
 
                     <div style="margin-bottom:4px;">
                         <div style="background:#3a3a3a;border-radius:6px;height:28px;overflow:hidden;position:relative;">
-                            <div id="simple-progress" 
-                                style="background:linear-gradient(90deg,#4ade80,#00e5c0);height:28px;
-                                border-radius:6px;width:0%;transition:width 0.5s;">
-                            </div>
-                            <div id="simple-progress-text" 
-                                style="position:absolute;top:0;left:0;right:0;bottom:0;
-                                display:flex;align-items:center;justify-content:center;
-                                font-size:10px;font-weight:700;color:#000;">
-                                0.00 / 33.33 USDC
-                            </div>
+                            <div id="simple-progress" style="background:linear-gradient(90deg,#4ade80,#00e5c0);height:28px;border-radius:6px;width:0%;transition:width 0.5s;"></div>
+                            <div id="simple-progress-text" style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#000;">0.00 / 33.33 USDC</div>
                         </div>
                     </div>
 
@@ -1130,10 +1169,33 @@
                         </div>
                     </div>
 
-                    <div id="simple-recovery-status" 
-                        style="margin-top:3px;font-size:7px;color:#555;text-align:center;
-                        padding:2px;background:#0f0f0a;border-radius:3px;border:1px dashed #2a2a2a;">
-                        ⚡ D'Alembert Hybrid: 2.02x → 1.3x (2 losses)
+                    <!-- RECOVERY SETTINGS -->
+                    <div style="margin-top:4px;padding:6px;background:#0f0f0a;border-radius:4px;border:1px solid #2a2a2a;">
+                        <div style="font-size:7px;color:#888;font-weight:600;margin-bottom:3px;">⚙️ D'ALEMBERT SETTINGS (DICE)</div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;">
+                            <div>
+                                <div style="font-size:6px;color:#888;">Base Bet</div>
+                                <input id="recovery-base-bet" type="number" value="0.01" step="0.001" min="0.0001"
+                                    style="width:100%;padding:3px 4px;border-radius:3px;border:1px solid #3a3a3a;
+                                    background:#1e1f1c;color:#f8f8f2;font-size:8px;">
+                            </div>
+                            <div>
+                                <div style="font-size:6px;color:#888;">Unit (Step)</div>
+                                <input id="recovery-unit" type="number" value="0.01" step="0.001" min="0.0001"
+                                    style="width:100%;padding:3px 4px;border-radius:3px;border:1px solid #3a3a3a;
+                                    background:#1e1f1c;color:#f8f8f2;font-size:8px;">
+                            </div>
+                            <div>
+                                <div style="font-size:6px;color:#888;">Max Bet</div>
+                                <input id="recovery-max-bet" type="number" value="0.10" step="0.01" min="0.01"
+                                    style="width:100%;padding:3px 4px;border-radius:3px;border:1px solid #3a3a3a;
+                                    background:#1e1f1c;color:#f8f8f2;font-size:8px;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="simple-recovery-status" style="margin-top:3px;font-size:7px;color:#555;text-align:center;padding:2px;background:#0f0f0a;border-radius:3px;border:1px dashed #2a2a2a;">
+                        ⚡ Recovery: DICE 49.5% → 75% (2 losses) | Break Even baru sukses
                     </div>
                 </div>
 
@@ -1145,16 +1207,8 @@
                     </div>
 
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px;">
-                        <button id="rain-start" 
-                            style="padding:8px 0;border:none;border-radius:6px;background:#60a5fa;
-                            color:#000;font-weight:700;font-size:11px;cursor:pointer;">
-                            🌧️ START
-                        </button>
-                        <button id="rain-stop" 
-                            style="padding:8px 0;border:none;border-radius:6px;background:#ff6b6b;
-                            color:#000;font-weight:700;font-size:11px;cursor:pointer;">
-                            ⏹️ STOP
-                        </button>
+                        <button id="rain-start" style="padding:8px 0;border:none;border-radius:6px;background:#60a5fa;color:#000;font-weight:700;font-size:11px;cursor:pointer;">🌧️ START</button>
+                        <button id="rain-stop" style="padding:8px 0;border:none;border-radius:6px;background:#ff6b6b;color:#000;font-weight:700;font-size:11px;cursor:pointer;">⏹️ STOP</button>
                     </div>
 
                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:8px;">
@@ -1172,9 +1226,7 @@
                         </div>
                     </div>
 
-                    <div id="rain-last-win" 
-                        style="margin-top:3px;font-size:7px;color:#555;text-align:center;
-                        padding:2px;background:#0f0f0a;border-radius:3px;border:1px dashed #2a2a2a;">
+                    <div id="rain-last-win" style="margin-top:3px;font-size:7px;color:#555;text-align:center;padding:2px;background:#0f0f0a;border-radius:3px;border:1px dashed #2a2a2a;">
                         Last Win: --
                     </div>
                 </div>
@@ -1182,10 +1234,6 @@
                 <!-- STATS -->
                 <div style="background:#1e1f1c;border-radius:8px;border:1px solid #3a3a3a;padding:6px 8px;margin-bottom:6px;">
                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:2px;font-size:8px;">
-                        <div style="background:#0f0f0a;padding:2px 6px;border-radius:3px;text-align:center;">
-                            <span style="color:#888;">Layer</span><br>
-                            <span id="stats-layer" style="color:#4ade80;font-weight:600;">1</span>
-                        </div>
                         <div style="background:#0f0f0a;padding:2px 6px;border-radius:3px;text-align:center;">
                             <span style="color:#888;">Chance</span><br>
                             <span id="stats-chance" style="color:#ffd700;font-weight:600;">98%</span>
@@ -1212,7 +1260,7 @@
                         </div>
                         <div style="background:#0f0f0a;padding:2px 6px;border-radius:3px;text-align:center;">
                             <span style="color:#888;">Recovery</span><br>
-                            <span id="stats-recovery" style="color:#ff922b;font-weight:600;">0.0000</span>
+                            <span id="stats-recovery" style="color:#4ade80;font-weight:600;">0</span>
                         </div>
                     </div>
                 </div>
@@ -1221,18 +1269,13 @@
                 <div style="background:#1e1f1c;border-radius:8px;border:1px solid #3a3a3a;padding:6px 8px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
                         <span style="font-size:9px;font-weight:600;color:#a0a0a0;">📝 LOGS</span>
-                        <button id="dicey-log-clear" 
-                            style="padding:2px 8px;border:none;border-radius:3px;background:#3a3a3a;
-                            color:#a0a0a0;font-size:7px;cursor:pointer;">CLEAR</button>
+                        <button id="dicey-log-clear" style="padding:2px 8px;border:none;border-radius:3px;background:#3a3a3a;color:#a0a0a0;font-size:7px;cursor:pointer;">CLEAR</button>
                     </div>
-                    <div id="dicey-log" 
-                        style="background:#0f0f0a;border-radius:4px;padding:3px 5px;max-height:100px;
-                        overflow-y:auto;font-family:Consolas,monospace;font-size:7px;color:#a0a0a0;
-                        border:1px solid #3a3a3a;"></div>
+                    <div id="dicey-log" style="background:#0f0f0a;border-radius:4px;padding:3px 5px;max-height:100px;overflow-y:auto;font-family:Consolas,monospace;font-size:7px;color:#a0a0a0;border:1px solid #3a3a3a;"></div>
                 </div>
             </div>
             <div style="background:#2d2d2a;padding:2px 10px;font-size:7px;color:#888;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #3a3a3a;flex-shrink:0;min-height:20px;">
-                <span>⚡ <span id="dicey-status" style="color:#4ade80;">READY</span></span>
+                <span>⚡ READY</span>
                 <span id="dicey-footer-status" style="color:#888;">Idle</span>
                 <span id="dicey-footer-timer" style="color:#666;">⏱ 00:00:00</span>
             </div>
@@ -1243,25 +1286,23 @@
         // ============================================================
         // EVENT LISTENERS
         // ============================================================
-        document.getElementById('simple-start')?.addEventListener('click', startSimpleWager);
-        document.getElementById('simple-pause')?.addEventListener('click', pauseSimpleWager);
-        document.getElementById('simple-stop')?.addEventListener('click', stopSimpleWager);
-
+        document.getElementById('simple-start')?.addEventListener('click', startBot);
+        document.getElementById('simple-pause')?.addEventListener('click', pauseBot);
+        document.getElementById('simple-stop')?.addEventListener('click', stopBot);
+        
         document.getElementById('rain-start')?.addEventListener('click', startRainBot);
         document.getElementById('rain-stop')?.addEventListener('click', stopRainBot);
-
+        
         document.getElementById('simple-target')?.addEventListener('change', function() {
             simpleState.target = parseFloat(this.value) || 33.33;
-            updateSimpleUI();
+            updateUI();
         });
-
         document.getElementById('dicey-log-clear')?.addEventListener('click', function() {
             const log = document.getElementById('dicey-log');
             if (log) log.innerHTML = '';
         });
-
         document.getElementById('dicey-currency')?.addEventListener('change', function() {
-            updateSimpleUI();
+            updateUI();
         });
 
         document.getElementById('dicey-minimize')?.addEventListener('click', function() {
@@ -1273,12 +1314,12 @@
         });
 
         document.getElementById('dicey-close')?.addEventListener('click', function() {
-            if (simpleState.running) stopSimpleWager();
+            if (simpleState.running) stopBot();
             if (rainState.isRunning) stopRainBot();
             document.getElementById('dicey-bot-ui').style.display = 'none';
         });
 
-        // Draggable
+        // DRAGGABLE
         let isDragging = false;
         let dragOffsetX, dragOffsetY;
         const header = document.getElementById('dicey-header');
@@ -1310,7 +1351,7 @@
             container.style.cursor = '';
         });
 
-        // Keyboard shortcuts
+        // KEYBOARD SHORTCUTS
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey && e.shiftKey && e.key === 'D') {
                 e.preventDefault();
@@ -1319,17 +1360,17 @@
             }
             if (e.key === 'Enter' && e.ctrlKey) {
                 e.preventDefault();
-                if (simpleState.running) stopSimpleWager();
-                else startSimpleWager();
+                if (simpleState.running) stopBot();
+                else startBot();
             }
             if (e.key === ' ' && e.ctrlKey) {
                 e.preventDefault();
-                pauseSimpleWager();
+                pauseBot();
             }
         });
 
         // ============================================================
-        // UPDATE FUNCTIONS
+        // UPDATE BALANCE
         // ============================================================
         async function updateBalanceUI() {
             const balance = await fetchBalance();
@@ -1347,11 +1388,13 @@
         // INIT
         // ============================================================
         setTimeout(updateBalanceUI, 500);
-        setTimeout(updateSimpleUI, 800);
-        setTimeout(updateRainUI, 900);
+        setTimeout(updateUserInfoUI, 800);
+        setTimeout(updateUI, 1000);
+        setTimeout(updateRainUI, 1200);
 
         setInterval(updateBalanceUI, 30000);
-        setInterval(updateSimpleUI, 1000);
+        setInterval(updateUserInfoUI, 60000);
+        setInterval(updateUI, 1000);
         setInterval(() => {
             if (rainState.isRunning) {
                 fetchRainSchedule().then(updateRainUI);
@@ -1359,14 +1402,13 @@
         }, 5000);
 
         addLog('🎲 DiceY Engine v8 READY', '#9ec07c', '[I]');
-        addLog('📊 Wager: 3 modes | D\'Alembert Hybrid recovery', '#4ade80', '[I]');
+        addLog('🎯 DICE 98% + Recovery DICE 49.5%→75%', '#4ade80', '[I]');
         addLog('🌧️ Rain: Auto join + auto wager for entries', '#60a5fa', '[I]');
         addLog('⌨️ Ctrl+Enter: Start/Stop | Ctrl+Space: Pause', '#888', '[I]');
 
         console.log('🎲 DiceY Engine v8 READY');
-        console.log('📊 Wager: AMAN/CEPAT/EXTREME');
-        console.log('🔄 Recovery: D\'Alembert Hybrid (2.02x → 1.3x)');
-        console.log('🌧️ Rain: Auto join + auto wager');
+        console.log('🎯 DICE 98% + Recovery DICE 49.5%→75%');
+        console.log('🌧️ Rain: Auto join + auto wager for entries');
         console.log('⌨️ Ctrl+Enter: Start/Stop | Ctrl+Space: Pause');
     }
 
