@@ -1,11 +1,10 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE + BACCARAT + D'ALEMBERT + AUTO RELOAD
+// CHEAPCHEATX v2.0 - DICE ONLY + D'ALEMBERT RECOVERY
 // ========================================================================
-// NORMAL MODE: FIRE & FORGET (Dice 99.98% + Baccarat selingan)
-// RECOVERY MODE: D'ALEMBERT (Sequential, Level 1-5)
-// TRIGGER: Loss Streak >= 3
-// CUTLOSS: Level > 5 | Balance turun 5%
-// AUTO RELOAD: Claim otomatis dengan turnstile token
+// NORMAL MODE: FIRE & FORGET (Dice 99.98%)
+// RECOVERY MODE: D'ALEMBERT (Sequential, Level 1-7)
+// TRIGGER: Drawdown > 0.125% (1x basebet)
+// CUTLOSS: Drawdown > 5% (safety net)
 // ========================================================================
 
 (function () {
@@ -28,7 +27,6 @@
 
     // ==================== 2. STATE ====================
     const STATE = {
-        // ===== MODE =====
         isRunning: false,
         isPaused: false,
         isDemo: false,
@@ -37,10 +35,9 @@
         darkMode: false,
         minimized: false,
         
-        // ===== D'ALEMBERT RECOVERY =====
         dalembert: {
-            level: 0,              // 0 = normal, 1-5 = active
-            maxLevel: 5,
+            level: 0,
+            maxLevel: 7,
             unit: 0,
             currentBet: 0,
             currentChance: 50.5,
@@ -50,10 +47,6 @@
             totalLoss: 0
         },
         
-        // ===== NORMAL MODE =====
-        normalBetCounter: 0,
-        
-        // ===== BALANCE =====
         balance: 0,
         startBalance: 0,
         peakBalanceEver: 0,
@@ -66,32 +59,24 @@
         lossStreak: 0,
         drawdown: 0,
         
-        // ===== RELOAD =====
+        // RELOAD
         reload: {
             currency: 'usdt',
-            autoClaim: true,
             amount: 0,
             active: false,
             lastClaim: null,
             nextClaim: null,
-            expireAt: null,
             claimInterval: 86400000,
             eligibleCurrencies: ['usdt', 'btc', 'eth', 'bnb', 'sol', 'doge', 'trx', 'idr', 'usdc', 'ltc', 'xrp', 'ada', 'dot', 'pol']
         },
         
-        // ===== RAKEBACK =====
         rakebackBalances: {},
-        
-        // ===== VAULT =====
         vaultBalances: {},
         vaultTotal: 0,
-        
-        // ===== RAFFLE =====
         raffleTickets: 0,
         raffleData: {},
         raffleIds: ['299d4c87-d395-4386-8022-4a3072ad09a7'],
         
-        // ===== WAGER =====
         wagerTotalAccumulated: 0,
         wagerSesiCounter: 0,
         wagerSesiStartBal: 0,
@@ -102,20 +87,18 @@
         wagerStop: false,
         wagerWaitingForTrigger: false,
         
-        // ===== NORMAL =====
         normalChance: 99.98,
         baseBetPercent: 0.125,
         minBet: 0.0014,
         maxBetCap: 0,
         targetPct: 5,
         stopLossPct: 100,
-        maxDrawdownPct: 5,  // 5% cutloss
+        maxDrawdownPct: 5,
+        triggerDrawdownPct: 0.125,
         
-        // ===== DELAY =====
         delayNormal: 50,
         delayRecovery: 200,
         
-        // ===== OTHER =====
         sessionNumber: 1,
         sessionsCompleted: 0,
         sessionStartTime: null,
@@ -254,25 +237,15 @@
     }
 
     async function getTurnstileToken() {
-        // Cari token dari DOM
         const tokenElements = document.querySelectorAll('[name="cf-turnstile-response"]');
         for (let el of tokenElements) {
             if (el.value) return el.value;
         }
-        
-        // Cari dari cookie
         const cfClearance = document.cookie.match(/cf_clearance=([^;]+)/);
         if (cfClearance) return cfClearance[1];
-        
-        // Cari dari meta
         const metaToken = document.querySelector('meta[name="cf-turnstile-token"]');
         if (metaToken) return metaToken.content;
-        
-        // Fallback untuk demo
-        if (STATE.isDemo) {
-            return 'demo_token_' + Date.now();
-        }
-        
+        if (STATE.isDemo) return 'demo_token_' + Date.now();
         console.warn('[TURNSTILE] Token not found');
         return '';
     }
@@ -342,23 +315,6 @@
         } catch(e) {
             console.error('[RELOAD] Claim error:', e);
             return null;
-        }
-    }
-
-    async function autoClaimReloadLoop() {
-        while (true) {
-            if (STATE.isRunning || STATE.isPaused) {
-                await checkReloadStatus(STATE.reload.currency);
-                
-                if (STATE.reload.autoClaim && STATE.reload.active && STATE.reload.nextClaim) {
-                    const now = new Date();
-                    if (now >= STATE.reload.nextClaim) {
-                        console.log('[RELOAD] Auto claiming...');
-                        await claimReload(STATE.reload.currency);
-                    }
-                }
-            }
-            await sleep(60000); // Cek setiap 1 menit
         }
     }
 
@@ -610,7 +566,8 @@
                 amount: winAmount,
                 state: d.state,
                 result: win ? 'win' : 'loss',
-                game: 'dice'
+                game: 'dice',
+                chance: chance
             };
             
         } catch (error) {
@@ -619,72 +576,7 @@
         }
     }
 
-    // ==================== 11. PLACE BACCARAT BET ====================
-    async function placeBaccaratBet(amount) {
-        const apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
-        
-        try {
-            const payload = {
-                amount: apiAmount,
-                currency: STATE.selectedCurrency,
-                identifier: generateId()
-            };
-            
-            const res = await fetch(CONFIG.apiUrl + '/casino/baccarat/bet', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': accessToken,
-                    'x-lockdown-token': CONFIG.lockdownToken
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            const data = await res.json();
-            
-            if (data.error || !data.baccaratBet) {
-                return null;
-            }
-            
-            const b = data.baccaratBet;
-            const result = b.state?.result || 'loss';
-            const isWin = result === 'banker' || result === 'player';
-            const isTie = result === 'tie';
-            
-            let payoutMultiplier = 0;
-            if (result === 'banker') payoutMultiplier = 0.975;
-            else if (result === 'player') payoutMultiplier = 1;
-            else if (result === 'tie') payoutMultiplier = 0;
-            
-            const payout = isWin ? apiAmount * payoutMultiplier : 0;
-            
-            if (b.user?.wallets && b.user.wallets[0]) {
-                STATE.balance = parseFloat(b.user.wallets[0].balance);
-            } else {
-                const pnl = isWin ? (payout - apiAmount) : -apiAmount;
-                STATE.balance += pnl;
-                if (STATE.balance < 0) STATE.balance = 0;
-            }
-            
-            updateAllUI();
-            
-            return {
-                win: isWin,
-                isTie: isTie,
-                result: result,
-                amount: apiAmount,
-                payout: payout,
-                payoutMultiplier: payoutMultiplier,
-                game: 'baccarat'
-            };
-            
-        } catch (error) {
-            console.error('[BACCARAT] Exception:', error);
-            return null;
-        }
-    }
-
-    // ==================== 12. D'ALEMBERT RECOVERY ====================
+    // ==================== 11. D'ALEMBERT RECOVERY ====================
     function startRecovery() {
         const basebet = STATE.balance * (STATE.baseBetPercent / 100);
         const d = STATE.dalembert;
@@ -720,7 +612,6 @@
             console.log('[RECOVERY] WIN | Level:', d.level, '| Total Loss:', d.totalLoss);
             
             if (d.level <= 0) {
-                // RECOVERY SUCCESS
                 d.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
@@ -736,7 +627,6 @@
             d.totalLoss += betAmount;
             console.log('[RECOVERY] LOSS | Level:', d.level, '| Total Loss:', d.totalLoss);
             
-            // Cek cutloss: level > maxLevel
             if (d.level > d.maxLevel) {
                 d.level = 0;
                 STATE.isRecoveryMode = false;
@@ -749,7 +639,6 @@
                 return;
             }
             
-            // Cek cutloss: balance turun 5%
             const drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.maxDrawdownPct) {
                 d.level = 0;
@@ -764,12 +653,10 @@
             }
         }
         
-        // Update bet
         d.currentBet = d.unit * d.level;
         d.currentChance = d.level % 2 === 0 ? 49.5 : 50.5;
         d.currentCondition = d.level % 2 === 0 ? 'below' : 'above';
         
-        // Cap bet
         if (STATE.maxBetCap > 0) {
             d.currentBet = Math.min(d.currentBet, STATE.maxBetCap);
         }
@@ -782,19 +669,15 @@
         setTimeout(runRecoverySequential, STATE.delayRecovery);
     }
 
-    // ==================== 13. PROCESS BET RESULT ====================
+    // ==================== 12. PROCESS BET RESULT ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
         const isWin = result.win;
         const profit = isWin ? betAmount : -betAmount;
+        const chance = result.chance || STATE.normalChance;
         
-        var gameLabel = result.game || 'dice';
-        if (mode === 'recovery') {
-            gameLabel = 'dice[R]';
-        }
-        
-        console.log('[PROCESS]', gameLabel, '|', isWin ? 'WIN' : 'LOSS', '| Fire&Forget:', isFireAndForget);
+        var gameLabel = mode === 'recovery' ? 'dice[R]' : 'dice';
         
         STATE.bets++;
         STATE.wagered += betAmount;
@@ -815,19 +698,18 @@
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
         
-        logBet(STATE.bets, betAmount, isWin ? 'win' : 'loss', profit, gameLabel);
+        logBet(STATE.bets, betAmount, chance, isWin ? 'win' : 'loss', profit, gameLabel);
         
         if (mode === 'recovery') {
             handleRecoveryResult(isWin, betAmount);
         } else {
-            // Normal mode - cek trigger recovery
-            if (STATE.lossStreak >= 3 && !STATE.isRecoveryMode) {
-                console.log('[TRIGGER] Recovery! Loss Streak:', STATE.lossStreak);
+            const drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
+            if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode) {
+                console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
                 startRecovery();
                 return;
             }
             
-            // Reset wager session jika target tercapai
             if (STATE.wagerSesiCounter >= STATE.wagerSesiTarget) {
                 resetWagerSesi();
             }
@@ -836,8 +718,8 @@
         updateAllUI();
     }
 
-    // ==================== 14. LOGGING ====================
-    function logBet(betNumber, amount, result, profit, game) {
+    // ==================== 13. LOGGING ====================
+    function logBet(betNumber, amount, chance, result, profit, game) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
         var entry = document.createElement("div");
@@ -847,10 +729,12 @@
         var resultColor = result === 'win' ? '#00e5c0' : '#ff6b81';
         var resultIcon = result === 'win' ? '✅' : '❌';
         var profitSign = profit >= 0 ? '+' : '';
-        var gameIcon = game === 'baccarat' ? '🃏' : (game === 'dice[R]' ? '🎲[R]' : '🎲');
+        var gameIcon = game === 'dice[R]' ? '🎲[R]' : '🎲';
+        var chanceDisplay = chance.toFixed(1) + '%';
         entry.innerHTML = `
             <span style="color:#606060;min-width:35px;font-size:9px;">#${betNumber}</span>
             <span style="color:#a0a0a0;min-width:60px;font-size:9px;">${gameIcon} ${game}</span>
+            <span style="color:#9ec07c;min-width:55px;font-size:9px;">${chanceDisplay}</span>
             <span style="color:#a0a0a0;min-width:85px;font-size:9px;">${amount.toFixed(8)}</span>
             <span style="color:${resultColor};min-width:45px;font-size:9px;">${resultIcon} ${result}</span>
             <span style="color:${profit >= 0 ? '#00e5c0' : '#ff6b81'};font-weight:bold;min-width:85px;font-size:9px;text-align:right;">${profitSign}${profit.toFixed(8)}</span>
@@ -861,7 +745,7 @@
         }
     }
 
-    // ==================== 15. FIRE & FORGET HANDLER ====================
+    // ==================== 14. FIRE & FORGET HANDLER ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode || STATE.dalembert.level > 0) {
             console.log('[F&F] Recovery active, skipping...');
@@ -870,14 +754,14 @@
         
         if (!STATE.isRunning || STATE.isPaused) return;
         
-        // Cek trigger recovery: loss streak >= 3
-        if (STATE.lossStreak >= 3) {
-            console.log('[TRIGGER] Recovery! Loss Streak:', STATE.lossStreak);
+        // Cek trigger recovery: drawdown >= 0.125%
+        const drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
+        if (drawdownPct >= STATE.triggerDrawdownPct) {
+            console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
             startRecovery();
             return;
         }
         
-        // Cek wager target
         if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
             STATE.isRunning = false;
             STATE.wagerStop = true;
@@ -886,7 +770,6 @@
             return;
         }
         
-        // Hitung bet
         var betAmount = STATE.balance * (STATE.baseBetPercent / 100);
         var finalBet = Math.max(betAmount, STATE.minBet);
         finalBet = Math.min(finalBet, STATE.balance * 0.5);
@@ -894,27 +777,15 @@
             finalBet = Math.min(finalBet, STATE.maxBetCap);
         }
         
-        // Giliran: dice / baccarat (selingan)
-        STATE.normalBetCounter++;
-        const isBaccarat = STATE.normalBetCounter % 2 === 0;
-        
-        // FIRE & FORGET - kirim tanpa await
-        if (isBaccarat) {
-            console.log('[F&F] Baccarat bet:', finalBet);
-            placeBaccaratBet(finalBet).then(function(result) {
-                if (result) processBetResult(result, finalBet, 'normal', true);
-            }).catch(function(e) { console.error('[F&F] Baccarat error:', e); });
-        } else {
-            console.log('[F&F] Dice bet:', finalBet);
-            placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
-                if (result) processBetResult(result, finalBet, 'normal', true);
-            }).catch(function(e) { console.error('[F&F] Dice error:', e); });
-        }
+        console.log('[F&F] Dice bet:', finalBet);
+        placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
+            if (result) processBetResult(result, finalBet, 'normal', true);
+        }).catch(function(e) { console.error('[F&F] Dice error:', e); });
         
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
-    // ==================== 16. RECOVERY SEQUENTIAL LOOP ====================
+    // ==================== 15. RECOVERY SEQUENTIAL LOOP ====================
     async function runRecoverySequential() {
         if (!STATE.isRunning || STATE.isPaused) return;
         if (!STATE.isRecoveryMode || STATE.dalembert.level <= 0) {
@@ -929,7 +800,6 @@
             return;
         }
         
-        // Cek wager target
         if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
             STATE.isRunning = false;
             STATE.wagerStop = true;
@@ -961,7 +831,7 @@
         }
     }
 
-    // ==================== 17. RESET FUNCTIONS ====================
+    // ==================== 16. RESET FUNCTIONS ====================
     function resetToBreakeven() {
         var currentBalance = STATE.balance;
         var lossTolerancePct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1036,7 +906,6 @@
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
         STATE.drawdown = 0;
-        STATE.normalBetCounter = 0;
         STATE.betTimestamps = [];
         STATE.startTime = null;
         STATE.sessionStartTime = null;
@@ -1044,12 +913,10 @@
         updateAllUI();
     }
 
-    // ==================== 18. UI UPDATES ====================
+    // ==================== 17. UI UPDATES ====================
     function updateAllUI() {
         updateStatsDisplay();
-        updateWagerDisplay();
         updateLossToleranceDisplay();
-        drawGapVisual();
         
         var now = Date.now();
         if (now - STATE.lastTGReport >= CONFIG.tgReportInterval && STATE.bets > 0) {
@@ -1071,7 +938,7 @@
         if (STATE.isRecoveryMode) {
             status = '🔄 D\'ALEMBERT L' + STATE.dalembert.level;
         } else {
-            status = '⚡ NORMAL' + (STATE.normalBetCounter % 2 === 0 ? ' 🃏' : ' 🎲');
+            status = '⚡ NORMAL 🎲';
         }
         
         var sessionProgress = STATE.startBalance > 0 ? 
@@ -1083,7 +950,6 @@
             .map(([k, v]) => `${k.toUpperCase()}: ${v.toFixed(8)}`)
             .join(' | ') || 'Empty';
         
-        // Reload status
         var reloadDisplay = '⏳ Checking...';
         if (STATE.reload.amount > 0) {
             var nextText = STATE.reload.nextClaim ? 
@@ -1104,7 +970,7 @@
             "st-wagered": STATE.wagered.toFixed(8),
             "st-bets": STATE.bets + ' | WR ' + winRate.toFixed(0) + '%',
             "st-speed": betSpeed.toFixed(1) + 'b/s',
-            "st-chance": status + ' | LS: ' + STATE.lossStreak + 'x',
+            "st-chance": status + ' | DD: ' + drawdownPct.toFixed(2) + '%',
             "st-gaphits": drawdown.toFixed(8),
             "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
             "st-split-progress": STATE.isRecoveryMode ? STATE.dalembert.level + '/' + STATE.dalembert.maxLevel : '—',
@@ -1127,56 +993,12 @@
         if (bar) bar.style.width = sessionProgress + '%';
     }
 
-    function updateWagerDisplay() {
-        var container = document.getElementById("wagerDisplay");
-        if (!container) return;
-        var progress = STATE.wagerTotalTarget > 0 ? clamp((STATE.wagerTotalAccumulated / STATE.wagerTotalTarget) * 100, 0, 100) : 0;
-        var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
-        container.innerHTML = `
-            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:9px;padding:4px 6px;background:var(--bg);border-radius:6px;">
-                <span>📊 Total: <strong>${STATE.wagerTotalAccumulated.toFixed(8)}</strong> / ${STATE.wagerTotalTarget.toFixed(8)}</span>
-                <span>📋 Sesi: <strong>${STATE.wagerSesiCounter.toFixed(8)}</strong> / ${STATE.wagerSesiTarget.toFixed(8)}</span>
-                <span>📉 Loss: <strong>${STATE.wagerSesiProfit.toFixed(8)}</strong> / ${STATE.wagerLossTolerance.toFixed(8)}</span>
-                <span>📈 ${progress.toFixed(1)}%</span>
-                <span>📉 Loss Streak: <strong>${STATE.lossStreak}x</strong></span>
-                <span>📊 Drawdown: <strong>${drawdownPct.toFixed(2)}%</strong></span>
-            </div>
-            <div class="progress-bar" style="margin-top:4px;">
-                <div class="progress-fill" style="width:${progress}%;background:${progress >= 100 ? '#ff6b81' : '#00e5c0'};"></div>
-            </div>
-        `;
-    }
-
     function updateLossToleranceDisplay() {
         var pct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
         var currentBalance = STATE.balance || STATE.startBalance || 0;
         STATE.wagerLossTolerance = (pct / 100) * currentBalance;
         var el = document.getElementById("loss-tolerance-display");
         if (el) el.textContent = pct + '% (≈ ' + STATE.wagerLossTolerance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ')';
-    }
-
-    function drawGapVisual() {
-        var container = document.getElementById("gapVisual");
-        if (!container) return;
-        var modeText = STATE.isRecoveryMode ? '🔄 D\'ALEMBERT' : '⚡ NORMAL';
-        var levelDisplay = STATE.isRecoveryMode ? STATE.dalembert.level + '/' + STATE.dalembert.maxLevel : '—';
-        var lossDisplay = STATE.dalembert.totalLoss.toFixed(8);
-        var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
-        
-        container.innerHTML = `
-            <div class="stats-block" style="margin-top:10px;">
-                <div class="line"><span class="label">🎯 RECOVERY TRIGGER</span><span class="value">Loss Streak >= 3x</span></div>
-                <div class="line"><span class="label">📉 LOSS STREAK</span><span class="value" style="color:${STATE.lossStreak >= 3 ? '#ff6b81' : '#a0a0a0'};">${STATE.lossStreak}x</span></div>
-                <div class="line"><span class="label">📊 DRAWDOWN</span><span class="value" style="color:${drawdownPct >= STATE.maxDrawdownPct ? '#ff6b81' : '#a0a0a0'};">${drawdownPct.toFixed(2)}%</span></div>
-                <div class="divider"></div>
-                <div class="line"><span class="label">🤖 MODE</span><span class="value" style="color:${STATE.isRecoveryMode ? '#ff922b' : '#00e5c0'};">${modeText}</span></div>
-                <div class="line"><span class="label">📊 LEVEL</span><span class="value">${levelDisplay}</span></div>
-                <div class="line"><span class="label">📉 TOTAL LOSS</span><span class="value">${lossDisplay}</span></div>
-                <div class="divider"></div>
-                <div class="line"><span class="label">🎲 NEXT BET</span><span class="value">${STATE.isRecoveryMode ? STATE.dalembert.currentBet.toFixed(8) : (STATE.balance * STATE.baseBetPercent / 100).toFixed(8)}</span></div>
-                <div class="line"><span class="label">🎯 NEXT CHANCE</span><span class="value">${STATE.isRecoveryMode ? STATE.dalembert.currentChance + '%' : STATE.normalChance + '%'}</span></div>
-            </div>
-        `;
     }
 
     function updateReloadDisplay() {
@@ -1215,7 +1037,7 @@
         }
     }
 
-    // ==================== 19. SESSION REPORT ====================
+    // ==================== 18. SESSION REPORT ====================
     async function sendSessionReport() {
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
@@ -1233,14 +1055,13 @@
                       'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(8) + ' (' + profitPct.toFixed(2) + '%)\n' +
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
-                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
                       'Recovery Level: ' + STATE.dalembert.level + '\n' +
                       'Status: ' + status + '\n' +
-                      '🎲 Mode: Dice + Baccarat';
+                      '🎲 Mode: Dice Only';
         await sendTelegramMessage(message);
     }
 
-    // ==================== 20. RUN LOOP ====================
+    // ==================== 19. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1251,7 +1072,7 @@
         }
     }
 
-    // ==================== 21. UI CONTROLS ====================
+    // ==================== 20. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1273,7 +1094,7 @@
         }
     }
 
-    // ==================== 22. CREATE UI ====================
+    // ==================== 21. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1392,7 +1213,7 @@
                         <div class="line"><span class="label">Bets | WR</span><span class="value" id="st-bets">0 | 0%</span></div>
                         <div class="line"><span class="label">Speed</span><span class="value" id="st-speed">0 b/s</span></div>
                         <div class="divider"></div>
-                        <div class="line"><span class="label">Status</span><span class="value" id="st-chance">⚡ NORMAL | LS: 0x</span></div>
+                        <div class="line"><span class="label">Status</span><span class="value" id="st-chance">⚡ NORMAL | DD: 0%</span></div>
                         <div class="line"><span class="label">Drawdown</span><span class="value" id="st-gaphits">0</span></div>
                         <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
                         <div class="divider"></div>
@@ -1405,8 +1226,6 @@
                         <div class="line"><span class="label">🔄 RELOAD</span><span class="value" id="st-reload-info">-</span></div>
                         <div class="line"><span class="label">🎁 BONUS</span><span class="value" id="st-bonus-info">-</span></div>
                     </div>
-                    <div id="wagerDisplay" style="background:var(--bg);padding:4px 8px;border-radius:6px;margin-top:6px;font-size:9px;">📊 Total: 0.00 / 0.00</div>
-                    <div id="gapVisual"></div>
                 </div>
                 <div id="tab-cfg" class="tab-content">
                     <div class="stats-block">
@@ -1419,15 +1238,15 @@
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🔄 D'ALEMBERT RECOVERY</div>
                         <div class="grid-2">
-                            <div class="md-field"><label>🎯 TRIGGER (Loss Streak)</label><input type="number" id="p-recovery-trigger" value="3" step="1" min="1" max="10"></div>
-                            <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-dalembert-max" value="5" step="1" min="2" max="10"></div>
+                            <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.125" step="0.01" min="0.01" max="5"></div>
+                            <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-dalembert-max" value="7" step="1" min="2" max="15"></div>
                         </div>
                         <div class="grid-2">
                             <div class="md-field"><label>📊 MAX DRAWDOWN (%)</label><input type="number" id="p-max-drawdown" value="5" step="0.5" min="1" max="20"></div>
                         </div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 AUTO RELOAD</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 RELOAD (Manual Claim)</div>
                         <div class="grid-2">
                             <div class="md-field">
                                 <label>💱 Currency</label>
@@ -1446,13 +1265,6 @@
                                     <option value="ada">ADA</option>
                                     <option value="dot">DOT</option>
                                     <option value="pol">POL</option>
-                                </select>
-                            </div>
-                            <div class="md-field">
-                                <label>🤖 Auto Claim</label>
-                                <select id="p-reload-auto-claim">
-                                    <option value="true">✅ ENABLED</option>
-                                    <option value="false">❌ DISABLED</option>
                                 </select>
                             </div>
                         </div>
@@ -1499,7 +1311,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice + Baccarat (Fire & Forget)<br>🔄 Recovery: D'Alembert (Level 1-5)<br>📉 Trigger: Loss Streak >= 3<br>✂️ Cutloss: Level > 5 | Drawdown 5%</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: D'Alembert (Level 1-7)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: Level > 7 | Drawdown 5%</div></div>
                 </div>
             </div>
         </div>`;
@@ -1560,12 +1372,6 @@
                     await checkAllRaffles();
                     updateAllUI();
                     sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
-                    
-                    // Start auto reload loop
-                    if (!STATE._reloadStarted) {
-                        STATE._reloadStarted = true;
-                        autoClaimReloadLoop();
-                    }
                 }
             };
         }
@@ -1587,11 +1393,6 @@
         document.getElementById('p-reload-currency').onchange = function() {
             STATE.reload.currency = this.value;
             checkReloadStatus(this.value);
-            updateAllUI();
-        };
-        
-        document.getElementById('p-reload-auto-claim').onchange = function() {
-            STATE.reload.autoClaim = this.value === 'true';
             updateAllUI();
         };
         
@@ -1624,8 +1425,9 @@
                 
                 STATE.normalChance = safeFloat("p-normal-chance", 99.98);
                 STATE.baseBetPercent = safeFloat("p-basebet-normal", 0.125);
-                STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 5);
+                STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 7);
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
+                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
                 STATE.stopLossPct = safeFloat("p-stop-pct", 100);
                 STATE.maxBetCap = safeFloat("p-max-cap", 0);
@@ -1680,7 +1482,6 @@
                 STATE.wagerWaitingForTrigger = false;
                 STATE.lossStreak = 0;
                 STATE.drawdown = 0;
-                STATE.normalBetCounter = 0;
                 STATE.isRecoveryMode = false;
                 STATE.dalembert.level = 0;
                 STATE.dalembert.totalLoss = 0;
@@ -1707,7 +1508,7 @@
                 updateAllUI();
                 
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nRecovery: D\'Alembert Level 1-5\n🛡️ Cutloss: 5% Drawdown');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nRecovery: D\'Alembert Level 1-' + STATE.dalembert.maxLevel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n🛡️ Cutloss: ' + STATE.maxDrawdownPct + '%');
                 
                 runLoop();
             };
@@ -1761,11 +1562,15 @@
             updateAllUI();
         };
         document.getElementById("p-dalembert-max").onchange = function() {
-            STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 5);
+            STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 7);
             updateAllUI();
         };
         document.getElementById("p-max-drawdown").onchange = function() {
             STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
+            updateAllUI();
+        };
+        document.getElementById("p-trigger-drawdown").onchange = function() {
+            STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
             updateAllUI();
         };
         document.getElementById("p-wager-total-target-usd").oninput = updateAllUI;
@@ -1840,7 +1645,7 @@
         }, 60000);
     }
 
-    // ==================== 23. START ====================
+    // ==================== 22. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
