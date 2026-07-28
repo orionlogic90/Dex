@@ -1,5 +1,5 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE ONLY + D'ALEMBERT RECOVERY
+// CHEAPCHEATX v2.0 - DICE ONLY + D'ALEMBERT RECOVERY (FIXED)
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%)
 // RECOVERY MODE: D'ALEMBERT (Sequential, Level 1-7)
@@ -59,7 +59,6 @@
         lossStreak: 0,
         drawdown: 0,
         
-        // RELOAD
         reload: {
             currency: 'usdt',
             amount: 0,
@@ -600,7 +599,8 @@
             'Chance: 50.5%');
         updateAllUI();
         
-        runRecoverySequential();
+        // LANGSUNG JALANKAN RECOVERY
+        setTimeout(runRecoverySequential, 100);
     }
 
     function handleRecoveryResult(win, betAmount) {
@@ -616,6 +616,7 @@
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
                 d.totalLoss = 0;
+                d.isProcessing = false;
                 console.log('[RECOVERY] SUCCESS!');
                 sendTelegramMessage('✅ D\'ALEMBERT RECOVERY SUCCESS!\nBack to Normal');
                 updateAllUI();
@@ -631,6 +632,7 @@
                 d.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
+                d.isProcessing = false;
                 console.log('[RECOVERY] CUTLOSS! Level exceeded max');
                 sendTelegramMessage('✂️ D\'ALEMBERT CUTLOSS!\nMax Level ' + d.maxLevel + ' reached\n' +
                     'Total Loss: ' + d.totalLoss.toFixed(8));
@@ -644,6 +646,7 @@
                 d.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
+                d.isProcessing = false;
                 console.log('[RECOVERY] CUTLOSS! Drawdown:', drawdownPct + '%');
                 sendTelegramMessage('✂️ D\'ALEMBERT CUTLOSS!\nDrawdown: ' + drawdownPct.toFixed(2) + '%\n' +
                     'Total Loss: ' + d.totalLoss.toFixed(8));
@@ -653,6 +656,7 @@
             }
         }
         
+        // UPDATE BET
         d.currentBet = d.unit * d.level;
         d.currentChance = d.level % 2 === 0 ? 49.5 : 50.5;
         d.currentCondition = d.level % 2 === 0 ? 'below' : 'above';
@@ -666,7 +670,11 @@
         console.log('[RECOVERY] Next Level:', d.level, '| Bet:', d.currentBet, '| Chance:', d.currentChance);
         updateAllUI();
         
-        setTimeout(runRecoverySequential, STATE.delayRecovery);
+        // RESET isProcessing dan lanjutkan recovery
+        d.isProcessing = false;
+        if (STATE.isRecoveryMode && d.level > 0) {
+            setTimeout(runRecoverySequential, STATE.delayRecovery);
+        }
     }
 
     // ==================== 12. PROCESS BET RESULT ====================
