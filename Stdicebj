@@ -1,11 +1,11 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE ONLY + RECOVERY (LABOUCHERE) - FINAL FIX
+// CHEAPCHEATX v2.0 - DICE + BACCARAT + D'ALEMBERT + AUTO RELOAD
 // ========================================================================
-// NORMAL MODE: FIRE & FORGET (Dice 99.98%)
-// RECOVERY MODE: SEQUENTIAL (Dice[R] 50.5%/49.5%)
-// TRIGGER 1: Loss Streak >= 1
-// TRIGGER 2: Total Loss Amount > Basebet
-// TRIGGER 3: Profit Minus > Basebet
+// NORMAL MODE: FIRE & FORGET (Dice 99.98% + Baccarat selingan)
+// RECOVERY MODE: D'ALEMBERT (Sequential, Level 1-5)
+// TRIGGER: Loss Streak >= 3
+// CUTLOSS: Level > 5 | Balance turun 5%
+// AUTO RELOAD: Claim otomatis dengan turnstile token
 // ========================================================================
 
 (function () {
@@ -16,7 +16,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 7,
+        wagerParallelCap: 5,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
@@ -25,11 +25,10 @@
     };
 
     let accessToken = "";
-    let parallelCap = 7;
-    let pendingFires = 0;
 
     // ==================== 2. STATE ====================
     const STATE = {
+        // ===== MODE =====
         isRunning: false,
         isPaused: false,
         isDemo: false,
@@ -38,23 +37,23 @@
         darkMode: false,
         minimized: false,
         
-        recovery: {
-            active: false,
-            attempt: 0,
-            maxAttempt: 7,
-            line: [1, 1, 1, 1],
+        // ===== D'ALEMBERT RECOVERY =====
+        dalembert: {
+            level: 0,              // 0 = normal, 1-5 = active
+            maxLevel: 5,
             unit: 0,
-            totalLoss: 0,
-            targetLoss: 0,
             currentBet: 0,
             currentChance: 50.5,
             currentCondition: 'above',
             isProcessing: false,
-            recoveryCount: 0
+            recoveryCount: 0,
+            totalLoss: 0
         },
         
+        // ===== NORMAL MODE =====
         normalBetCounter: 0,
         
+        // ===== BALANCE =====
         balance: 0,
         startBalance: 0,
         peakBalanceEver: 0,
@@ -65,22 +64,34 @@
         losses: 0,
         betTimestamps: [],
         lossStreak: 0,
-        totalLossAmount: 0,
+        drawdown: 0,
         
-        vipFlag: 'none',
-        vipProgress: 0,
-        vipLevel: 'No VIP',
+        // ===== RELOAD =====
+        reload: {
+            currency: 'usdt',
+            autoClaim: true,
+            amount: 0,
+            active: false,
+            lastClaim: null,
+            nextClaim: null,
+            expireAt: null,
+            claimInterval: 86400000,
+            eligibleCurrencies: ['usdt', 'btc', 'eth', 'bnb', 'sol', 'doge', 'trx', 'idr', 'usdc', 'ltc', 'xrp', 'ada', 'dot', 'pol']
+        },
         
+        // ===== RAKEBACK =====
         rakebackBalances: {},
-        reloadBonus: { value: 0, active: false, lastClaim: null, expireAt: null },
         
+        // ===== VAULT =====
         vaultBalances: {},
         vaultTotal: 0,
         
+        // ===== RAFFLE =====
         raffleTickets: 0,
         raffleData: {},
         raffleIds: ['299d4c87-d395-4386-8022-4a3072ad09a7'],
         
+        // ===== WAGER =====
         wagerTotalAccumulated: 0,
         wagerSesiCounter: 0,
         wagerSesiStartBal: 0,
@@ -91,16 +102,20 @@
         wagerStop: false,
         wagerWaitingForTrigger: false,
         
+        // ===== NORMAL =====
         normalChance: 99.98,
         baseBetPercent: 0.125,
         minBet: 0.0014,
         maxBetCap: 0,
         targetPct: 5,
         stopLossPct: 100,
+        maxDrawdownPct: 5,  // 5% cutloss
         
+        // ===== DELAY =====
         delayNormal: 50,
         delayRecovery: 200,
         
+        // ===== OTHER =====
         sessionNumber: 1,
         sessionsCompleted: 0,
         sessionStartTime: null,
@@ -180,19 +195,27 @@
         } catch(e) {}
     }
 
-    // ==================== 5. VIP PROGRESS ====================
-    async function fetchVipProgress() {
+    // ==================== 5. RELOAD ====================
+    async function checkReloadStatus(currency) {
         if (!accessToken) return;
         try {
-            const query = `query VipProgressMeta {
+            const query = `query ClaimReloadMeta($currency: CurrencyEnum!) {
                 user {
                     id
-                    flagProgress {
-                        flag
-                        progress
+                    reload: faucet {
+                        id
+                        amount(currency: $currency)
+                        active
+                        claimInterval
+                        lastClaim
+                        expireAt
+                        value
                     }
+                    reloadEligibleCurrencies
                 }
             }`;
+            
+            const variables = { currency: currency || STATE.reload.currency };
             
             const res = await fetch(CONFIG.apiUrl + '/graphql', {
                 method: 'POST',
@@ -200,26 +223,146 @@
                     'Content-Type': 'application/json',
                     'x-access-token': accessToken
                 },
-                body: JSON.stringify({ query, variables: {} })
+                body: JSON.stringify({ query, variables })
             });
             
             const data = await res.json();
-            if (data?.data?.user?.flagProgress) {
-                STATE.vipFlag = data.data.user.flagProgress.flag || 'none';
-                STATE.vipProgress = data.data.user.flagProgress.progress * 100;
-                
-                if (STATE.vipFlag === 'none') {
-                    STATE.vipLevel = 'No VIP';
-                } else {
-                    STATE.vipLevel = STATE.vipFlag.charAt(0).toUpperCase() + STATE.vipFlag.slice(1);
+            if (data?.data?.user) {
+                const user = data.data.user;
+                if (user.reload) {
+                    STATE.reload.amount = user.reload.amount || 0;
+                    STATE.reload.active = user.reload.active || false;
+                    STATE.reload.lastClaim = user.reload.lastClaim;
+                    STATE.reload.expireAt = user.reload.expireAt;
+                    STATE.reload.claimInterval = user.reload.claimInterval || 86400000;
+                    STATE.reload.value = user.reload.value;
+                    
+                    if (user.reload.lastClaim && user.reload.claimInterval) {
+                        STATE.reload.nextClaim = new Date(
+                            new Date(user.reload.lastClaim).getTime() + user.reload.claimInterval
+                        );
+                    }
                 }
-                
-                updateVipDisplay();
+                if (user.reloadEligibleCurrencies) {
+                    STATE.reload.eligibleCurrencies = user.reloadEligibleCurrencies;
+                }
+                updateReloadDisplay();
             }
-        } catch(e) { console.error('[VIP] Error:', e); }
+        } catch(e) {
+            console.error('[RELOAD] Check error:', e);
+        }
     }
 
-    // ==================== 6. RAKEBACK & RELOAD ====================
+    async function getTurnstileToken() {
+        // Cari token dari DOM
+        const tokenElements = document.querySelectorAll('[name="cf-turnstile-response"]');
+        for (let el of tokenElements) {
+            if (el.value) return el.value;
+        }
+        
+        // Cari dari cookie
+        const cfClearance = document.cookie.match(/cf_clearance=([^;]+)/);
+        if (cfClearance) return cfClearance[1];
+        
+        // Cari dari meta
+        const metaToken = document.querySelector('meta[name="cf-turnstile-token"]');
+        if (metaToken) return metaToken.content;
+        
+        // Fallback untuk demo
+        if (STATE.isDemo) {
+            return 'demo_token_' + Date.now();
+        }
+        
+        console.warn('[TURNSTILE] Token not found');
+        return '';
+    }
+
+    async function claimReload(currency) {
+        if (!accessToken) return null;
+        try {
+            const token = await getTurnstileToken();
+            if (!token) {
+                sendTelegramMessage('⚠️ Turnstile token not found! Cannot claim reload.');
+                return null;
+            }
+            
+            const mutation = `mutation ClaimFaucet($currency: CurrencyEnum!, $turnstileToken: String!) {
+                claimReload: claimFaucet(currency: $currency, turnstileToken: $turnstileToken) {
+                    reload: faucet {
+                        user {
+                            id
+                            reload: faucet {
+                                id
+                                amount(currency: $currency)
+                                active
+                                claimInterval
+                                lastClaim
+                                expireAt
+                                createdAt
+                                updatedAt
+                            }
+                        }
+                    }
+                }
+            }`;
+            
+            const variables = {
+                currency: currency || STATE.reload.currency,
+                turnstileToken: token
+            };
+            
+            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query: mutation, variables })
+            });
+            
+            const data = await res.json();
+            if (data?.data?.claimReload?.reload?.user?.reload) {
+                const result = data.data.claimReload.reload.user.reload;
+                STATE.reload.lastClaim = result.lastClaim;
+                STATE.reload.amount = result.amount;
+                STATE.reload.active = result.active;
+                STATE.reload.nextClaim = new Date(
+                    new Date(result.lastClaim).getTime() + result.claimInterval
+                );
+                
+                sendTelegramMessage(`✅ RELOAD CLAIMED!\n` +
+                    `Amount: ${result.amount} ${(currency || STATE.reload.currency).toUpperCase()}\n` +
+                    `Next Claim: ${STATE.reload.nextClaim.toLocaleString()}`);
+                
+                await syncUserInfo();
+                updateReloadDisplay();
+                return result;
+            }
+            return null;
+        } catch(e) {
+            console.error('[RELOAD] Claim error:', e);
+            return null;
+        }
+    }
+
+    async function autoClaimReloadLoop() {
+        while (true) {
+            if (STATE.isRunning || STATE.isPaused) {
+                await checkReloadStatus(STATE.reload.currency);
+                
+                if (STATE.reload.autoClaim && STATE.reload.active && STATE.reload.nextClaim) {
+                    const now = new Date();
+                    if (now >= STATE.reload.nextClaim) {
+                        console.log('[RELOAD] Auto claiming...');
+                        await claimReload(STATE.reload.currency);
+                    }
+                }
+            }
+            await sleep(60000); // Cek setiap 1 menit
+        }
+    }
+
+    // ==================== 6. RAKEBACK ====================
     async function fetchRakebackInfo() {
         if (!accessToken) return;
         try {
@@ -233,14 +376,6 @@
                             availableAmount
                         }
                     }
-                    reload {
-                        id
-                        value
-                        active
-                        claimInterval
-                        lastClaim
-                        expireAt
-                    }
                 }
             }`;
             
@@ -254,22 +389,11 @@
             });
             
             const data = await res.json();
-            if (data?.data?.user) {
-                const user = data.data.user;
-                if (user.rakeback) {
-                    STATE.rakebackBalances = {};
-                    user.rakeback.balances.forEach(b => {
-                        STATE.rakebackBalances[b.currency] = b.availableAmount;
-                    });
-                }
-                if (user.reload) {
-                    STATE.reloadBonus = {
-                        value: user.reload.value || 0,
-                        active: user.reload.active || false,
-                        lastClaim: user.reload.lastClaim,
-                        expireAt: user.reload.expireAt
-                    };
-                }
+            if (data?.data?.user?.rakeback) {
+                STATE.rakebackBalances = {};
+                data.data.user.rakeback.balances.forEach(b => {
+                    STATE.rakebackBalances[b.currency] = b.availableAmount;
+                });
                 updateBonusDisplay();
             }
         } catch(e) { console.error('[BONUS] Error:', e); }
@@ -495,151 +619,177 @@
         }
     }
 
-    // ==================== 11. RECOVERY (LABOUCHERE) ====================
-    function getLabouchereBet(line, unit) {
-        if (!line || line.length === 0) return unit;
-        if (line.length === 1) return line[0] * unit;
-        return (line[0] + line[line.length - 1]) * unit;
-    }
-
-    function updateLabouchereLine(line, win, bet) {
-        const newLine = line.slice();
-        if (win) {
-            if (newLine.length <= 2) {
-                return [];
+    // ==================== 11. PLACE BACCARAT BET ====================
+    async function placeBaccaratBet(amount) {
+        const apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
+        
+        try {
+            const payload = {
+                amount: apiAmount,
+                currency: STATE.selectedCurrency,
+                identifier: generateId()
+            };
+            
+            const res = await fetch(CONFIG.apiUrl + '/casino/baccarat/bet', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken,
+                    'x-lockdown-token': CONFIG.lockdownToken
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            const data = await res.json();
+            
+            if (data.error || !data.baccaratBet) {
+                return null;
             }
-            newLine.shift();
-            newLine.pop();
-        } else {
-            newLine.push(bet);
+            
+            const b = data.baccaratBet;
+            const result = b.state?.result || 'loss';
+            const isWin = result === 'banker' || result === 'player';
+            const isTie = result === 'tie';
+            
+            let payoutMultiplier = 0;
+            if (result === 'banker') payoutMultiplier = 0.975;
+            else if (result === 'player') payoutMultiplier = 1;
+            else if (result === 'tie') payoutMultiplier = 0;
+            
+            const payout = isWin ? apiAmount * payoutMultiplier : 0;
+            
+            if (b.user?.wallets && b.user.wallets[0]) {
+                STATE.balance = parseFloat(b.user.wallets[0].balance);
+            } else {
+                const pnl = isWin ? (payout - apiAmount) : -apiAmount;
+                STATE.balance += pnl;
+                if (STATE.balance < 0) STATE.balance = 0;
+            }
+            
+            updateAllUI();
+            
+            return {
+                win: isWin,
+                isTie: isTie,
+                result: result,
+                amount: apiAmount,
+                payout: payout,
+                payoutMultiplier: payoutMultiplier,
+                game: 'baccarat'
+            };
+            
+        } catch (error) {
+            console.error('[BACCARAT] Exception:', error);
+            return null;
         }
-        return newLine;
     }
 
+    // ==================== 12. D'ALEMBERT RECOVERY ====================
     function startRecovery() {
         const basebet = STATE.balance * (STATE.baseBetPercent / 100);
-        const r = STATE.recovery;
+        const d = STATE.dalembert;
+        
+        d.level = 1;
+        d.unit = basebet;
+        d.currentBet = d.unit * d.level;
+        d.currentChance = 50.5;
+        d.currentCondition = 'above';
+        d.isProcessing = false;
+        d.recoveryCount++;
+        d.totalLoss = 0;
         
         STATE.isRecoveryMode = true;
-        STATE.totalLossAmount = 0;
-        r.recoveryCount = (r.recoveryCount || 0) + 1;
+        STATE.lossStreak = 0;
         
-        r.active = true;
-        r.attempt = 0;
-        r.maxAttempt = 7;
-        r.line = [1, 1, 1, 1];
-        r.unit = basebet;
-        r.totalLoss = STATE.startBalance - STATE.balance;
-        r.targetLoss = r.totalLoss;
-        r.currentBet = getLabouchereBet(r.line, r.unit);
-        r.currentChance = 50.5;
-        r.currentCondition = 'above';
-        r.isProcessing = false;
-        
-        console.log('[RECOVERY] #' + r.recoveryCount + ' Started | Target Loss:', r.totalLoss);
-        sendTelegramMessage('🔄 RECOVERY #' + r.recoveryCount + ' STARTED\n' +
-            'Target Loss: ' + r.targetLoss.toFixed(8) + '\n' +
-            'Unit: ' + r.unit.toFixed(8) + '\n' +
-            'Line: [' + r.line.join(', ') + ']');
+        console.log('[RECOVERY] Started Level 1');
+        sendTelegramMessage('🔄 D\'ALEMBERT RECOVERY #' + d.recoveryCount + '\n' +
+            'Level: 1\n' +
+            'Bet: ' + d.currentBet.toFixed(8) + '\n' +
+            'Chance: 50.5%');
         updateAllUI();
         
-        setTimeout(runRecoverySequential, 100);
+        runRecoverySequential();
     }
 
     function handleRecoveryResult(win, betAmount) {
-        const r = STATE.recovery;
+        const d = STATE.dalembert;
         
         if (win) {
-            r.totalLoss -= betAmount * 2;
-            r.line = updateLabouchereLine(r.line, true, betAmount);
-            r.attempt = 0;
+            d.level--;
+            d.totalLoss -= betAmount * 2;
+            console.log('[RECOVERY] WIN | Level:', d.level, '| Total Loss:', d.totalLoss);
             
-            console.log('[RECOVERY] WIN | Total Loss:', r.totalLoss, '| Line:', r.line);
-            
-            if (r.totalLoss <= 0 || r.line.length === 0) {
-                r.active = false;
+            if (d.level <= 0) {
+                // RECOVERY SUCCESS
+                d.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
-                STATE.totalLossAmount = 0;
-                
-                // CEK: Apakah balance sudah kembali ke start?
-                if (STATE.balance < STATE.startBalance) {
-                    // Belum BEP, trigger recovery lagi
-                    console.log('[RECOVERY] Selesai tapi balance belum BEP, trigger lagi...');
-                    sendTelegramMessage('🔄 RECOVERY #' + r.recoveryCount + ' LINE EMPTY\nBalance: ' + STATE.balance.toFixed(8) + ' | Target: ' + STATE.startBalance.toFixed(8) + '\nTriggering new recovery...');
-                    r.isProcessing = false;
-                    setTimeout(startRecovery, 500);
-                    return;
-                }
-                
-                // BEP tercapai
-                console.log('[RECOVERY] SUCCESS! BEP reached');
-                sendTelegramMessage('✅ RECOVERY #' + r.recoveryCount + ' SUCCESS! Back to Normal\nBalance: ' + STATE.balance.toFixed(8));
-                r.isProcessing = false;
+                d.totalLoss = 0;
+                console.log('[RECOVERY] SUCCESS!');
+                sendTelegramMessage('✅ D\'ALEMBERT RECOVERY SUCCESS!\nBack to Normal');
+                updateAllUI();
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
         } else {
-            r.totalLoss += betAmount;
-            r.line = updateLabouchereLine(r.line, false, betAmount);
-            r.attempt++;
+            d.level++;
+            d.totalLoss += betAmount;
+            console.log('[RECOVERY] LOSS | Level:', d.level, '| Total Loss:', d.totalLoss);
             
-            console.log('[RECOVERY] LOSS | Attempt:', r.attempt, '| Total Loss:', r.totalLoss, '| Line:', r.line);
-            
-            if (r.attempt >= r.maxAttempt) {
-                r.line = [1, 1, 1, 1];
-                r.attempt = 0;
-                console.log('[RECOVERY] RESET (Max Attempt)');
-                sendTelegramMessage('🔄 RECOVERY RESET (Max Attempt ' + r.maxAttempt + ')\nRepeating from basebet...');
-            }
-        }
-        
-        if (r.line.length === 0) {
-            r.active = false;
-            STATE.isRecoveryMode = false;
-            STATE.lossStreak = 0;
-            STATE.totalLossAmount = 0;
-            
-            // CEK: Apakah balance sudah kembali ke start?
-            if (STATE.balance < STATE.startBalance) {
-                console.log('[RECOVERY] Line empty tapi balance belum BEP, trigger lagi...');
-                sendTelegramMessage('🔄 RECOVERY #' + r.recoveryCount + ' LINE EMPTY\nBalance: ' + STATE.balance.toFixed(8) + ' | Target: ' + STATE.startBalance.toFixed(8) + '\nTriggering new recovery...');
-                r.isProcessing = false;
-                setTimeout(startRecovery, 500);
+            // Cek cutloss: level > maxLevel
+            if (d.level > d.maxLevel) {
+                d.level = 0;
+                STATE.isRecoveryMode = false;
+                STATE.lossStreak = 0;
+                console.log('[RECOVERY] CUTLOSS! Level exceeded max');
+                sendTelegramMessage('✂️ D\'ALEMBERT CUTLOSS!\nMax Level ' + d.maxLevel + ' reached\n' +
+                    'Total Loss: ' + d.totalLoss.toFixed(8));
+                updateAllUI();
+                setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
             
-            sendTelegramMessage('✅ RECOVERY #' + r.recoveryCount + ' SUCCESS! Line empty');
-            r.isProcessing = false;
-            setTimeout(sendFireAndForgetBet, 100);
-            return;
+            // Cek cutloss: balance turun 5%
+            const drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
+            if (drawdownPct >= STATE.maxDrawdownPct) {
+                d.level = 0;
+                STATE.isRecoveryMode = false;
+                STATE.lossStreak = 0;
+                console.log('[RECOVERY] CUTLOSS! Drawdown:', drawdownPct + '%');
+                sendTelegramMessage('✂️ D\'ALEMBERT CUTLOSS!\nDrawdown: ' + drawdownPct.toFixed(2) + '%\n' +
+                    'Total Loss: ' + d.totalLoss.toFixed(8));
+                updateAllUI();
+                setTimeout(sendFireAndForgetBet, 100);
+                return;
+            }
         }
         
-        r.currentBet = getLabouchereBet(r.line, r.unit);
-        r.currentChance = r.attempt % 2 === 0 ? 50.5 : 49.5;
-        r.currentCondition = r.attempt % 2 === 0 ? 'above' : 'below';
+        // Update bet
+        d.currentBet = d.unit * d.level;
+        d.currentChance = d.level % 2 === 0 ? 49.5 : 50.5;
+        d.currentCondition = d.level % 2 === 0 ? 'below' : 'above';
         
+        // Cap bet
         if (STATE.maxBetCap > 0) {
-            r.currentBet = Math.min(r.currentBet, STATE.maxBetCap);
+            d.currentBet = Math.min(d.currentBet, STATE.maxBetCap);
         }
-        r.currentBet = Math.min(r.currentBet, STATE.balance * 0.5);
-        r.currentBet = Math.max(r.currentBet, STATE.minBet);
+        d.currentBet = Math.min(d.currentBet, STATE.balance * 0.5);
+        d.currentBet = Math.max(d.currentBet, STATE.minBet);
         
-        console.log('[RECOVERY] Next Bet:', r.currentBet, 'Chance:', r.currentChance);
+        console.log('[RECOVERY] Next Level:', d.level, '| Bet:', d.currentBet, '| Chance:', d.currentChance);
         updateAllUI();
         
-        r.isProcessing = false;
         setTimeout(runRecoverySequential, STATE.delayRecovery);
     }
 
-    // ==================== 12. PROCESS BET RESULT ====================
+    // ==================== 13. PROCESS BET RESULT ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
         const isWin = result.win;
         const profit = isWin ? betAmount : -betAmount;
         
-        var gameLabel = 'dice';
+        var gameLabel = result.game || 'dice';
         if (mode === 'recovery') {
             gameLabel = 'dice[R]';
         }
@@ -654,18 +804,13 @@
         if (isWin) {
             STATE.wins++;
             STATE.lossStreak = 0;
-            if (mode === 'normal') {
-                STATE.totalLossAmount = 0;
-            }
         } else {
             STATE.losses++;
             STATE.lossStreak++;
-            if (mode === 'normal') {
-                STATE.totalLossAmount += betAmount;
-            }
         }
         
         STATE.profit = STATE.balance - STATE.startBalance;
+        STATE.drawdown = STATE.startBalance - STATE.balance;
         STATE.wagerSesiCounter += betAmount;
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
@@ -674,12 +819,24 @@
         
         if (mode === 'recovery') {
             handleRecoveryResult(isWin, betAmount);
+        } else {
+            // Normal mode - cek trigger recovery
+            if (STATE.lossStreak >= 3 && !STATE.isRecoveryMode) {
+                console.log('[TRIGGER] Recovery! Loss Streak:', STATE.lossStreak);
+                startRecovery();
+                return;
+            }
+            
+            // Reset wager session jika target tercapai
+            if (STATE.wagerSesiCounter >= STATE.wagerSesiTarget) {
+                resetWagerSesi();
+            }
         }
         
         updateAllUI();
     }
 
-    // ==================== 13. LOGGING ====================
+    // ==================== 14. LOGGING ====================
     function logBet(betNumber, amount, result, profit, game) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -690,13 +847,13 @@
         var resultColor = result === 'win' ? '#00e5c0' : '#ff6b81';
         var resultIcon = result === 'win' ? '✅' : '❌';
         var profitSign = profit >= 0 ? '+' : '';
-        var gameIcon = game === 'dice[R]' ? '🎲[R]' : '🎲';
+        var gameIcon = game === 'baccarat' ? '🃏' : (game === 'dice[R]' ? '🎲[R]' : '🎲');
         entry.innerHTML = `
             <span style="color:#606060;min-width:35px;font-size:9px;">#${betNumber}</span>
             <span style="color:#a0a0a0;min-width:60px;font-size:9px;">${gameIcon} ${game}</span>
-            <span style="color:#a0a0a0;min-width:75px;font-size:9px;">${amount.toFixed(8)}</span>
+            <span style="color:#a0a0a0;min-width:85px;font-size:9px;">${amount.toFixed(8)}</span>
             <span style="color:${resultColor};min-width:45px;font-size:9px;">${resultIcon} ${result}</span>
-            <span style="color:${profit >= 0 ? '#00e5c0' : '#ff6b81'};font-weight:bold;min-width:75px;font-size:9px;text-align:right;">${profitSign}${profit.toFixed(8)}</span>
+            <span style="color:${profit >= 0 ? '#00e5c0' : '#ff6b81'};font-weight:bold;min-width:85px;font-size:9px;text-align:right;">${profitSign}${profit.toFixed(8)}</span>
         `;
         logBox.insertBefore(entry, logBox.firstChild);
         while (logBox.children.length > STATE.maxLogs) {
@@ -704,34 +861,18 @@
         }
     }
 
-    // ==================== 14. FIRE & FORGET HANDLER ====================
+    // ==================== 15. FIRE & FORGET HANDLER ====================
     function sendFireAndForgetBet() {
-        if (STATE.isRecoveryMode || STATE.recovery.active) {
+        if (STATE.isRecoveryMode || STATE.dalembert.level > 0) {
             console.log('[F&F] Recovery active, skipping...');
             return;
         }
         
         if (!STATE.isRunning || STATE.isPaused) return;
         
-        const basebet = STATE.balance * (STATE.baseBetPercent / 100);
-        
-        // === TRIGGER 1: Loss Streak >= 1 ===
-        if (STATE.lossStreak >= 1) {
+        // Cek trigger recovery: loss streak >= 3
+        if (STATE.lossStreak >= 3) {
             console.log('[TRIGGER] Recovery! Loss Streak:', STATE.lossStreak);
-            startRecovery();
-            return;
-        }
-        
-        // === TRIGGER 2: Total Loss Amount > Basebet ===
-        if (STATE.totalLossAmount > basebet) {
-            console.log('[TRIGGER] Recovery! Total Loss:', STATE.totalLossAmount, '> Basebet:', basebet);
-            startRecovery();
-            return;
-        }
-        
-        // === TRIGGER 3: Profit Minus > Basebet ===
-        if (STATE.profit < -basebet) {
-            console.log('[TRIGGER] Recovery! Profit:', STATE.profit, '< -Basebet:', -basebet);
             startRecovery();
             return;
         }
@@ -753,41 +894,42 @@
             finalBet = Math.min(finalBet, STATE.maxBetCap);
         }
         
+        // Giliran: dice / baccarat (selingan)
         STATE.normalBetCounter++;
+        const isBaccarat = STATE.normalBetCounter % 2 === 0;
         
-        if (pendingFires < parallelCap) {
-            pendingFires++;
-            console.log('[F&F] Dice bet:', finalBet, '| Pending:', pendingFires);
-            placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
-                pendingFires--;
+        // FIRE & FORGET - kirim tanpa await
+        if (isBaccarat) {
+            console.log('[F&F] Baccarat bet:', finalBet);
+            placeBaccaratBet(finalBet).then(function(result) {
                 if (result) processBetResult(result, finalBet, 'normal', true);
-            }).catch(function(e) { 
-                pendingFires--;
-                console.error('[F&F] Dice error:', e); 
-            });
+            }).catch(function(e) { console.error('[F&F] Baccarat error:', e); });
+        } else {
+            console.log('[F&F] Dice bet:', finalBet);
+            placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
+                if (result) processBetResult(result, finalBet, 'normal', true);
+            }).catch(function(e) { console.error('[F&F] Dice error:', e); });
         }
         
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
-    // ==================== 15. RECOVERY SEQUENTIAL LOOP ====================
+    // ==================== 16. RECOVERY SEQUENTIAL LOOP ====================
     async function runRecoverySequential() {
-        if (!STATE.isRunning || STATE.isPaused) {
-            return;
-        }
-        
-        if (!STATE.isRecoveryMode || !STATE.recovery.active) {
+        if (!STATE.isRunning || STATE.isPaused) return;
+        if (!STATE.isRecoveryMode || STATE.dalembert.level <= 0) {
             STATE.isRecoveryMode = false;
             setTimeout(sendFireAndForgetBet, 100);
             return;
         }
         
-        const r = STATE.recovery;
-        if (r.isProcessing) {
+        const d = STATE.dalembert;
+        if (d.isProcessing) {
             setTimeout(runRecoverySequential, 100);
             return;
         }
         
+        // Cek wager target
         if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
             STATE.isRunning = false;
             STATE.wagerStop = true;
@@ -796,11 +938,11 @@
             return;
         }
         
-        r.isProcessing = true;
+        d.isProcessing = true;
         
-        const betAmount = r.currentBet;
-        const chance = r.currentChance;
-        const condition = r.currentCondition;
+        const betAmount = d.currentBet;
+        const chance = d.currentChance;
+        const condition = d.currentCondition;
         
         console.log('[RECOVERY] Sequential bet:', betAmount, 'chance:', chance);
         
@@ -809,17 +951,17 @@
             if (result) {
                 processBetResult(result, betAmount, 'recovery', false);
             } else {
-                r.isProcessing = false;
+                d.isProcessing = false;
                 setTimeout(runRecoverySequential, STATE.delayRecovery);
             }
         } catch(e) {
             console.error('[RECOVERY] Error:', e);
-            r.isProcessing = false;
+            d.isProcessing = false;
             setTimeout(runRecoverySequential, STATE.delayRecovery);
         }
     }
 
-    // ==================== 16. RESET FUNCTIONS ====================
+    // ==================== 17. RESET FUNCTIONS ====================
     function resetToBreakeven() {
         var currentBalance = STATE.balance;
         var lossTolerancePct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -834,14 +976,11 @@
         STATE.highestProfit = 0;
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
-        STATE.totalLossAmount = 0;
+        STATE.drawdown = 0;
         
         STATE.isRecoveryMode = false;
-        STATE.recovery.active = false;
-        STATE.recovery.line = [1, 1, 1, 1];
-        STATE.recovery.totalLoss = 0;
-        STATE.recovery.attempt = 0;
-        STATE.recovery.recoveryCount = 0;
+        STATE.dalembert.level = 0;
+        STATE.dalembert.totalLoss = 0;
         
         STATE.wagerSesiStartBal = currentBalance;
         STATE.wagerSesiProfit = 0;
@@ -881,11 +1020,9 @@
         STATE.isPaused = false;
         STATE.isRecoveryMode = false;
         STATE.isResting = false;
-        STATE.recovery.active = false;
-        STATE.recovery.line = [1, 1, 1, 1];
-        STATE.recovery.totalLoss = 0;
-        STATE.recovery.attempt = 0;
-        STATE.recovery.recoveryCount = 0;
+        STATE.dalembert.level = 0;
+        STATE.dalembert.totalLoss = 0;
+        STATE.dalembert.recoveryCount = 0;
         STATE.wagerTotalAccumulated = 0;
         STATE.wagerSesiCounter = 0;
         STATE.wagerStop = false;
@@ -898,17 +1035,16 @@
         STATE.highestProfit = 0;
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
-        STATE.totalLossAmount = 0;
+        STATE.drawdown = 0;
         STATE.normalBetCounter = 0;
         STATE.betTimestamps = [];
-        pendingFires = 0;
         STATE.startTime = null;
         STATE.sessionStartTime = null;
         toggleStartStop(false);
         updateAllUI();
     }
 
-    // ==================== 17. UI UPDATES ====================
+    // ==================== 18. UI UPDATES ====================
     function updateAllUI() {
         updateStatsDisplay();
         updateWagerDisplay();
@@ -928,24 +1064,32 @@
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
         var betSpeed = getBetSpeed();
+        var drawdown = STATE.startBalance - currentBalance;
+        var drawdownPct = STATE.startBalance > 0 ? (drawdown / STATE.startBalance * 100) : 0;
         
         var status;
         if (STATE.isRecoveryMode) {
-            status = '🔄 RECOVERY L' + STATE.recovery.attempt + '/' + STATE.recovery.maxAttempt;
+            status = '🔄 D\'ALEMBERT L' + STATE.dalembert.level;
         } else {
-            status = '⚡ NORMAL 🎲';
+            status = '⚡ NORMAL' + (STATE.normalBetCounter % 2 === 0 ? ' 🃏' : ' 🎲');
         }
         
         var sessionProgress = STATE.startBalance > 0 ? 
             clamp(((STATE.profit / (STATE.startBalance * STATE.targetPct / 100)) * 100), 0, 100) : 0;
         var sessionTarget = STATE.startBalance * STATE.targetPct / 100;
         
-        var vipDisplay = STATE.vipLevel;
-        
         var vaultDisplay = Object.entries(STATE.vaultBalances)
             .filter(([k, v]) => v > 0)
             .map(([k, v]) => `${k.toUpperCase()}: ${v.toFixed(8)}`)
             .join(' | ') || 'Empty';
+        
+        // Reload status
+        var reloadDisplay = '⏳ Checking...';
+        if (STATE.reload.amount > 0) {
+            var nextText = STATE.reload.nextClaim ? 
+                STATE.reload.nextClaim.toLocaleTimeString() : 'Unknown';
+            reloadDisplay = `${STATE.reload.amount.toFixed(4)} ${STATE.reload.currency.toUpperCase()} | Next: ${nextText}`;
+        }
         
         var map = {
             "st-user": STATE.stakeUser,
@@ -961,16 +1105,15 @@
             "st-bets": STATE.bets + ' | WR ' + winRate.toFixed(0) + '%',
             "st-speed": betSpeed.toFixed(1) + 'b/s',
             "st-chance": status + ' | LS: ' + STATE.lossStreak + 'x',
-            "st-gaphits": STATE.totalLossAmount.toFixed(8),
+            "st-gaphits": drawdown.toFixed(8),
             "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
-            "st-split-progress": STATE.isRecoveryMode ? STATE.recovery.attempt + '/' + STATE.recovery.maxAttempt : '—',
-            "st-cutloss-count": STATE.isRecoveryMode ? (STATE.recovery.line.length || 0) : '0',
-            "st-loss-per-split": STATE.isRecoveryMode ? STATE.recovery.totalLoss.toFixed(8) : '0',
+            "st-split-progress": STATE.isRecoveryMode ? STATE.dalembert.level + '/' + STATE.dalembert.maxLevel : '—',
+            "st-cutloss-count": drawdownPct.toFixed(2) + '% / ' + STATE.maxDrawdownPct + '%',
+            "st-loss-per-split": STATE.dalembert.totalLoss.toFixed(8),
             "st-vault": vaultDisplay,
             "st-raffle": '🎟️ ' + STATE.raffleTickets + ' tickets',
-            "st-user-tier": vipDisplay,
-            "st-vip-progress": (STATE.vipFlag !== 'none' ? STATE.vipFlag : 'No VIP') + ' | ' + STATE.vipProgress.toFixed(1) + '%',
-            "st-bonus-info": 'Reload: ' + (STATE.reloadBonus.active ? '✅' : '⏳') + ' | Rakeback: ' + (Object.keys(STATE.rakebackBalances).length > 0 ? '✅' : '⏳')
+            "st-reload-info": reloadDisplay,
+            "st-bonus-info": 'Rakeback: ' + (Object.keys(STATE.rakebackBalances).length > 0 ? '✅' : '⏳')
         };
         for (var id in map) {
             var el = document.getElementById(id);
@@ -982,16 +1125,13 @@
         
         var bar = document.getElementById("st-session-progress-bar");
         if (bar) bar.style.width = sessionProgress + '%';
-        
-        var vipBar = document.getElementById("vip-progress-bar");
-        if (vipBar) vipBar.style.width = Math.min(STATE.vipProgress, 100) + '%';
     }
 
     function updateWagerDisplay() {
         var container = document.getElementById("wagerDisplay");
         if (!container) return;
         var progress = STATE.wagerTotalTarget > 0 ? clamp((STATE.wagerTotalAccumulated / STATE.wagerTotalTarget) * 100, 0, 100) : 0;
-        var basebet = STATE.balance * (STATE.baseBetPercent / 100);
+        var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         container.innerHTML = `
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:9px;padding:4px 6px;background:var(--bg);border-radius:6px;">
                 <span>📊 Total: <strong>${STATE.wagerTotalAccumulated.toFixed(8)}</strong> / ${STATE.wagerTotalTarget.toFixed(8)}</span>
@@ -999,8 +1139,7 @@
                 <span>📉 Loss: <strong>${STATE.wagerSesiProfit.toFixed(8)}</strong> / ${STATE.wagerLossTolerance.toFixed(8)}</span>
                 <span>📈 ${progress.toFixed(1)}%</span>
                 <span>📉 Loss Streak: <strong>${STATE.lossStreak}x</strong></span>
-                <span>💰 Total Loss: <strong>${STATE.totalLossAmount.toFixed(8)}</strong> / Basebet: ${basebet.toFixed(8)}</span>
-                <span>⚡ Pending: ${pendingFires}/${parallelCap}</span>
+                <span>📊 Drawdown: <strong>${drawdownPct.toFixed(2)}%</strong></span>
             </div>
             <div class="progress-bar" style="margin-top:4px;">
                 <div class="progress-fill" style="width:${progress}%;background:${progress >= 100 ? '#ff6b81' : '#00e5c0'};"></div>
@@ -1019,53 +1158,42 @@
     function drawGapVisual() {
         var container = document.getElementById("gapVisual");
         if (!container) return;
-        var modeText = STATE.isRecoveryMode ? '🔄 RECOVERY' : '⚡ NORMAL';
-        var lineDisplay = STATE.isRecoveryMode ? '[' + STATE.recovery.line.join(', ') + ']' : '—';
-        var attemptDisplay = STATE.isRecoveryMode ? STATE.recovery.attempt + '/' + STATE.recovery.maxAttempt : '—';
-        var lossDisplay = STATE.isRecoveryMode ? STATE.recovery.totalLoss.toFixed(8) : '0';
-        var basebet = STATE.balance * (STATE.baseBetPercent / 100);
+        var modeText = STATE.isRecoveryMode ? '🔄 D\'ALEMBERT' : '⚡ NORMAL';
+        var levelDisplay = STATE.isRecoveryMode ? STATE.dalembert.level + '/' + STATE.dalembert.maxLevel : '—';
+        var lossDisplay = STATE.dalembert.totalLoss.toFixed(8);
+        var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         
         container.innerHTML = `
             <div class="stats-block" style="margin-top:10px;">
-                <div class="line"><span class="label">🎯 RECOVERY TRIGGER</span><span class="value">Loss Streak >= 1 | Loss > Basebet | Profit < -Basebet</span></div>
-                <div class="line"><span class="label">📉 LOSS STREAK</span><span class="value" style="color:${STATE.lossStreak >= 1 ? '#ff6b81' : '#a0a0a0'};">${STATE.lossStreak}x</span></div>
-                <div class="line"><span class="label">💰 TOTAL LOSS</span><span class="value" style="color:${STATE.totalLossAmount > basebet ? '#ff6b81' : '#a0a0a0'};">${STATE.totalLossAmount.toFixed(8)}</span></div>
-                <div class="line"><span class="label">📉 PROFIT</span><span class="value" style="color:${STATE.profit < -basebet ? '#ff6b81' : '#a0a0a0'};">${STATE.profit.toFixed(8)}</span></div>
+                <div class="line"><span class="label">🎯 RECOVERY TRIGGER</span><span class="value">Loss Streak >= 3x</span></div>
+                <div class="line"><span class="label">📉 LOSS STREAK</span><span class="value" style="color:${STATE.lossStreak >= 3 ? '#ff6b81' : '#a0a0a0'};">${STATE.lossStreak}x</span></div>
+                <div class="line"><span class="label">📊 DRAWDOWN</span><span class="value" style="color:${drawdownPct >= STATE.maxDrawdownPct ? '#ff6b81' : '#a0a0a0'};">${drawdownPct.toFixed(2)}%</span></div>
                 <div class="divider"></div>
                 <div class="line"><span class="label">🤖 MODE</span><span class="value" style="color:${STATE.isRecoveryMode ? '#ff922b' : '#00e5c0'};">${modeText}</span></div>
-                <div class="line"><span class="label">📊 LINE</span><span class="value">${lineDisplay}</span></div>
-                <div class="line"><span class="label">🔄 ATTEMPT</span><span class="value">${attemptDisplay}</span></div>
-                <div class="line"><span class="label">📉 RECOVERY LOSS</span><span class="value">${lossDisplay}</span></div>
+                <div class="line"><span class="label">📊 LEVEL</span><span class="value">${levelDisplay}</span></div>
+                <div class="line"><span class="label">📉 TOTAL LOSS</span><span class="value">${lossDisplay}</span></div>
                 <div class="divider"></div>
-                <div class="line"><span class="label">🎲 NEXT BET</span><span class="value">${STATE.isRecoveryMode ? STATE.recovery.currentBet.toFixed(8) : (STATE.balance * STATE.baseBetPercent / 100).toFixed(8)}</span></div>
-                <div class="line"><span class="label">🎯 NEXT CHANCE</span><span class="value">${STATE.isRecoveryMode ? STATE.recovery.currentChance + '%' : STATE.normalChance + '%'}</span></div>
+                <div class="line"><span class="label">🎲 NEXT BET</span><span class="value">${STATE.isRecoveryMode ? STATE.dalembert.currentBet.toFixed(8) : (STATE.balance * STATE.baseBetPercent / 100).toFixed(8)}</span></div>
+                <div class="line"><span class="label">🎯 NEXT CHANCE</span><span class="value">${STATE.isRecoveryMode ? STATE.dalembert.currentChance + '%' : STATE.normalChance + '%'}</span></div>
             </div>
         `;
     }
 
-    function updateVipDisplay() {
-        const el = document.getElementById('st-vip-progress');
+    function updateReloadDisplay() {
+        const el = document.getElementById('st-reload-info');
         if (el) {
-            const flag = STATE.vipFlag || 'No VIP';
-            el.textContent = flag + ' | ' + STATE.vipProgress.toFixed(1) + '%';
-        }
-        const bar = document.getElementById('vip-progress-bar');
-        if (bar) {
-            bar.style.width = Math.min(STATE.vipProgress, 100) + '%';
-        }
-        
-        const tierEl = document.getElementById('st-user-tier');
-        if (tierEl) {
-            tierEl.textContent = STATE.vipLevel;
+            var nextText = STATE.reload.nextClaim ? 
+                STATE.reload.nextClaim.toLocaleTimeString() : 'Unknown';
+            var status = STATE.reload.active ? '✅' : '⏳';
+            el.textContent = `${STATE.reload.amount.toFixed(4)} ${STATE.reload.currency.toUpperCase()} ${status} | Next: ${nextText}`;
         }
     }
 
     function updateBonusDisplay() {
         const el = document.getElementById('st-bonus-info');
         if (el) {
-            const reloadStatus = STATE.reloadBonus.active ? '✅ Active' : '⏳ Inactive';
             const rakebackCount = Object.keys(STATE.rakebackBalances).length;
-            el.textContent = 'Reload: ' + reloadStatus + ' | Rakeback: ' + (rakebackCount > 0 ? '✅' : '⏳');
+            el.textContent = 'Rakeback: ' + (rakebackCount > 0 ? '✅' : '⏳');
         }
     }
 
@@ -1087,34 +1215,32 @@
         }
     }
 
-    // ==================== 18. SESSION REPORT ====================
+    // ==================== 19. SESSION REPORT ====================
     async function sendSessionReport() {
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
-        var status = STATE.isRecoveryMode ? '🔄 RECOVERY' : '⚡ NORMAL';
-        
-        var vipDisplay = STATE.vipLevel;
+        var status = STATE.isRecoveryMode ? '🔄 D\'ALEMBERT' : '⚡ NORMAL';
+        var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         
         var message = '💰 CHEAPCHEATX v2.0\n' +
                       '"Your Stake Wagered Partner"\n' +
                       'User: ' + STATE.stakeUser + '\n' +
-                      'VIP: ' + vipDisplay + '\n' +
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
-                      'Start Balance: ' + STATE.startBalance.toFixed(8) + '\n' +
-                      'Total Loss: ' + STATE.totalLossAmount.toFixed(8) + '\n' +
-                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
+                      'Drawdown: ' + drawdownPct.toFixed(2) + '%\n' +
                       'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(8) + ' / ' + STATE.wagerTotalTarget.toFixed(8) + '\n' +
                       'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(8) + ' (' + profitPct.toFixed(2) + '%)\n' +
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
+                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
+                      'Recovery Level: ' + STATE.dalembert.level + '\n' +
                       'Status: ' + status + '\n' +
-                      '🎲 Mode: Dice Only';
+                      '🎲 Mode: Dice + Baccarat';
         await sendTelegramMessage(message);
     }
 
-    // ==================== 19. RUN LOOP ====================
+    // ==================== 20. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1125,7 +1251,7 @@
         }
     }
 
-    // ==================== 20. UI CONTROLS ====================
+    // ==================== 21. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1147,7 +1273,7 @@
         }
     }
 
-    // ==================== 21. CREATE UI ====================
+    // ==================== 22. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1252,11 +1378,6 @@
                     <div class="stats-block">
                         <div class="line"><span class="label">User</span><span class="value" id="st-user">-</span></div>
                         <div class="line"><span class="label">Balance</span><span class="value" id="st-balance">0</span></div>
-                        <div class="line"><span class="label">🏅 VIP LEVEL</span><span class="value" id="st-user-tier">-</span></div>
-                        <div class="divider"></div>
-                        <div class="line"><span class="label">👑 VIP PROGRESS</span><span class="value" id="st-vip-progress">-</span></div>
-                        <div class="progress-bar"><div class="progress-fill" id="vip-progress-bar" style="width:0%;background:#ff922b;"></div></div>
-                        <div class="line"><span class="label">🎁 BONUS</span><span class="value" id="st-bonus-info">-</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">📋 SESSION #</span><span class="value" id="st-session-num">1</span></div>
                         <div class="line"><span class="label">🎯 TARGET</span><span class="value" id="st-session-target">5% (0.00 USDT)</span></div>
@@ -1272,15 +1393,17 @@
                         <div class="line"><span class="label">Speed</span><span class="value" id="st-speed">0 b/s</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">Status</span><span class="value" id="st-chance">⚡ NORMAL | LS: 0x</span></div>
-                        <div class="line"><span class="label">Total Loss</span><span class="value" id="st-gaphits">0</span></div>
+                        <div class="line"><span class="label">Drawdown</span><span class="value" id="st-gaphits">0</span></div>
                         <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
                         <div class="divider"></div>
-                        <div class="line"><span class="label">🔄 ATTEMPT</span><span class="value" id="st-split-progress">—</span></div>
-                        <div class="line"><span class="label">📊 LINE LENGTH</span><span class="value" id="st-cutloss-count">0</span></div>
-                        <div class="line"><span class="label">📉 RECOVERY LOSS</span><span class="value" id="st-loss-per-split">0</span></div>
+                        <div class="line"><span class="label">📊 LEVEL</span><span class="value" id="st-split-progress">—</span></div>
+                        <div class="line"><span class="label">✂️ CUTLOSS</span><span class="value" id="st-cutloss-count">0% / 5%</span></div>
+                        <div class="line"><span class="label">📉 TOTAL LOSS</span><span class="value" id="st-loss-per-split">0</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">🏦 VAULT</span><span class="value" id="st-vault">Empty</span></div>
                         <div class="line"><span class="label">🎟️ RAFFLE</span><span class="value" id="st-raffle">0 tickets</span></div>
+                        <div class="line"><span class="label">🔄 RELOAD</span><span class="value" id="st-reload-info">-</span></div>
+                        <div class="line"><span class="label">🎁 BONUS</span><span class="value" id="st-bonus-info">-</span></div>
                     </div>
                     <div id="wagerDisplay" style="background:var(--bg);padding:4px 8px;border-radius:6px;margin-top:6px;font-size:9px;">📊 Total: 0.00 / 0.00</div>
                     <div id="gapVisual"></div>
@@ -1292,19 +1415,52 @@
                             <div class="md-field"><label>🎲 DICE CHANCE (%)</label><input type="number" id="p-normal-chance" value="99.98" step="0.01" min="1" max="99.98"></div>
                             <div class="md-field"><label>💰 BET (% balance)</label><input type="number" id="p-basebet-normal" value="0.125" step="0.001" min="0.01" max="10"></div>
                         </div>
+                    </div>
+                    <div class="stats-block">
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 D'ALEMBERT RECOVERY</div>
                         <div class="grid-2">
-                            <div class="md-field">
-                                <label>⚡ PARALLEL CAP</label>
-                                <input type="number" id="p-parallel-cap" value="7" step="1" min="1" max="20">
-                            </div>
+                            <div class="md-field"><label>🎯 TRIGGER (Loss Streak)</label><input type="number" id="p-recovery-trigger" value="3" step="1" min="1" max="10"></div>
+                            <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-dalembert-max" value="5" step="1" min="2" max="10"></div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="md-field"><label>📊 MAX DRAWDOWN (%)</label><input type="number" id="p-max-drawdown" value="5" step="0.5" min="1" max="20"></div>
                         </div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 RECOVERY (LABOUCHERE)</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 AUTO RELOAD</div>
                         <div class="grid-2">
-                            <div class="md-field"><label>📈 MAX ATTEMPT</label><input type="number" id="p-recovery-max-attempt" value="7" step="1" min="1" max="20"></div>
-                            <div class="md-field"><label>📊 LINE DEFAULT</label><input type="text" id="p-recovery-line" value="1,1,1,1" style="font-family:monospace;"></div>
+                            <div class="md-field">
+                                <label>💱 Currency</label>
+                                <select id="p-reload-currency">
+                                    <option value="usdt">USDT</option>
+                                    <option value="btc">BTC</option>
+                                    <option value="eth">ETH</option>
+                                    <option value="bnb">BNB</option>
+                                    <option value="sol">SOL</option>
+                                    <option value="doge">DOGE</option>
+                                    <option value="trx">TRX</option>
+                                    <option value="idr">IDR</option>
+                                    <option value="usdc">USDC</option>
+                                    <option value="ltc">LTC</option>
+                                    <option value="xrp">XRP</option>
+                                    <option value="ada">ADA</option>
+                                    <option value="dot">DOT</option>
+                                    <option value="pol">POL</option>
+                                </select>
+                            </div>
+                            <div class="md-field">
+                                <label>🤖 Auto Claim</label>
+                                <select id="p-reload-auto-claim">
+                                    <option value="true">✅ ENABLED</option>
+                                    <option value="false">❌ DISABLED</option>
+                                </select>
+                            </div>
                         </div>
+                        <div style="display:flex;gap:8px;margin-top:6px;">
+                            <button id="p-reload-claim" class="btn-login" style="flex:1;background:#00e5c0;color:black;">🎯 CLAIM NOW</button>
+                            <button id="p-reload-check" class="btn-login" style="flex:1;">🔍 CHECK</button>
+                        </div>
+                        <div style="font-size:8px;color:var(--text-light);margin-top:6px;" id="reload-status">⏳ Checking reload status...</div>
                     </div>
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🎯 WAGER FARMING</div>
@@ -1343,7 +1499,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget) Parallel Cap: 7<br>🔄 Recovery: Labouchere + Dice[R] (Sequential)<br>📉 Trigger: Loss Streak >= 1 | Loss > Basebet | Profit < -Basebet</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice + Baccarat (Fire & Forget)<br>🔄 Recovery: D'Alembert (Level 1-5)<br>📉 Trigger: Loss Streak >= 3<br>✂️ Cutloss: Level > 5 | Drawdown 5%</div></div>
                 </div>
             </div>
         </div>`;
@@ -1398,12 +1554,18 @@
                 var success = await syncUserInfo();
                 if (success) {
                     document.getElementById("p-start").disabled = false;
-                    await fetchVipProgress();
+                    await checkReloadStatus(STATE.reload.currency);
                     await fetchRakebackInfo();
                     await fetchVaultBalance();
                     await checkAllRaffles();
                     updateAllUI();
                     sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
+                    
+                    // Start auto reload loop
+                    if (!STATE._reloadStarted) {
+                        STATE._reloadStarted = true;
+                        autoClaimReloadLoop();
+                    }
                 }
             };
         }
@@ -1413,7 +1575,7 @@
             refreshBtn.onclick = async function() {
                 if (!accessToken) return;
                 await syncUserInfo();
-                await fetchVipProgress();
+                await checkReloadStatus(STATE.reload.currency);
                 await fetchRakebackInfo();
                 await fetchVaultBalance();
                 await checkAllRaffles();
@@ -1421,11 +1583,24 @@
             };
         }
         
-        // ===== PARALLEL CAP =====
-        document.getElementById("p-parallel-cap").onchange = function() {
-            parallelCap = safeInt("p-parallel-cap", 7);
-            if (parallelCap < 1) parallelCap = 1;
-            if (parallelCap > 20) parallelCap = 20;
+        // ===== RELOAD EVENTS =====
+        document.getElementById('p-reload-currency').onchange = function() {
+            STATE.reload.currency = this.value;
+            checkReloadStatus(this.value);
+            updateAllUI();
+        };
+        
+        document.getElementById('p-reload-auto-claim').onchange = function() {
+            STATE.reload.autoClaim = this.value === 'true';
+            updateAllUI();
+        };
+        
+        document.getElementById('p-reload-claim').onclick = async function() {
+            await claimReload(STATE.reload.currency);
+        };
+        
+        document.getElementById('p-reload-check').onclick = async function() {
+            await checkReloadStatus(STATE.reload.currency);
             updateAllUI();
         };
         
@@ -1449,25 +1624,14 @@
                 
                 STATE.normalChance = safeFloat("p-normal-chance", 99.98);
                 STATE.baseBetPercent = safeFloat("p-basebet-normal", 0.125);
-                STATE.recovery.maxAttempt = safeInt("p-recovery-max-attempt", 7);
+                STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 5);
+                STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
                 STATE.stopLossPct = safeFloat("p-stop-pct", 100);
                 STATE.maxBetCap = safeFloat("p-max-cap", 0);
                 STATE.delayNormal = safeInt("p-delay-normal", 50);
                 STATE.delayRecovery = safeInt("p-delay-recovery", 200);
                 STATE.minBetIdr = safeFloat("p-minbet-idr", 2);
-                parallelCap = safeInt("p-parallel-cap", 7);
-                if (parallelCap < 1) parallelCap = 1;
-                if (parallelCap > 20) parallelCap = 20;
-                
-                var lineInput = document.getElementById("p-recovery-line");
-                if (lineInput) {
-                    var lineStr = lineInput.value.trim();
-                    var lineArr = lineStr.split(',').map(function(s) { return parseInt(s.trim()) || 1; });
-                    if (lineArr.length > 0) {
-                        STATE.recovery.line = lineArr;
-                    }
-                }
                 
                 var targetUSD = safeFloat("p-wager-total-target-usd", 1000);
                 var lossPct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1515,15 +1679,11 @@
                 STATE.wagerStop = false;
                 STATE.wagerWaitingForTrigger = false;
                 STATE.lossStreak = 0;
-                STATE.totalLossAmount = 0;
+                STATE.drawdown = 0;
                 STATE.normalBetCounter = 0;
                 STATE.isRecoveryMode = false;
-                STATE.recovery.active = false;
-                STATE.recovery.line = [1, 1, 1, 1];
-                STATE.recovery.totalLoss = 0;
-                STATE.recovery.attempt = 0;
-                STATE.recovery.recoveryCount = 0;
-                pendingFires = 0;
+                STATE.dalembert.level = 0;
+                STATE.dalembert.totalLoss = 0;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1538,7 +1698,7 @@
                 STATE.isPaused = false;
                 STATE.betTimestamps = [];
                 
-                await fetchVipProgress();
+                await checkReloadStatus(STATE.reload.currency);
                 await fetchRakebackInfo();
                 await fetchVaultBalance();
                 await checkAllRaffles();
@@ -1547,7 +1707,7 @@
                 updateAllUI();
                 
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nParallel Cap: ' + parallelCap + '\nRecovery: Labouchere + Dice\n🛡️ V2: 1/4 BET SIZE!');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nRecovery: D\'Alembert Level 1-5\n🛡️ Cutloss: 5% Drawdown');
                 
                 runLoop();
             };
@@ -1600,8 +1760,12 @@
             STATE.normalChance = safeFloat("p-normal-chance", 99.98);
             updateAllUI();
         };
-        document.getElementById("p-recovery-max-attempt").onchange = function() {
-            STATE.recovery.maxAttempt = safeInt("p-recovery-max-attempt", 7);
+        document.getElementById("p-dalembert-max").onchange = function() {
+            STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 5);
+            updateAllUI();
+        };
+        document.getElementById("p-max-drawdown").onchange = function() {
+            STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
             updateAllUI();
         };
         document.getElementById("p-wager-total-target-usd").oninput = updateAllUI;
@@ -1655,7 +1819,7 @@
             accessToken = saved;
             document.getElementById("p-token").value = saved;
             syncUserInfo().then(function() {
-                fetchVipProgress();
+                checkReloadStatus(STATE.reload.currency);
                 fetchRakebackInfo();
                 fetchVaultBalance();
                 checkAllRaffles();
@@ -1668,15 +1832,15 @@
         setInterval(updateAllUI, 500);
         setInterval(function() {
             if (accessToken) {
-                fetchVipProgress();
+                checkReloadStatus(STATE.reload.currency);
                 fetchRakebackInfo();
                 fetchVaultBalance();
                 checkAllRaffles();
             }
-        }, 120000);
+        }, 60000);
     }
 
-    // ==================== 22. START ====================
+    // ==================== 23. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
