@@ -1,9 +1,11 @@
 // ========================================================================
 // CHEAPCHEATX v2.0 - DICE ONLY + RECOVERY (LABOUCHERE) - FINAL FIX
 // ========================================================================
-// FIX: VIP Level (flag dari flagProgress)
-// FIX: Trigger Recovery (drawdown > basebet)
-// FIX: Recovery Loop (cek balance sebelum balik normal)
+// NORMAL MODE: FIRE & FORGET (Dice 99.98%)
+// RECOVERY MODE: SEQUENTIAL (Dice[R] 50.5%/49.5%)
+// TRIGGER 1: Loss Streak >= 1
+// TRIGGER 2: Total Loss Amount > Basebet
+// TRIGGER 3: Profit Minus > Basebet
 // ========================================================================
 
 (function () {
@@ -64,7 +66,6 @@
         betTimestamps: [],
         lossStreak: 0,
         totalLossAmount: 0,
-        drawdown: 0,
         
         vipFlag: 'none',
         vipProgress: 0,
@@ -207,7 +208,6 @@
                 STATE.vipFlag = data.data.user.flagProgress.flag || 'none';
                 STATE.vipProgress = data.data.user.flagProgress.progress * 100;
                 
-                // FIX VIP LEVEL: tampilkan flag apa adanya
                 if (STATE.vipFlag === 'none') {
                     STATE.vipLevel = 'No VIP';
                 } else {
@@ -666,7 +666,6 @@
         }
         
         STATE.profit = STATE.balance - STATE.startBalance;
-        STATE.drawdown = STATE.startBalance - STATE.balance;
         STATE.wagerSesiCounter += betAmount;
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
@@ -715,19 +714,24 @@
         if (!STATE.isRunning || STATE.isPaused) return;
         
         const basebet = STATE.balance * (STATE.baseBetPercent / 100);
-        const drawdown = STATE.startBalance - STATE.balance;
         
-        // === TRIGGER 1: Drawdown > Basebet ===
-        if (drawdown > basebet && STATE.lossStreak >= 1) {
-            console.log('[TRIGGER] Recovery! Drawdown:', drawdown, '> Basebet:', basebet);
+        // === TRIGGER 1: Loss Streak >= 1 ===
+        if (STATE.lossStreak >= 1) {
+            console.log('[TRIGGER] Recovery! Loss Streak:', STATE.lossStreak);
             startRecovery();
             return;
         }
         
-        // === TRIGGER 2: Profit Minus 3% ===
-        const profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
-        if (profitPct < -3 && STATE.lossStreak >= 1) {
-            console.log('[TRIGGER] Recovery! Profit:', profitPct + '%');
+        // === TRIGGER 2: Total Loss Amount > Basebet ===
+        if (STATE.totalLossAmount > basebet) {
+            console.log('[TRIGGER] Recovery! Total Loss:', STATE.totalLossAmount, '> Basebet:', basebet);
+            startRecovery();
+            return;
+        }
+        
+        // === TRIGGER 3: Profit Minus > Basebet ===
+        if (STATE.profit < -basebet) {
+            console.log('[TRIGGER] Recovery! Profit:', STATE.profit, '< -Basebet:', -basebet);
             startRecovery();
             return;
         }
@@ -831,7 +835,6 @@
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
         STATE.totalLossAmount = 0;
-        STATE.drawdown = 0;
         
         STATE.isRecoveryMode = false;
         STATE.recovery.active = false;
@@ -896,7 +899,6 @@
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
         STATE.totalLossAmount = 0;
-        STATE.drawdown = 0;
         STATE.normalBetCounter = 0;
         STATE.betTimestamps = [];
         pendingFires = 0;
@@ -926,7 +928,6 @@
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
         var betSpeed = getBetSpeed();
-        var drawdown = STATE.startBalance - currentBalance;
         
         var status;
         if (STATE.isRecoveryMode) {
@@ -939,7 +940,6 @@
             clamp(((STATE.profit / (STATE.startBalance * STATE.targetPct / 100)) * 100), 0, 100) : 0;
         var sessionTarget = STATE.startBalance * STATE.targetPct / 100;
         
-        // FIX VIP LEVEL: tampilkan flag apa adanya
         var vipDisplay = STATE.vipLevel;
         
         var vaultDisplay = Object.entries(STATE.vaultBalances)
@@ -961,7 +961,7 @@
             "st-bets": STATE.bets + ' | WR ' + winRate.toFixed(0) + '%',
             "st-speed": betSpeed.toFixed(1) + 'b/s',
             "st-chance": status + ' | LS: ' + STATE.lossStreak + 'x',
-            "st-gaphits": drawdown.toFixed(8),
+            "st-gaphits": STATE.totalLossAmount.toFixed(8),
             "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
             "st-split-progress": STATE.isRecoveryMode ? STATE.recovery.attempt + '/' + STATE.recovery.maxAttempt : '—',
             "st-cutloss-count": STATE.isRecoveryMode ? (STATE.recovery.line.length || 0) : '0',
@@ -992,7 +992,6 @@
         if (!container) return;
         var progress = STATE.wagerTotalTarget > 0 ? clamp((STATE.wagerTotalAccumulated / STATE.wagerTotalTarget) * 100, 0, 100) : 0;
         var basebet = STATE.balance * (STATE.baseBetPercent / 100);
-        var drawdown = STATE.startBalance - STATE.balance;
         container.innerHTML = `
             <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;font-size:9px;padding:4px 6px;background:var(--bg);border-radius:6px;">
                 <span>📊 Total: <strong>${STATE.wagerTotalAccumulated.toFixed(8)}</strong> / ${STATE.wagerTotalTarget.toFixed(8)}</span>
@@ -1000,7 +999,7 @@
                 <span>📉 Loss: <strong>${STATE.wagerSesiProfit.toFixed(8)}</strong> / ${STATE.wagerLossTolerance.toFixed(8)}</span>
                 <span>📈 ${progress.toFixed(1)}%</span>
                 <span>📉 Loss Streak: <strong>${STATE.lossStreak}x</strong></span>
-                <span>💰 Drawdown: <strong>${drawdown.toFixed(8)}</strong> / Basebet: ${basebet.toFixed(8)}</span>
+                <span>💰 Total Loss: <strong>${STATE.totalLossAmount.toFixed(8)}</strong> / Basebet: ${basebet.toFixed(8)}</span>
                 <span>⚡ Pending: ${pendingFires}/${parallelCap}</span>
             </div>
             <div class="progress-bar" style="margin-top:4px;">
@@ -1025,13 +1024,13 @@
         var attemptDisplay = STATE.isRecoveryMode ? STATE.recovery.attempt + '/' + STATE.recovery.maxAttempt : '—';
         var lossDisplay = STATE.isRecoveryMode ? STATE.recovery.totalLoss.toFixed(8) : '0';
         var basebet = STATE.balance * (STATE.baseBetPercent / 100);
-        var drawdown = STATE.startBalance - STATE.balance;
         
         container.innerHTML = `
             <div class="stats-block" style="margin-top:10px;">
-                <div class="line"><span class="label">🎯 RECOVERY TRIGGER</span><span class="value">Drawdown > Basebet (${basebet.toFixed(8)})</span></div>
-                <div class="line"><span class="label">📉 DRAWDOWN</span><span class="value" style="color:${drawdown > basebet ? '#ff6b81' : '#a0a0a0'};">${drawdown.toFixed(8)}</span></div>
-                <div class="line"><span class="label">📉 LOSS STREAK</span><span class="value" style="color:${STATE.lossStreak >= 1 ? '#ff922b' : '#a0a0a0'};">${STATE.lossStreak}x</span></div>
+                <div class="line"><span class="label">🎯 RECOVERY TRIGGER</span><span class="value">Loss Streak >= 1 | Loss > Basebet | Profit < -Basebet</span></div>
+                <div class="line"><span class="label">📉 LOSS STREAK</span><span class="value" style="color:${STATE.lossStreak >= 1 ? '#ff6b81' : '#a0a0a0'};">${STATE.lossStreak}x</span></div>
+                <div class="line"><span class="label">💰 TOTAL LOSS</span><span class="value" style="color:${STATE.totalLossAmount > basebet ? '#ff6b81' : '#a0a0a0'};">${STATE.totalLossAmount.toFixed(8)}</span></div>
+                <div class="line"><span class="label">📉 PROFIT</span><span class="value" style="color:${STATE.profit < -basebet ? '#ff6b81' : '#a0a0a0'};">${STATE.profit.toFixed(8)}</span></div>
                 <div class="divider"></div>
                 <div class="line"><span class="label">🤖 MODE</span><span class="value" style="color:${STATE.isRecoveryMode ? '#ff922b' : '#00e5c0'};">${modeText}</span></div>
                 <div class="line"><span class="label">📊 LINE</span><span class="value">${lineDisplay}</span></div>
@@ -1094,7 +1093,6 @@
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
         var status = STATE.isRecoveryMode ? '🔄 RECOVERY' : '⚡ NORMAL';
-        var drawdown = STATE.startBalance - STATE.balance;
         
         var vipDisplay = STATE.vipLevel;
         
@@ -1105,12 +1103,12 @@
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Start Balance: ' + STATE.startBalance.toFixed(8) + '\n' +
-                      'Drawdown: ' + drawdown.toFixed(8) + '\n' +
+                      'Total Loss: ' + STATE.totalLossAmount.toFixed(8) + '\n' +
+                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
                       'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(8) + ' / ' + STATE.wagerTotalTarget.toFixed(8) + '\n' +
                       'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(8) + ' (' + profitPct.toFixed(2) + '%)\n' +
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
-                      'Loss Streak: ' + STATE.lossStreak + 'x\n' +
                       'Status: ' + status + '\n' +
                       '🎲 Mode: Dice Only';
         await sendTelegramMessage(message);
@@ -1274,7 +1272,7 @@
                         <div class="line"><span class="label">Speed</span><span class="value" id="st-speed">0 b/s</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">Status</span><span class="value" id="st-chance">⚡ NORMAL | LS: 0x</span></div>
-                        <div class="line"><span class="label">Drawdown</span><span class="value" id="st-gaphits">0</span></div>
+                        <div class="line"><span class="label">Total Loss</span><span class="value" id="st-gaphits">0</span></div>
                         <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">🔄 ATTEMPT</span><span class="value" id="st-split-progress">—</span></div>
@@ -1345,7 +1343,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget) Parallel Cap: 7<br>🔄 Recovery: Labouchere + Dice[R] (Sequential)<br>📉 Trigger: Drawdown > Basebet | Profit < -3%</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget) Parallel Cap: 7<br>🔄 Recovery: Labouchere + Dice[R] (Sequential)<br>📉 Trigger: Loss Streak >= 1 | Loss > Basebet | Profit < -Basebet</div></div>
                 </div>
             </div>
         </div>`;
