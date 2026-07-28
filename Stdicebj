@@ -1,5 +1,5 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE ONLY + RECOVERY (LABOUCHERE) - FIXED
+// CHEAPCHEATX v2.0 - DICE ONLY + RECOVERY (LABOUCHERE) - FINAL FIX
 // ========================================================================
 
 (function () {
@@ -10,7 +10,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 5,
+        wagerParallelCap: 7,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
@@ -19,6 +19,8 @@
     };
 
     let accessToken = "";
+    let parallelCap = 7;
+    let pendingFires = 0;
 
     // ==================== 2. STATE ====================
     const STATE = {
@@ -196,10 +198,10 @@
             
             const data = await res.json();
             if (data?.data?.user?.flagProgress) {
-                STATE.vipFlag = data.data.user.flagProgress.flag || 'No VIP';
+                STATE.vipFlag = data.data.user.flagProgress.flag || 'none';
                 STATE.vipProgress = data.data.user.flagProgress.progress * 100;
                 
-                if (STATE.vipFlag === 'none' || STATE.vipFlag === 'No VIP') {
+                if (STATE.vipFlag === 'none') {
                     STATE.vipLevel = 'No VIP';
                 } else {
                     STATE.vipLevel = STATE.vipFlag.charAt(0).toUpperCase() + STATE.vipFlag.slice(1);
@@ -511,9 +513,8 @@
         const basebet = STATE.balance * (STATE.baseBetPercent / 100);
         const r = STATE.recovery;
         
-        // STOP FIRE & FORGET
         STATE.isRecoveryMode = true;
-        STATE.totalLossAmount = 0;  // ← RESET!
+        STATE.totalLossAmount = 0;
         
         r.active = true;
         r.attempt = 0;
@@ -535,7 +536,7 @@
         updateAllUI();
         
         // LANGSUNG JALANKAN RECOVERY
-        runRecoverySequential();
+        setTimeout(runRecoverySequential, 100);
     }
 
     function handleRecoveryResult(win, betAmount) {
@@ -558,7 +559,7 @@
                 sendTelegramMessage('✅ RECOVERY SUCCESS! Back to Normal');
                 resetWagerSesi();
                 updateAllUI();
-                // KEMBALI KE NORMAL
+                r.isProcessing = false;
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
@@ -584,6 +585,7 @@
             STATE.totalLossAmount = 0;
             sendTelegramMessage('✅ RECOVERY SUCCESS! Line empty');
             updateAllUI();
+            r.isProcessing = false;
             setTimeout(sendFireAndForgetBet, 100);
             return;
         }
@@ -602,6 +604,7 @@
         updateAllUI();
         
         // LANJUTKAN RECOVERY
+        r.isProcessing = false;
         setTimeout(runRecoverySequential, STATE.delayRecovery);
     }
 
@@ -679,7 +682,6 @@
 
     // ==================== 14. FIRE & FORGET HANDLER ====================
     function sendFireAndForgetBet() {
-        // CEK APAKAH RECOVERY AKTIF
         if (STATE.isRecoveryMode || STATE.recovery.active) {
             console.log('[F&F] Recovery active, skipping...');
             return;
@@ -687,10 +689,18 @@
         
         if (!STATE.isRunning || STATE.isPaused) return;
         
-        // Cek trigger recovery - TOTAL LOSS AMOUNT > basebet
+        // === TRIGGER 1: Total Loss > Basebet ===
         const basebet = STATE.balance * (STATE.baseBetPercent / 100);
         if (STATE.totalLossAmount > basebet && STATE.lossStreak >= 1) {
-            console.log('[TRIGGER] Recovery! Total Loss Amount:', STATE.totalLossAmount, '> Basebet:', basebet);
+            console.log('[TRIGGER] Recovery! Total Loss:', STATE.totalLossAmount, '> Basebet:', basebet);
+            startRecovery();
+            return;
+        }
+        
+        // === TRIGGER 2: Profit Minus 3% ===
+        const profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
+        if (profitPct < -3 && STATE.lossStreak >= 1) {
+            console.log('[TRIGGER] Recovery! Profit:', profitPct + '%');
             startRecovery();
             return;
         }
@@ -714,10 +724,18 @@
         
         STATE.normalBetCounter++;
         
-        console.log('[F&F] Dice bet:', finalBet);
-        placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
-            if (result) processBetResult(result, finalBet, 'normal', true);
-        }).catch(function(e) { console.error('[F&F] Dice error:', e); });
+        // PARALLEL CAP
+        if (pendingFires < parallelCap) {
+            pendingFires++;
+            console.log('[F&F] Dice bet:', finalBet, '| Pending:', pendingFires);
+            placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
+                pendingFires--;
+                if (result) processBetResult(result, finalBet, 'normal', true);
+            }).catch(function(e) { 
+                pendingFires--;
+                console.error('[F&F] Dice error:', e); 
+            });
+        }
         
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
@@ -851,6 +869,7 @@
         STATE.totalLossAmount = 0;
         STATE.normalBetCounter = 0;
         STATE.betTimestamps = [];
+        pendingFires = 0;
         STATE.startTime = null;
         STATE.sessionStartTime = null;
         toggleStartStop(false);
@@ -890,7 +909,9 @@
         var sessionTarget = STATE.startBalance * STATE.targetPct / 100;
         
         var vipDisplay = STATE.vipLevel;
-        if (vipDisplay !== 'No VIP') {
+        if (vipDisplay === 'No VIP') {
+            vipDisplay = 'No VIP';
+        } else {
             vipDisplay = '⭐ ' + vipDisplay;
         }
         
@@ -952,6 +973,7 @@
                 <span>📈 ${progress.toFixed(1)}%</span>
                 <span>📉 Loss Streak: <strong>${STATE.lossStreak}x</strong></span>
                 <span>💰 Total Loss: <strong>${STATE.totalLossAmount.toFixed(8)}</strong> / Basebet: ${basebet.toFixed(8)}</span>
+                <span>⚡ Pending: ${pendingFires}/${parallelCap}</span>
             </div>
             <div class="progress-bar" style="margin-top:4px;">
                 <div class="progress-fill" style="width:${progress}%;background:${progress >= 100 ? '#ff6b81' : '#00e5c0'};"></div>
@@ -1044,10 +1066,17 @@
         var runTime = getDuration();
         var status = STATE.isRecoveryMode ? '🔄 RECOVERY' : '⚡ NORMAL';
         
+        var vipDisplay = STATE.vipLevel;
+        if (vipDisplay === 'No VIP') {
+            vipDisplay = 'No VIP';
+        } else {
+            vipDisplay = '⭐ ' + vipDisplay;
+        }
+        
         var message = '💰 CHEAPCHEATX v2.0\n' +
                       '"Your Stake Wagered Partner"\n' +
                       'User: ' + STATE.stakeUser + '\n' +
-                      'VIP: ' + STATE.vipLevel + '\n' +
+                      'VIP: ' + vipDisplay + '\n' +
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(8) + ' / ' + STATE.wagerTotalTarget.toFixed(8) + '\n' +
@@ -1239,6 +1268,12 @@
                             <div class="md-field"><label>🎲 DICE CHANCE (%)</label><input type="number" id="p-normal-chance" value="99.98" step="0.01" min="1" max="99.98"></div>
                             <div class="md-field"><label>💰 BET (% balance)</label><input type="number" id="p-basebet-normal" value="0.125" step="0.001" min="0.01" max="10"></div>
                         </div>
+                        <div class="grid-2">
+                            <div class="md-field">
+                                <label>⚡ PARALLEL CAP</label>
+                                <input type="number" id="p-parallel-cap" value="7" step="1" min="1" max="20">
+                            </div>
+                        </div>
                     </div>
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🔄 RECOVERY (LABOUCHERE)</div>
@@ -1284,7 +1319,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Labouchere + Dice[R] (Sequential)<br>📉 Trigger: Total Loss > Basebet</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget) Parallel Cap: 7<br>🔄 Recovery: Labouchere + Dice[R] (Sequential)<br>📉 Trigger: Total Loss > Basebet | Profit < -3%</div></div>
                 </div>
             </div>
         </div>`;
@@ -1362,6 +1397,14 @@
             };
         }
         
+        // ===== PARALLEL CAP =====
+        document.getElementById("p-parallel-cap").onchange = function() {
+            parallelCap = safeInt("p-parallel-cap", 7);
+            if (parallelCap < 1) parallelCap = 1;
+            if (parallelCap > 20) parallelCap = 20;
+            updateAllUI();
+        };
+        
         // ===== START =====
         var startBtn = document.getElementById("p-start");
         if (startBtn) {
@@ -1389,6 +1432,9 @@
                 STATE.delayNormal = safeInt("p-delay-normal", 50);
                 STATE.delayRecovery = safeInt("p-delay-recovery", 200);
                 STATE.minBetIdr = safeFloat("p-minbet-idr", 2);
+                parallelCap = safeInt("p-parallel-cap", 7);
+                if (parallelCap < 1) parallelCap = 1;
+                if (parallelCap > 20) parallelCap = 20;
                 
                 // Parse recovery line
                 var lineInput = document.getElementById("p-recovery-line");
@@ -1453,6 +1499,7 @@
                 STATE.recovery.line = [1, 1, 1, 1];
                 STATE.recovery.totalLoss = 0;
                 STATE.recovery.attempt = 0;
+                pendingFires = 0;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1476,7 +1523,7 @@
                 updateAllUI();
                 
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Labouchere + Dice\n🛡️ V2: 1/4 BET SIZE!');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nParallel Cap: ' + parallelCap + '\nRecovery: Labouchere + Dice\n🛡️ V2: 1/4 BET SIZE!');
                 
                 runLoop();
             };
