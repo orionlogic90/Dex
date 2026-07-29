@@ -5,6 +5,7 @@
 // RECOVERY MODE: PAROLI (Sequential, Level 1-4, Chance Increment)
 // TRIGGER: Drawdown > 0.125%
 // CUTLOSS: Loss Streak >= 5x
+// EXIT STRATEGY: Safe (exit profit > 0) / Aggressive (max level)
 // RAFFLE: Progress Bar + Next Ticket (di atas stats) - WAGER BOT USD
 // ========================================================================
 
@@ -51,7 +52,8 @@
             maxLossStreak: 5,
             baseChance: 80,
             incrementPerWin: 2.0,
-            maxChance: 90
+            maxChance: 90,
+            exitStrategy: 'safe' // 'safe' atau 'aggressive'
         },
         
         // ===== BALANCE =====
@@ -521,7 +523,8 @@
         sendTelegramMessage('🔄 PAROLI RECOVERY #' + p.recoveryCount + '\n' +
             'Level: 1\n' +
             'Bet: ' + p.currentBet.toFixed(8) + '\n' +
-            'Chance: ' + p.currentChance + '%');
+            'Chance: ' + p.currentChance + '%\n' +
+            'Exit Strategy: ' + (p.exitStrategy === 'safe' ? '🛡️ Safe' : '⚡ Aggressive'));
         updateAllUI();
         
         setTimeout(runRecoverySequential, 100);
@@ -538,15 +541,34 @@
             
             console.log('[RECOVERY] WIN | Level:', p.level, '| Chance:', p.currentChance, '| Total Profit:', p.totalLoss);
             
+            // ===== CHECK EXIT STRATEGY =====
+            if (p.exitStrategy === 'safe' && p.totalLoss > 0) {
+                // SAFE EXIT: profit sudah > 0
+                p.level = 0;
+                STATE.isRecoveryMode = false;
+                STATE.lossStreak = 0;
+                p.isProcessing = false;
+                var profit = p.totalLoss;
+                p.totalLoss = 0;
+                p.currentChance = p.baseChance;
+                console.log('[RECOVERY] SAFE EXIT! Profit:', profit);
+                sendTelegramMessage('🛡️ SAFE EXIT!\nProfit: ' + profit.toFixed(8) + '\nBack to Normal');
+                updateAllUI();
+                setTimeout(sendFireAndForgetBet, 100);
+                return;
+            }
+            
+            // ===== CHECK MAX LEVEL =====
             if (p.level > p.maxLevel) {
                 p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
-                p.totalLoss = 0;
                 p.isProcessing = false;
+                var profit = p.totalLoss;
+                p.totalLoss = 0;
                 p.currentChance = p.baseChance;
                 console.log('[RECOVERY] SUCCESS!');
-                sendTelegramMessage('✅ PAROLI RECOVERY SUCCESS!\nBack to Normal');
+                sendTelegramMessage('✅ PAROLI RECOVERY SUCCESS!\nProfit: ' + profit.toFixed(8) + '\nBack to Normal');
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
@@ -573,9 +595,11 @@
                 STATE.lossStreak = 0;
                 p.isProcessing = false;
                 p.currentChance = p.baseChance;
+                var loss = p.totalLoss;
+                p.totalLoss = 0;
                 console.log('[RECOVERY] CUTLOSS! Loss Streak:', p.lossStreak);
                 sendTelegramMessage('✂️ PAROLI CUTLOSS!\nLoss Streak: ' + p.lossStreak + 'x\n' +
-                    'Total Loss: ' + p.totalLoss.toFixed(8));
+                    'Total Loss: ' + loss.toFixed(8));
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
@@ -588,9 +612,11 @@
                 STATE.lossStreak = 0;
                 p.isProcessing = false;
                 p.currentChance = p.baseChance;
+                var loss = p.totalLoss;
+                p.totalLoss = 0;
                 console.log('[RECOVERY] CUTLOSS! Drawdown:', drawdownPct + '%');
                 sendTelegramMessage('✂️ PAROLI CUTLOSS!\nDrawdown: ' + drawdownPct.toFixed(2) + '%\n' +
-                    'Total Loss: ' + p.totalLoss.toFixed(8));
+                    'Total Loss: ' + loss.toFixed(8));
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
@@ -637,12 +663,10 @@
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.drawdown = STATE.startBalance - STATE.balance;
         
-        // Update max drawdown
         if (STATE.drawdown > STATE.maxDrawdown) {
             STATE.maxDrawdown = STATE.drawdown;
         }
         
-        // Update max bet
         if (betAmount > STATE.maxBet) {
             STATE.maxBet = betAmount;
         }
@@ -651,7 +675,6 @@
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
         
-        // Update raffle wager (convert ke USD)
         var wageredUSD = betAmount * STATE.fiatRates.usd;
         STATE.raffle.wageredFromBot += wageredUSD;
         var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
@@ -889,6 +912,7 @@
     function updateAllUI() {
         updateStatsDisplay();
         updateRaffleDisplay();
+        updateExitStrategyDisplay();
         
         var now = Date.now();
         if (now - STATE.lastTGReport >= CONFIG.tgReportInterval && STATE.bets > 0) {
@@ -938,6 +962,15 @@
         if (profitEl) profitEl.style.color = STATE.profit >= 0 ? '#00A86B' : '#FF4757';
     }
 
+    function updateExitStrategyDisplay() {
+        var el = document.getElementById('st-exit-strategy');
+        if (el) {
+            var text = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe' : '⚡ Aggressive';
+            el.textContent = text;
+            el.style.color = STATE.paroli.exitStrategy === 'safe' ? '#00e5c0' : '#ff922b';
+        }
+    }
+
     // ==================== 16. SESSION REPORT ====================
     async function sendSessionReport() {
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
@@ -948,6 +981,7 @@
         var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
         var raffleTickets = STATE.raffle.userTickets;
         var wageredUSD = STATE.raffle.wageredFromBot;
+        var exitStrategy = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe' : '⚡ Aggressive';
         
         var message = '💰 CHEAPCHEATX v2.0\n' +
                       '"Your Stake Wagered Partner"\n' +
@@ -963,6 +997,7 @@
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
                       'Paroli Level: ' + STATE.paroli.level + '\n' +
+                      'Exit Strategy: ' + exitStrategy + '\n' +
                       '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
                       'Status: ' + status + '\n' +
                       '🎲 Mode: Dice Only';
@@ -1104,8 +1139,16 @@
                         <span class="dot" id="statusDot" style="background:#FF4757;"></span>
                         <span id="botStatus">STOP</span>
                     </div>
-                    <div id="raffle-container" style="background:var(--bg-block);border-radius:12px;padding:8px 10px;margin-bottom:10px;border:1px solid var(--border);">
+                    <div id="raffle-container" style="background:var(--bg-block);border-radius:12px;padding:8px 10px;margin-bottom:6px;border:1px solid var(--border);">
                         <div id="st-raffle">Loading raffle progress...</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:4px 8px;background:var(--bg-block);border-radius:8px;border:1px solid var(--border);font-size:10px;">
+                        <span style="color:var(--text-light);">🎯 EXIT STRATEGY:</span>
+                        <select id="p-exit-strategy" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:10px;color:var(--text);">
+                            <option value="safe">🛡️ Safe (Profit > 0)</option>
+                            <option value="aggressive">⚡ Aggressive (Max Level)</option>
+                        </select>
+                        <span id="st-exit-strategy" style="font-weight:bold;margin-left:auto;">🛡️ Safe</span>
                     </div>
                     <div class="stats-block">
                         <div class="line"><span class="label">User</span><span class="value" id="st-user">-</span></div>
@@ -1187,7 +1230,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4, Chance Increment)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4, Chance Increment)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe (Profit > 0) / Aggressive (Max Level)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -1226,6 +1269,13 @@
                 root.style.setProperty('--border', '#e5e7eb');
                 root.style.setProperty('--log-bg', '#f8f9fa');
             }
+            updateAllUI();
+        };
+        
+        // ===== EXIT STRATEGY =====
+        document.getElementById('p-exit-strategy').onchange = function() {
+            STATE.paroli.exitStrategy = this.value;
+            updateExitStrategyDisplay();
             updateAllUI();
         };
         
@@ -1313,6 +1363,7 @@
                 STATE.paroli.currentChance = STATE.paroli.baseChance;
                 STATE.paroli.incrementPerWin = safeFloat("p-paroli-increment", 2.0);
                 STATE.paroli.maxChance = safeFloat("p-paroli-max-chance", 90);
+                STATE.paroli.exitStrategy = document.getElementById('p-exit-strategy').value || 'safe';
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
                 STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
@@ -1396,8 +1447,9 @@
                 toggleStartStop(true);
                 updateAllUI();
                 
+                var exitLabel = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Profit > 0)' : '⚡ Aggressive (Max Level)';
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nChance: ' + STATE.paroli.baseChance + '% +' + STATE.paroli.incrementPerWin + '%/win (max ' + STATE.paroli.maxChance + '%)\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n🎟️ Raffle: Tracking progress');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nChance: ' + STATE.paroli.baseChance + '% +' + STATE.paroli.incrementPerWin + '%/win (max ' + STATE.paroli.maxChance + '%)\nExit: ' + exitLabel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n🎟️ Raffle: Tracking progress');
                 
                 runLoop();
             };
