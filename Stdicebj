@@ -1,10 +1,10 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE ONLY + D'ALEMBERT RECOVERY (FIXED)
+// CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%)
-// RECOVERY MODE: D'ALEMBERT (Sequential, Level 1-7)
+// RECOVERY MODE: PAROLI (Sequential, Level 1-4)
 // TRIGGER: Drawdown > 0.125% (1x basebet)
-// CUTLOSS: Drawdown > 5% (safety net)
+// CUTLOSS: Loss Streak >= 5x di Recovery
 // ========================================================================
 
 (function () {
@@ -35,16 +35,19 @@
         darkMode: false,
         minimized: false,
         
-        dalembert: {
-            level: 0,
-            maxLevel: 7,
+        // ===== PAROLI RECOVERY =====
+        paroli: {
+            level: 0,              // 0 = normal, 1-4 = active
+            maxLevel: 4,
             unit: 0,
             currentBet: 0,
             currentChance: 50.5,
             currentCondition: 'above',
             isProcessing: false,
             recoveryCount: 0,
-            totalLoss: 0
+            totalLoss: 0,
+            lossStreak: 0,         // loss streak dalam recovery
+            maxLossStreak: 5        // cutloss di 5x loss streak
         },
         
         balance: 0,
@@ -59,6 +62,7 @@
         lossStreak: 0,
         drawdown: 0,
         
+        // ===== RELOAD =====
         reload: {
             currency: 'usdt',
             amount: 0,
@@ -575,104 +579,118 @@
         }
     }
 
-    // ==================== 11. D'ALEMBERT RECOVERY ====================
+    // ==================== 11. PAROLI RECOVERY ====================
     function startRecovery() {
         const basebet = STATE.balance * (STATE.baseBetPercent / 100);
-        const d = STATE.dalembert;
+        const p = STATE.paroli;
         
-        d.level = 1;
-        d.unit = basebet;
-        d.currentBet = d.unit * d.level;
-        d.currentChance = 50.5;
-        d.currentCondition = 'above';
-        d.isProcessing = false;
-        d.recoveryCount++;
-        d.totalLoss = 0;
+        p.level = 1;
+        p.unit = basebet;
+        p.currentBet = p.unit * Math.pow(2, p.level - 1); // 1, 2, 4, 8 unit
+        p.currentChance = 50.5;
+        p.currentCondition = 'above';
+        p.isProcessing = false;
+        p.recoveryCount++;
+        p.totalLoss = 0;
+        p.lossStreak = 0;
         
         STATE.isRecoveryMode = true;
         STATE.lossStreak = 0;
         
-        console.log('[RECOVERY] Started Level 1');
-        sendTelegramMessage('🔄 D\'ALEMBERT RECOVERY #' + d.recoveryCount + '\n' +
+        console.log('[RECOVERY] Paroli Started Level 1');
+        sendTelegramMessage('🔄 PAROLI RECOVERY #' + p.recoveryCount + '\n' +
             'Level: 1\n' +
-            'Bet: ' + d.currentBet.toFixed(8) + '\n' +
+            'Bet: ' + p.currentBet.toFixed(8) + '\n' +
             'Chance: 50.5%');
         updateAllUI();
         
-        // LANGSUNG JALANKAN RECOVERY
         setTimeout(runRecoverySequential, 100);
     }
 
     function handleRecoveryResult(win, betAmount) {
-        const d = STATE.dalembert;
+        const p = STATE.paroli;
         
         if (win) {
-            d.level--;
-            d.totalLoss -= betAmount * 2;
-            console.log('[RECOVERY] WIN | Level:', d.level, '| Total Loss:', d.totalLoss);
+            // WIN: naik level
+            p.lossStreak = 0;
+            p.level++;
+            p.totalLoss += betAmount; // profit dari win
             
-            if (d.level <= 0) {
-                d.level = 0;
+            console.log('[RECOVERY] WIN | Level:', p.level, '| Total Profit:', p.totalLoss);
+            
+            // Cek BEP: jika sudah mencapai level 4 (8x unit)
+            if (p.level > p.maxLevel) {
+                // RECOVERY SUCCESS
+                p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
-                d.totalLoss = 0;
-                d.isProcessing = false;
+                p.totalLoss = 0;
+                p.isProcessing = false;
                 console.log('[RECOVERY] SUCCESS!');
-                sendTelegramMessage('✅ D\'ALEMBERT RECOVERY SUCCESS!\nBack to Normal');
+                sendTelegramMessage('✅ PAROLI RECOVERY SUCCESS!\nBack to Normal');
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
-        } else {
-            d.level++;
-            d.totalLoss += betAmount;
-            console.log('[RECOVERY] LOSS | Level:', d.level, '| Total Loss:', d.totalLoss);
             
-            if (d.level > d.maxLevel) {
-                d.level = 0;
+            // Update bet untuk level berikutnya (double)
+            p.currentBet = p.unit * Math.pow(2, p.level - 1);
+            p.currentChance = p.level % 2 === 0 ? 49.5 : 50.5;
+            p.currentCondition = p.level % 2 === 0 ? 'below' : 'above';
+            
+        } else {
+            // LOSS: reset ke level 1, tambah loss streak
+            p.lossStreak++;
+            p.totalLoss -= betAmount;
+            p.level = 1;
+            p.currentBet = p.unit;
+            p.currentChance = 50.5;
+            p.currentCondition = 'above';
+            
+            console.log('[RECOVERY] LOSS | Loss Streak:', p.lossStreak, '| Total Loss:', p.totalLoss);
+            
+            // Cek cutloss: loss streak >= 5
+            if (p.lossStreak >= p.maxLossStreak) {
+                p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
-                d.isProcessing = false;
-                console.log('[RECOVERY] CUTLOSS! Level exceeded max');
-                sendTelegramMessage('✂️ D\'ALEMBERT CUTLOSS!\nMax Level ' + d.maxLevel + ' reached\n' +
-                    'Total Loss: ' + d.totalLoss.toFixed(8));
+                p.isProcessing = false;
+                console.log('[RECOVERY] CUTLOSS! Loss Streak:', p.lossStreak);
+                sendTelegramMessage('✂️ PAROLI CUTLOSS!\nLoss Streak: ' + p.lossStreak + 'x\n' +
+                    'Total Loss: ' + p.totalLoss.toFixed(8));
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
             
+            // Cek drawdown cutloss (safety net)
             const drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.maxDrawdownPct) {
-                d.level = 0;
+                p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
-                d.isProcessing = false;
+                p.isProcessing = false;
                 console.log('[RECOVERY] CUTLOSS! Drawdown:', drawdownPct + '%');
-                sendTelegramMessage('✂️ D\'ALEMBERT CUTLOSS!\nDrawdown: ' + drawdownPct.toFixed(2) + '%\n' +
-                    'Total Loss: ' + d.totalLoss.toFixed(8));
+                sendTelegramMessage('✂️ PAROLI CUTLOSS!\nDrawdown: ' + drawdownPct.toFixed(2) + '%\n' +
+                    'Total Loss: ' + p.totalLoss.toFixed(8));
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
         }
         
-        // UPDATE BET
-        d.currentBet = d.unit * d.level;
-        d.currentChance = d.level % 2 === 0 ? 49.5 : 50.5;
-        d.currentCondition = d.level % 2 === 0 ? 'below' : 'above';
-        
+        // Cap bet
         if (STATE.maxBetCap > 0) {
-            d.currentBet = Math.min(d.currentBet, STATE.maxBetCap);
+            p.currentBet = Math.min(p.currentBet, STATE.maxBetCap);
         }
-        d.currentBet = Math.min(d.currentBet, STATE.balance * 0.5);
-        d.currentBet = Math.max(d.currentBet, STATE.minBet);
+        p.currentBet = Math.min(p.currentBet, STATE.balance * 0.5);
+        p.currentBet = Math.max(p.currentBet, STATE.minBet);
         
-        console.log('[RECOVERY] Next Level:', d.level, '| Bet:', d.currentBet, '| Chance:', d.currentChance);
+        console.log('[RECOVERY] Next Level:', p.level, '| Bet:', p.currentBet, '| Chance:', p.currentChance);
         updateAllUI();
         
-        // RESET isProcessing dan lanjutkan recovery
-        d.isProcessing = false;
-        if (STATE.isRecoveryMode && d.level > 0) {
+        p.isProcessing = false;
+        if (STATE.isRecoveryMode && p.level > 0) {
             setTimeout(runRecoverySequential, STATE.delayRecovery);
         }
     }
@@ -755,7 +773,7 @@
 
     // ==================== 14. FIRE & FORGET HANDLER ====================
     function sendFireAndForgetBet() {
-        if (STATE.isRecoveryMode || STATE.dalembert.level > 0) {
+        if (STATE.isRecoveryMode || STATE.paroli.level > 0) {
             console.log('[F&F] Recovery active, skipping...');
             return;
         }
@@ -796,14 +814,14 @@
     // ==================== 15. RECOVERY SEQUENTIAL LOOP ====================
     async function runRecoverySequential() {
         if (!STATE.isRunning || STATE.isPaused) return;
-        if (!STATE.isRecoveryMode || STATE.dalembert.level <= 0) {
+        if (!STATE.isRecoveryMode || STATE.paroli.level <= 0) {
             STATE.isRecoveryMode = false;
             setTimeout(sendFireAndForgetBet, 100);
             return;
         }
         
-        const d = STATE.dalembert;
-        if (d.isProcessing) {
+        const p = STATE.paroli;
+        if (p.isProcessing) {
             setTimeout(runRecoverySequential, 100);
             return;
         }
@@ -816,11 +834,11 @@
             return;
         }
         
-        d.isProcessing = true;
+        p.isProcessing = true;
         
-        const betAmount = d.currentBet;
-        const chance = d.currentChance;
-        const condition = d.currentCondition;
+        const betAmount = p.currentBet;
+        const chance = p.currentChance;
+        const condition = p.currentCondition;
         
         console.log('[RECOVERY] Sequential bet:', betAmount, 'chance:', chance);
         
@@ -829,12 +847,12 @@
             if (result) {
                 processBetResult(result, betAmount, 'recovery', false);
             } else {
-                d.isProcessing = false;
+                p.isProcessing = false;
                 setTimeout(runRecoverySequential, STATE.delayRecovery);
             }
         } catch(e) {
             console.error('[RECOVERY] Error:', e);
-            d.isProcessing = false;
+            p.isProcessing = false;
             setTimeout(runRecoverySequential, STATE.delayRecovery);
         }
     }
@@ -857,8 +875,9 @@
         STATE.drawdown = 0;
         
         STATE.isRecoveryMode = false;
-        STATE.dalembert.level = 0;
-        STATE.dalembert.totalLoss = 0;
+        STATE.paroli.level = 0;
+        STATE.paroli.totalLoss = 0;
+        STATE.paroli.lossStreak = 0;
         
         STATE.wagerSesiStartBal = currentBalance;
         STATE.wagerSesiProfit = 0;
@@ -898,9 +917,10 @@
         STATE.isPaused = false;
         STATE.isRecoveryMode = false;
         STATE.isResting = false;
-        STATE.dalembert.level = 0;
-        STATE.dalembert.totalLoss = 0;
-        STATE.dalembert.recoveryCount = 0;
+        STATE.paroli.level = 0;
+        STATE.paroli.totalLoss = 0;
+        STATE.paroli.lossStreak = 0;
+        STATE.paroli.recoveryCount = 0;
         STATE.wagerTotalAccumulated = 0;
         STATE.wagerSesiCounter = 0;
         STATE.wagerStop = false;
@@ -944,7 +964,7 @@
         
         var status;
         if (STATE.isRecoveryMode) {
-            status = '🔄 D\'ALEMBERT L' + STATE.dalembert.level;
+            status = '🔄 PAROLI L' + STATE.paroli.level;
         } else {
             status = '⚡ NORMAL 🎲';
         }
@@ -981,9 +1001,9 @@
             "st-chance": status + ' | DD: ' + drawdownPct.toFixed(2) + '%',
             "st-gaphits": drawdown.toFixed(8),
             "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
-            "st-split-progress": STATE.isRecoveryMode ? STATE.dalembert.level + '/' + STATE.dalembert.maxLevel : '—',
-            "st-cutloss-count": drawdownPct.toFixed(2) + '% / ' + STATE.maxDrawdownPct + '%',
-            "st-loss-per-split": STATE.dalembert.totalLoss.toFixed(8),
+            "st-split-progress": STATE.isRecoveryMode ? STATE.paroli.level + '/' + STATE.paroli.maxLevel : '—',
+            "st-cutloss-count": STATE.paroli.lossStreak + 'x / 5x',
+            "st-loss-per-split": STATE.paroli.totalLoss.toFixed(8),
             "st-vault": vaultDisplay,
             "st-raffle": '🎟️ ' + STATE.raffleTickets + ' tickets',
             "st-reload-info": reloadDisplay,
@@ -1050,7 +1070,7 @@
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
-        var status = STATE.isRecoveryMode ? '🔄 D\'ALEMBERT' : '⚡ NORMAL';
+        var status = STATE.isRecoveryMode ? '🔄 PAROLI' : '⚡ NORMAL';
         var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         
         var message = '💰 CHEAPCHEATX v2.0\n' +
@@ -1063,7 +1083,7 @@
                       'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(8) + ' (' + profitPct.toFixed(2) + '%)\n' +
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
-                      'Recovery Level: ' + STATE.dalembert.level + '\n' +
+                      'Paroli Level: ' + STATE.paroli.level + '\n' +
                       'Status: ' + status + '\n' +
                       '🎲 Mode: Dice Only';
         await sendTelegramMessage(message);
@@ -1226,7 +1246,7 @@
                         <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">📊 LEVEL</span><span class="value" id="st-split-progress">—</span></div>
-                        <div class="line"><span class="label">✂️ CUTLOSS</span><span class="value" id="st-cutloss-count">0% / 5%</span></div>
+                        <div class="line"><span class="label">✂️ CUTLOSS</span><span class="value" id="st-cutloss-count">0x / 5x</span></div>
                         <div class="line"><span class="label">📉 TOTAL LOSS</span><span class="value" id="st-loss-per-split">0</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">🏦 VAULT</span><span class="value" id="st-vault">Empty</span></div>
@@ -1244,13 +1264,13 @@
                         </div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 D'ALEMBERT RECOVERY</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 PAROLI RECOVERY</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.125" step="0.01" min="0.01" max="5"></div>
-                            <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-dalembert-max" value="7" step="1" min="2" max="15"></div>
+                            <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-paroli-max" value="4" step="1" min="2" max="6"></div>
                         </div>
                         <div class="grid-2">
-                            <div class="md-field"><label>📊 MAX DRAWDOWN (%)</label><input type="number" id="p-max-drawdown" value="5" step="0.5" min="1" max="20"></div>
+                            <div class="md-field"><label>✂️ CUTLOSS STREAK</label><input type="number" id="p-paroli-cutloss" value="5" step="1" min="2" max="10"></div>
                         </div>
                     </div>
                     <div class="stats-block">
@@ -1319,7 +1339,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: D'Alembert (Level 1-7)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: Level > 7 | Drawdown 5%</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak</div></div>
                 </div>
             </div>
         </div>`;
@@ -1433,7 +1453,8 @@
                 
                 STATE.normalChance = safeFloat("p-normal-chance", 99.98);
                 STATE.baseBetPercent = safeFloat("p-basebet-normal", 0.125);
-                STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 7);
+                STATE.paroli.maxLevel = safeInt("p-paroli-max", 4);
+                STATE.paroli.maxLossStreak = safeInt("p-paroli-cutloss", 5);
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
                 STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
@@ -1491,8 +1512,9 @@
                 STATE.lossStreak = 0;
                 STATE.drawdown = 0;
                 STATE.isRecoveryMode = false;
-                STATE.dalembert.level = 0;
-                STATE.dalembert.totalLoss = 0;
+                STATE.paroli.level = 0;
+                STATE.paroli.totalLoss = 0;
+                STATE.paroli.lossStreak = 0;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1516,7 +1538,7 @@
                 updateAllUI();
                 
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nRecovery: D\'Alembert Level 1-' + STATE.dalembert.maxLevel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n🛡️ Cutloss: ' + STATE.maxDrawdownPct + '%');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak');
                 
                 runLoop();
             };
@@ -1569,12 +1591,12 @@
             STATE.normalChance = safeFloat("p-normal-chance", 99.98);
             updateAllUI();
         };
-        document.getElementById("p-dalembert-max").onchange = function() {
-            STATE.dalembert.maxLevel = safeInt("p-dalembert-max", 7);
+        document.getElementById("p-paroli-max").onchange = function() {
+            STATE.paroli.maxLevel = safeInt("p-paroli-max", 4);
             updateAllUI();
         };
-        document.getElementById("p-max-drawdown").onchange = function() {
-            STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
+        document.getElementById("p-paroli-cutloss").onchange = function() {
+            STATE.paroli.maxLossStreak = safeInt("p-paroli-cutloss", 5);
             updateAllUI();
         };
         document.getElementById("p-trigger-drawdown").onchange = function() {
