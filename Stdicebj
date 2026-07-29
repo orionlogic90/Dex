@@ -5,7 +5,7 @@
 // RECOVERY MODE: PAROLI (Sequential, Level 1-4, Chance Increment)
 // TRIGGER: Drawdown > 0.125%
 // CUTLOSS: Loss Streak >= 5x
-// RAFFLE: Progress Bar + Next Ticket (di atas stats)
+// RAFFLE: Progress Bar + Next Ticket (di atas stats) - WAGER BOT USD
 // ========================================================================
 
 (function () {
@@ -49,7 +49,6 @@
             totalLoss: 0,
             lossStreak: 0,
             maxLossStreak: 5,
-            // NEW: Chance settings
             baseChance: 50.5,
             incrementPerWin: 2.0,
             maxChance: 80.0
@@ -68,10 +67,10 @@
         lossStreak: 0,
         drawdown: 0,
         
-        // ===== MINBET =====
+        // ===== MINBET & FIAT =====
         minBet: 0.0014,
         minBetIdr: 2,
-        fiatRates: { usdt: 0, idr: 0 },
+        fiatRates: { usdt: 0, idr: 0, usd: 0 },
         fiatRateFetched: false,
         
         // ===== RAFFLE =====
@@ -82,7 +81,7 @@
             ticketValue: 1000,
             totalTickets: 0,
             userTickets: 0,
-            wageredFromBot: 0,
+            wageredFromBot: 0,  // dalam USD
             nextTicketRemaining: 1000
         },
         
@@ -185,7 +184,107 @@
         } catch(e) {}
     }
 
-    // ==================== 5. RAFFLE ====================
+    // ==================== 5. FIAT RATE ====================
+    function getCoinGeckoId(coin) {
+        var map = {
+            "USDT": "tether",
+            "USDC": "usd-coin",
+            "BTC": "bitcoin",
+            "ETH": "ethereum",
+            "BNB": "binancecoin",
+            "SOL": "solana",
+            "XRP": "ripple",
+            "ADA": "cardano",
+            "DOGE": "dogecoin",
+            "TRX": "tron",
+            "DOT": "polkadot",
+            "LTC": "litecoin",
+            "POL": "polygon"
+        };
+        return map[coin] || coin.toLowerCase();
+    }
+
+    async function fetchUSDRate(currency) {
+        try {
+            var res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
+            var data = await res.json();
+            if (data.price) return parseFloat(data.price);
+        } catch(e) {}
+        
+        try {
+            var cgId = getCoinGeckoId(currency);
+            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=usd');
+            var data = await res.json();
+            if (data[cgId] && data[cgId].usd) return data[cgId].usd;
+        } catch(e) {}
+        
+        var fallback = {
+            'usdt': 1, 'usdc': 1,
+            'btc': 65000, 'eth': 3500, 'bnb': 580,
+            'sol': 180, 'xrp': 0.48, 'ada': 0.35,
+            'doge': 0.12, 'trx': 0.12, 'dot': 4.5,
+            'ltc': 72, 'pol': 0.38
+        };
+        return fallback[currency.toLowerCase()] || 1;
+    }
+
+    async function fetchMinBetRate(currency) {
+        try {
+            var cgId = getCoinGeckoId(currency);
+            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
+            var data = await res.json();
+            if (data[cgId] && data[cgId].idr) {
+                return data[cgId].idr;
+            }
+        } catch(e) {}
+        
+        try {
+            var coinRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
+            var coinData = await coinRes.json();
+            var idrRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR');
+            var idrData = await idrRes.json();
+            if (coinData.price && idrData.price) {
+                return parseFloat(coinData.price) * parseFloat(idrData.price);
+            }
+        } catch(e) {}
+        
+        var fallbackRates = {
+            'usdt': 16000,
+            'usdc': 16000,
+            'btc': 16000 * 65000,
+            'eth': 16000 * 3500,
+            'bnb': 16000 * 580,
+            'sol': 16000 * 180,
+            'xrp': 16000 * 0.48,
+            'ada': 16000 * 0.35,
+            'doge': 16000 * 0.12,
+            'trx': 16000 * 0.12,
+            'dot': 16000 * 4.5,
+            'ltc': 16000 * 72,
+            'pol': 16000 * 0.38
+        };
+        return fallbackRates[currency.toLowerCase()] || 16000;
+    }
+
+    async function updateMinBet() {
+        var currency = STATE.selectedCurrency.toUpperCase();
+        var rate = await fetchMinBetRate(currency);
+        if (rate && rate > 0) {
+            STATE.minBet = 2 / rate;
+            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
+            STATE.fiatRates.idr = rate;
+            STATE.fiatRateFetched = true;
+            
+            var el = document.getElementById('minbet-info');
+            if (el) {
+                el.textContent = '≈ ' + STATE.minBet.toFixed(8) + ' ' + currency + ' (2 IDR)';
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // ==================== 6. RAFFLE ====================
     async function fetchRaffleProgress() {
         if (!accessToken) return;
         try {
@@ -272,82 +371,6 @@
         `;
     }
 
-    // ==================== 6. MINBET ====================
-    function getCoinGeckoId(coin) {
-        var map = {
-            "USDT": "tether",
-            "USDC": "usd-coin",
-            "BTC": "bitcoin",
-            "ETH": "ethereum",
-            "BNB": "binancecoin",
-            "SOL": "solana",
-            "XRP": "ripple",
-            "ADA": "cardano",
-            "DOGE": "dogecoin",
-            "TRX": "tron",
-            "DOT": "polkadot",
-            "LTC": "litecoin",
-            "POL": "polygon"
-        };
-        return map[coin] || coin.toLowerCase();
-    }
-
-    async function fetchMinBetRate(currency) {
-        try {
-            var cgId = getCoinGeckoId(currency);
-            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
-            var data = await res.json();
-            if (data[cgId] && data[cgId].idr) {
-                return data[cgId].idr;
-            }
-        } catch(e) {}
-        
-        try {
-            var coinRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
-            var coinData = await coinRes.json();
-            var idrRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR');
-            var idrData = await idrRes.json();
-            if (coinData.price && idrData.price) {
-                return parseFloat(coinData.price) * parseFloat(idrData.price);
-            }
-        } catch(e) {}
-        
-        var fallbackRates = {
-            'usdt': 16000,
-            'usdc': 16000,
-            'btc': 16000 * 65000,
-            'eth': 16000 * 3500,
-            'bnb': 16000 * 580,
-            'sol': 16000 * 180,
-            'xrp': 16000 * 0.48,
-            'ada': 16000 * 0.35,
-            'doge': 16000 * 0.12,
-            'trx': 16000 * 0.12,
-            'dot': 16000 * 4.5,
-            'ltc': 16000 * 72,
-            'pol': 16000 * 0.38
-        };
-        return fallbackRates[currency.toLowerCase()] || 16000;
-    }
-
-    async function updateMinBet() {
-        var currency = STATE.selectedCurrency.toUpperCase();
-        var rate = await fetchMinBetRate(currency);
-        if (rate && rate > 0) {
-            STATE.minBet = 2 / rate;
-            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
-            STATE.fiatRates.idr = rate;
-            STATE.fiatRateFetched = true;
-            
-            var el = document.getElementById('minbet-info');
-            if (el) {
-                el.textContent = '≈ ' + STATE.minBet.toFixed(8) + ' ' + currency + ' (2 IDR)';
-            }
-            return true;
-        }
-        return false;
-    }
-
     // ==================== 7. SYNC USER INFO ====================
     async function syncUserInfo() {
         if (!accessToken || accessToken.length < 30) return false;
@@ -374,6 +397,11 @@
                     sel.value = STATE.selectedCurrency;
                 }
                 STATE.selectedCurrency = sel ? sel.value : "usdt";
+                
+                // Update USD rate
+                var currency = STATE.selectedCurrency.toUpperCase();
+                STATE.fiatRates.usd = await fetchUSDRate(currency);
+                
                 var active = null;
                 for (var k = 0; k < bals.length; k++) {
                     if (bals[k].available.currency.toLowerCase() === STATE.selectedCurrency.toLowerCase()) {
@@ -505,7 +533,6 @@
             p.lossStreak = 0;
             p.level++;
             p.totalLoss += betAmount;
-            // Increase chance by incrementPerWin
             p.currentChance = Math.min(p.currentChance + p.incrementPerWin, p.maxChance);
             
             console.log('[RECOVERY] WIN | Level:', p.level, '| Chance:', p.currentChance, '| Total Profit:', p.totalLoss);
@@ -612,8 +639,9 @@
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
         
-        // Update raffle wager
-        STATE.raffle.wageredFromBot += betAmount;
+        // Update raffle wager (convert ke USD)
+        var wageredUSD = betAmount * STATE.fiatRates.usd;
+        STATE.raffle.wageredFromBot += wageredUSD;
         var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
         var totalWagered = wageredFromStake + STATE.raffle.wageredFromBot;
         STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
@@ -775,6 +803,7 @@
         STATE.paroli.totalLoss = 0;
         STATE.paroli.lossStreak = 0;
         STATE.paroli.currentChance = STATE.paroli.baseChance;
+        STATE.raffle.wageredFromBot = 0;
         
         STATE.wagerSesiStartBal = currentBalance;
         STATE.wagerSesiProfit = 0;
@@ -905,6 +934,7 @@
         var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
         var raffleTickets = STATE.raffle.userTickets;
+        var wageredUSD = STATE.raffle.wageredFromBot;
         
         var message = '💰 CHEAPCHEATX v2.0\n' +
                       '"Your Stake Wagered Partner"\n' +
@@ -918,7 +948,7 @@
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
                       'Paroli Level: ' + STATE.paroli.level + '\n' +
-                      '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets\n' +
+                      '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
                       'Status: ' + status + '\n' +
                       '🎲 Mode: Dice Only';
         await sendTelegramMessage(message);
@@ -1219,6 +1249,18 @@
             };
         }
         
+        // ===== CURRENCY CHANGE =====
+        document.getElementById("p-currency").onchange = function() {
+            STATE.selectedCurrency = this.value;
+            // Update USD rate
+            var currency = STATE.selectedCurrency.toUpperCase();
+            fetchUSDRate(currency).then(function(rate) {
+                STATE.fiatRates.usd = rate;
+                updateMinBet();
+                updateAllUI();
+            });
+        };
+        
         // ===== PAROLI CHANCE EVENTS =====
         document.getElementById('p-paroli-base-chance').onchange = function() {
             STATE.paroli.baseChance = safeFloat('p-paroli-base-chance', 50.5);
@@ -1378,16 +1420,6 @@
             resetBtn.onclick = function() {
                 if (STATE.isRunning) return;
                 fullReset();
-            };
-        }
-        
-        // ===== CURRENCY =====
-        var currencyEl = document.getElementById("p-currency");
-        if (currencyEl) {
-            currencyEl.onchange = function() {
-                STATE.selectedCurrency = this.value;
-                updateMinBet();
-                updateAllUI();
             };
         }
         
