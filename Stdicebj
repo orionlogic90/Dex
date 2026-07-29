@@ -42,16 +42,16 @@
             maxLevel: 4,
             unit: 0,
             currentBet: 0,
-            currentChance: 50.5,
+            currentChance: 80,
             currentCondition: 'above',
             isProcessing: false,
             recoveryCount: 0,
             totalLoss: 0,
             lossStreak: 0,
             maxLossStreak: 5,
-            baseChance: 50.5,
+            baseChance: 80,
             incrementPerWin: 2.0,
-            maxChance: 80.0
+            maxChance: 90
         },
         
         // ===== BALANCE =====
@@ -66,6 +66,8 @@
         betTimestamps: [],
         lossStreak: 0,
         drawdown: 0,
+        maxDrawdown: 0,
+        maxBet: 0,
         
         // ===== MINBET & FIAT =====
         minBet: 0.0014,
@@ -81,7 +83,7 @@
             ticketValue: 1000,
             totalTickets: 0,
             userTickets: 0,
-            wageredFromBot: 0,  // dalam USD
+            wageredFromBot: 0,
             nextTicketRemaining: 1000
         },
         
@@ -398,7 +400,6 @@
                 }
                 STATE.selectedCurrency = sel ? sel.value : "usdt";
                 
-                // Update USD rate
                 var currency = STATE.selectedCurrency.toUpperCase();
                 STATE.fiatRates.usd = await fetchUSDRate(currency);
                 
@@ -635,6 +636,17 @@
         
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.drawdown = STATE.startBalance - STATE.balance;
+        
+        // Update max drawdown
+        if (STATE.drawdown > STATE.maxDrawdown) {
+            STATE.maxDrawdown = STATE.drawdown;
+        }
+        
+        // Update max bet
+        if (betAmount > STATE.maxBet) {
+            STATE.maxBet = betAmount;
+        }
+        
         STATE.wagerSesiCounter += betAmount;
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
@@ -797,6 +809,8 @@
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
         STATE.drawdown = 0;
+        STATE.maxDrawdown = 0;
+        STATE.maxBet = 0;
         
         STATE.isRecoveryMode = false;
         STATE.paroli.level = 0;
@@ -861,6 +875,8 @@
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
         STATE.drawdown = 0;
+        STATE.maxDrawdown = 0;
+        STATE.maxBet = 0;
         STATE.raffle.wageredFromBot = 0;
         STATE.betTimestamps = [];
         STATE.startTime = null;
@@ -897,16 +913,10 @@
             status = '⚡ NORMAL 🎲';
         }
         
-        var sessionTarget = STATE.startBalance * STATE.targetPct / 100;
-        
         var map = {
             "st-user": STATE.stakeUser,
             "st-running-time": runTime,
             "st-balance": currentBalance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase(),
-            "st-session-num": STATE.sessionNumber,
-            "st-session-target": STATE.targetPct + '% (' + sessionTarget.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ')',
-            "st-session-start": STATE.sessionStartTime ? STATE.sessionStartTime.toLocaleTimeString() : '-',
-            "st-sessions-done": STATE.sessionsCompleted,
             "st-profit": (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(8) + ' (' + (profitPct >= 0 ? '+' : '') + profitPct.toFixed(2) + '%)',
             "st-wagered": STATE.wagered.toFixed(8),
             "st-bets": STATE.bets + ' | WR ' + winRate.toFixed(0) + '%',
@@ -914,7 +924,10 @@
             "st-chance": status + ' | DD: ' + drawdownPct.toFixed(2) + '%',
             "st-gaphits": drawdown.toFixed(8),
             "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
-            "st-minbet": STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ' (2 IDR)'
+            "st-minbet": STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ' (2 IDR)',
+            "st-maxdd": STATE.maxDrawdown.toFixed(8),
+            "st-maxbet": STATE.maxBet.toFixed(8),
+            "st-ddnow": drawdown.toFixed(8)
         };
         for (var id in map) {
             var el = document.getElementById(id);
@@ -943,6 +956,8 @@
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'MinBet: ' + STATE.minBet.toFixed(8) + ' (' + STATE.selectedCurrency.toUpperCase() + ')\n' +
                       'Drawdown: ' + drawdownPct.toFixed(2) + '%\n' +
+                      'Max Drawdown: ' + STATE.maxDrawdown.toFixed(8) + '\n' +
+                      'Max Bet: ' + STATE.maxBet.toFixed(8) + '\n' +
                       'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(8) + ' / ' + STATE.wagerTotalTarget.toFixed(8) + '\n' +
                       'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(8) + ' (' + profitPct.toFixed(2) + '%)\n' +
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
@@ -1097,11 +1112,6 @@
                         <div class="line"><span class="label">Balance</span><span class="value" id="st-balance">0</span></div>
                         <div class="line"><span class="label">💳 MinBet</span><span class="value" id="st-minbet">-</span></div>
                         <div class="divider"></div>
-                        <div class="line"><span class="label">📋 SESSION #</span><span class="value" id="st-session-num">1</span></div>
-                        <div class="line"><span class="label">🎯 TARGET</span><span class="value" id="st-session-target">5% (0.00 USDT)</span></div>
-                        <div class="line"><span class="label">⏱️ START</span><span class="value" id="st-session-start">-</span></div>
-                        <div class="line"><span class="label">✅ SESSIONS</span><span class="value" id="st-sessions-done">0</span></div>
-                        <div class="divider"></div>
                         <div class="line"><span class="label">Profit</span><span class="value" id="st-profit">0 (0%)</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">Wagered</span><span class="value" id="st-wagered">0</span></div>
@@ -1109,7 +1119,9 @@
                         <div class="line"><span class="label">Speed</span><span class="value" id="st-speed">0 b/s</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">Status</span><span class="value" id="st-chance">⚡ NORMAL | DD: 0.00%</span></div>
-                        <div class="line"><span class="label">Drawdown</span><span class="value" id="st-gaphits">0</span></div>
+                        <div class="line"><span class="label">Max Drawdown</span><span class="value" id="st-maxdd">0</span></div>
+                        <div class="line"><span class="label">Max Bet</span><span class="value" id="st-maxbet">0</span></div>
+                        <div class="line"><span class="label">Drawdown Now</span><span class="value" id="st-ddnow">0</span></div>
                         <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
                     </div>
                 </div>
@@ -1134,11 +1146,11 @@
                         <div class="divider"></div>
                         <div style="font-weight:bold;margin-bottom:8px;">🎯 CHANCE SETTINGS</div>
                         <div class="grid-2">
-                            <div class="md-field"><label>🎯 CHANCE AWAL (%)</label><input type="number" id="p-paroli-base-chance" value="50.5" step="0.5" min="1" max="99"></div>
+                            <div class="md-field"><label>🎯 CHANCE AWAL (%)</label><input type="number" id="p-paroli-base-chance" value="80" step="0.5" min="1" max="99"></div>
                             <div class="md-field"><label>📈 INCREMENT PER WIN (%)</label><input type="number" id="p-paroli-increment" value="2.0" step="0.5" min="0" max="20"></div>
                         </div>
                         <div class="grid-2">
-                            <div class="md-field"><label>📊 MAX CHANCE (%)</label><input type="number" id="p-paroli-max-chance" value="80.0" step="0.5" min="1" max="99.98"></div>
+                            <div class="md-field"><label>📊 MAX CHANCE (%)</label><input type="number" id="p-paroli-max-chance" value="90" step="0.5" min="1" max="99.98"></div>
                         </div>
                     </div>
                     <div class="stats-block">
@@ -1252,7 +1264,6 @@
         // ===== CURRENCY CHANGE =====
         document.getElementById("p-currency").onchange = function() {
             STATE.selectedCurrency = this.value;
-            // Update USD rate
             var currency = STATE.selectedCurrency.toUpperCase();
             fetchUSDRate(currency).then(function(rate) {
                 STATE.fiatRates.usd = rate;
@@ -1263,7 +1274,7 @@
         
         // ===== PAROLI CHANCE EVENTS =====
         document.getElementById('p-paroli-base-chance').onchange = function() {
-            STATE.paroli.baseChance = safeFloat('p-paroli-base-chance', 50.5);
+            STATE.paroli.baseChance = safeFloat('p-paroli-base-chance', 80);
             STATE.paroli.currentChance = STATE.paroli.baseChance;
             updateAllUI();
         };
@@ -1272,7 +1283,7 @@
             updateAllUI();
         };
         document.getElementById('p-paroli-max-chance').onchange = function() {
-            STATE.paroli.maxChance = safeFloat('p-paroli-max-chance', 80.0);
+            STATE.paroli.maxChance = safeFloat('p-paroli-max-chance', 90);
             updateAllUI();
         };
         
@@ -1298,10 +1309,10 @@
                 STATE.baseBetPercent = safeFloat("p-basebet-normal", 0.125);
                 STATE.paroli.maxLevel = safeInt("p-paroli-max", 4);
                 STATE.paroli.maxLossStreak = safeInt("p-paroli-cutloss", 5);
-                STATE.paroli.baseChance = safeFloat("p-paroli-base-chance", 50.5);
+                STATE.paroli.baseChance = safeFloat("p-paroli-base-chance", 80);
                 STATE.paroli.currentChance = STATE.paroli.baseChance;
                 STATE.paroli.incrementPerWin = safeFloat("p-paroli-increment", 2.0);
-                STATE.paroli.maxChance = safeFloat("p-paroli-max-chance", 80.0);
+                STATE.paroli.maxChance = safeFloat("p-paroli-max-chance", 90);
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
                 STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
@@ -1358,6 +1369,8 @@
                 STATE.wagerWaitingForTrigger = false;
                 STATE.lossStreak = 0;
                 STATE.drawdown = 0;
+                STATE.maxDrawdown = 0;
+                STATE.maxBet = 0;
                 STATE.isRecoveryMode = false;
                 STATE.paroli.level = 0;
                 STATE.paroli.totalLoss = 0;
