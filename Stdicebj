@@ -1,10 +1,11 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY
+// CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY + MINBET AUTO
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%)
 // RECOVERY MODE: PAROLI (Sequential, Level 1-4)
 // TRIGGER: Drawdown > 0.125% (1x basebet)
 // CUTLOSS: Loss Streak >= 5x di Recovery
+// MINBET: 2 IDR (auto convert ke crypto)
 // ========================================================================
 
 (function () {
@@ -37,7 +38,7 @@
         
         // ===== PAROLI RECOVERY =====
         paroli: {
-            level: 0,              // 0 = normal, 1-4 = active
+            level: 0,
             maxLevel: 4,
             unit: 0,
             currentBet: 0,
@@ -46,10 +47,11 @@
             isProcessing: false,
             recoveryCount: 0,
             totalLoss: 0,
-            lossStreak: 0,         // loss streak dalam recovery
-            maxLossStreak: 5        // cutloss di 5x loss streak
+            lossStreak: 0,
+            maxLossStreak: 5
         },
         
+        // ===== BALANCE =====
         balance: 0,
         startBalance: 0,
         peakBalanceEver: 0,
@@ -62,24 +64,45 @@
         lossStreak: 0,
         drawdown: 0,
         
-        // ===== RELOAD =====
-        reload: {
-            currency: 'usdt',
-            amount: 0,
-            active: false,
-            lastClaim: null,
-            nextClaim: null,
-            claimInterval: 86400000,
-            eligibleCurrencies: ['usdt', 'btc', 'eth', 'bnb', 'sol', 'doge', 'trx', 'idr', 'usdc', 'ltc', 'xrp', 'ada', 'dot', 'pol']
-        },
+        // ===== MINBET =====
+        minBet: 0.0014,           // default, akan diupdate
+        minBetIdr: 2,             // 2 IDR
+        fiatRates: { usdt: 0, idr: 0 },
+        fiatRateFetched: false,
         
+        // ===== NORMAL =====
+        normalChance: 99.98,
+        baseBetPercent: 0.125,
+        maxBetCap: 0,
+        targetPct: 5,
+        stopLossPct: 100,
+        maxDrawdownPct: 5,
+        triggerDrawdownPct: 0.125,
+        
+        // ===== DELAY =====
+        delayNormal: 50,
+        delayRecovery: 200,
+        
+        // ===== OTHER =====
+        sessionNumber: 1,
+        sessionsCompleted: 0,
+        sessionStartTime: null,
+        stakeUser: "Loading...",
+        selectedCurrency: "usdt",
+        
+        // ===== RAKEBACK =====
         rakebackBalances: {},
+        
+        // ===== VAULT =====
         vaultBalances: {},
         vaultTotal: 0,
+        
+        // ===== RAFFLE =====
         raffleTickets: 0,
         raffleData: {},
         raffleIds: ['299d4c87-d395-4386-8022-4a3072ad09a7'],
         
+        // ===== WAGER =====
         wagerTotalAccumulated: 0,
         wagerSesiCounter: 0,
         wagerSesiStartBal: 0,
@@ -89,28 +112,6 @@
         wagerSesiTarget: 200,
         wagerStop: false,
         wagerWaitingForTrigger: false,
-        
-        normalChance: 99.98,
-        baseBetPercent: 0.125,
-        minBet: 0.0014,
-        maxBetCap: 0,
-        targetPct: 5,
-        stopLossPct: 100,
-        maxDrawdownPct: 5,
-        triggerDrawdownPct: 0.125,
-        
-        delayNormal: 50,
-        delayRecovery: 200,
-        
-        sessionNumber: 1,
-        sessionsCompleted: 0,
-        sessionStartTime: null,
-        
-        fiatRates: { usdt: 0, idr: 0 },
-        fiatRateFetched: false,
-        minBetIdr: 2,
-        stakeUser: "Loading...",
-        selectedCurrency: "usdt",
         
         maxLogs: 50,
         startTime: null,
@@ -181,176 +182,99 @@
         } catch(e) {}
     }
 
-    // ==================== 5. RELOAD ====================
-    async function checkReloadStatus(currency) {
-        if (!accessToken) return;
-        try {
-            const query = `query ClaimReloadMeta($currency: CurrencyEnum!) {
-                user {
-                    id
-                    reload: faucet {
-                        id
-                        amount(currency: $currency)
-                        active
-                        claimInterval
-                        lastClaim
-                        expireAt
-                        value
-                    }
-                    reloadEligibleCurrencies
-                }
-            }`;
-            
-            const variables = { currency: currency || STATE.reload.currency };
-            
-            const res = await fetch(CONFIG.apiUrl + '/graphql', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': accessToken
-                },
-                body: JSON.stringify({ query, variables })
-            });
-            
-            const data = await res.json();
-            if (data?.data?.user) {
-                const user = data.data.user;
-                if (user.reload) {
-                    STATE.reload.amount = user.reload.amount || 0;
-                    STATE.reload.active = user.reload.active || false;
-                    STATE.reload.lastClaim = user.reload.lastClaim;
-                    STATE.reload.expireAt = user.reload.expireAt;
-                    STATE.reload.claimInterval = user.reload.claimInterval || 86400000;
-                    STATE.reload.value = user.reload.value;
-                    
-                    if (user.reload.lastClaim && user.reload.claimInterval) {
-                        STATE.reload.nextClaim = new Date(
-                            new Date(user.reload.lastClaim).getTime() + user.reload.claimInterval
-                        );
-                    }
-                }
-                if (user.reloadEligibleCurrencies) {
-                    STATE.reload.eligibleCurrencies = user.reloadEligibleCurrencies;
-                }
-                updateReloadDisplay();
-            }
-        } catch(e) {
-            console.error('[RELOAD] Check error:', e);
-        }
+    // ==================== 5. MINBET (2 IDR) ====================
+    function getCoinGeckoId(coin) {
+        var map = {
+            "USDT": "tether",
+            "USDC": "usd-coin",
+            "BTC": "bitcoin",
+            "ETH": "ethereum",
+            "BNB": "binancecoin",
+            "SOL": "solana",
+            "XRP": "ripple",
+            "ADA": "cardano",
+            "DOGE": "dogecoin",
+            "TRX": "tron",
+            "DOT": "polkadot",
+            "LTC": "litecoin",
+            "POL": "polygon"
+        };
+        return map[coin] || coin.toLowerCase();
     }
 
-    async function getTurnstileToken() {
-        const tokenElements = document.querySelectorAll('[name="cf-turnstile-response"]');
-        for (let el of tokenElements) {
-            if (el.value) return el.value;
-        }
-        const cfClearance = document.cookie.match(/cf_clearance=([^;]+)/);
-        if (cfClearance) return cfClearance[1];
-        const metaToken = document.querySelector('meta[name="cf-turnstile-token"]');
-        if (metaToken) return metaToken.content;
-        if (STATE.isDemo) return 'demo_token_' + Date.now();
-        console.warn('[TURNSTILE] Token not found');
-        return '';
+    async function fetchMinBetRate(currency) {
+        try {
+            var cgId = getCoinGeckoId(currency);
+            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
+            var data = await res.json();
+            if (data[cgId] && data[cgId].idr) {
+                return data[cgId].idr;
+            }
+        } catch(e) {}
+        
+        try {
+            var coinRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
+            var coinData = await coinRes.json();
+            var idrRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR');
+            var idrData = await idrRes.json();
+            if (coinData.price && idrData.price) {
+                return parseFloat(coinData.price) * parseFloat(idrData.price);
+            }
+        } catch(e) {}
+        
+        var fallbackRates = {
+            'usdt': 16000,
+            'usdc': 16000,
+            'btc': 16000 * 65000,
+            'eth': 16000 * 3500,
+            'bnb': 16000 * 580,
+            'sol': 16000 * 180,
+            'xrp': 16000 * 0.48,
+            'ada': 16000 * 0.35,
+            'doge': 16000 * 0.12,
+            'trx': 16000 * 0.12,
+            'dot': 16000 * 4.5,
+            'ltc': 16000 * 72,
+            'pol': 16000 * 0.38
+        };
+        return fallbackRates[currency.toLowerCase()] || 16000;
     }
 
-    async function claimReload(currency) {
-        if (!accessToken) return null;
-        try {
-            const token = await getTurnstileToken();
-            if (!token) {
-                sendTelegramMessage('⚠️ Turnstile token not found! Cannot claim reload.');
-                return null;
+    async function updateMinBet() {
+        var currency = STATE.selectedCurrency.toUpperCase();
+        var rate = await fetchMinBetRate(currency);
+        if (rate && rate > 0) {
+            STATE.minBet = 2 / rate;
+            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
+            STATE.fiatRates.idr = rate;
+            STATE.fiatRateFetched = true;
+            
+            var el = document.getElementById('minbet-info');
+            if (el) {
+                el.textContent = '≈ ' + STATE.minBet.toFixed(8) + ' ' + currency + ' (2 IDR)';
             }
-            
-            const mutation = `mutation ClaimFaucet($currency: CurrencyEnum!, $turnstileToken: String!) {
-                claimReload: claimFaucet(currency: $currency, turnstileToken: $turnstileToken) {
-                    reload: faucet {
-                        user {
-                            id
-                            reload: faucet {
-                                id
-                                amount(currency: $currency)
-                                active
-                                claimInterval
-                                lastClaim
-                                expireAt
-                                createdAt
-                                updatedAt
-                            }
-                        }
-                    }
-                }
-            }`;
-            
-            const variables = {
-                currency: currency || STATE.reload.currency,
-                turnstileToken: token
-            };
-            
-            const res = await fetch(CONFIG.apiUrl + '/graphql', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': accessToken
-                },
-                body: JSON.stringify({ query: mutation, variables })
-            });
-            
-            const data = await res.json();
-            if (data?.data?.claimReload?.reload?.user?.reload) {
-                const result = data.data.claimReload.reload.user.reload;
-                STATE.reload.lastClaim = result.lastClaim;
-                STATE.reload.amount = result.amount;
-                STATE.reload.active = result.active;
-                STATE.reload.nextClaim = new Date(
-                    new Date(result.lastClaim).getTime() + result.claimInterval
-                );
-                
-                sendTelegramMessage(`✅ RELOAD CLAIMED!\n` +
-                    `Amount: ${result.amount} ${(currency || STATE.reload.currency).toUpperCase()}\n` +
-                    `Next Claim: ${STATE.reload.nextClaim.toLocaleString()}`);
-                
-                await syncUserInfo();
-                updateReloadDisplay();
-                return result;
-            }
-            return null;
-        } catch(e) {
-            console.error('[RELOAD] Claim error:', e);
-            return null;
+            return true;
         }
+        return false;
     }
 
     // ==================== 6. RAKEBACK ====================
     async function fetchRakebackInfo() {
         if (!accessToken) return;
         try {
-            const query = `query UserRakeback {
-                user {
-                    id
-                    rakeback {
-                        enabled
-                        balances {
-                            currency
-                            availableAmount
-                        }
-                    }
-                }
-            }`;
-            
-            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+            var query = 'query{user{rakeback{enabled balances{currency availableAmount}}}}';
+            var res = await fetch(CONFIG.apiUrl + '/graphql', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-access-token': accessToken
                 },
-                body: JSON.stringify({ query, variables: {} })
+                body: JSON.stringify({ query: query, variables: {} })
             });
-            
-            const data = await res.json();
+            var data = await res.json();
             if (data?.data?.user?.rakeback) {
                 STATE.rakebackBalances = {};
-                data.data.user.rakeback.balances.forEach(b => {
+                data.data.user.rakeback.balances.forEach(function(b) {
                     STATE.rakebackBalances[b.currency] = b.availableAmount;
                 });
                 updateBonusDisplay();
@@ -362,29 +286,20 @@
     async function fetchVaultBalance() {
         if (!accessToken) return;
         try {
-            const query = `query UserBalances {
-                user {
-                    balances {
-                        available { amount currency }
-                        vault { amount currency }
-                    }
-                }
-            }`;
-            
-            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+            var query = 'query{user{balances{available{amount currency} vault{amount currency}}}}';
+            var res = await fetch(CONFIG.apiUrl + '/graphql', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-access-token': accessToken
                 },
-                body: JSON.stringify({ query, variables: {} })
+                body: JSON.stringify({ query: query, variables: {} })
             });
-            
-            const data = await res.json();
+            var data = await res.json();
             if (data?.data?.user?.balances) {
                 STATE.vaultBalances = {};
-                let total = 0;
-                data.data.user.balances.forEach(b => {
+                var total = 0;
+                data.data.user.balances.forEach(function(b) {
                     if (b.vault && b.vault.amount > 0) {
                         STATE.vaultBalances[b.vault.currency] = b.vault.amount;
                         total += b.vault.amount;
@@ -393,45 +308,24 @@
                 STATE.vaultTotal = total;
                 updateVaultDisplay();
             }
-        } catch(e) {
-            console.error('[VAULT] Error:', e);
-        }
+        } catch(e) { console.error('[VAULT] Error:', e); }
     }
 
     // ==================== 8. RAFFLE ====================
     async function checkRaffleTickets(raffleId) {
         if (!accessToken || !raffleId) return null;
         try {
-            const query = `query TicketList($raffleId: String!, $offset: Int, $limit: Int) {
-                raffle(raffleId: $raffleId) {
-                    id
-                    name
-                    raffleUser {
-                        ticketCount
-                        ticketList(limit: $limit, offset: $offset) {
-                            ticketNumber
-                            raffle { name }
-                        }
-                    }
-                }
-            }`;
-            
-            const variables = {
-                raffleId: raffleId,
-                limit: 12,
-                offset: 0
-            };
-            
-            const res = await fetch(CONFIG.apiUrl + '/graphql', {
+            var query = 'query TicketList($raffleId: String!, $offset: Int, $limit: Int) { raffle(raffleId: $raffleId) { id name raffleUser { ticketCount ticketList(limit: $limit, offset: $offset) { ticketNumber raffle { name } } } } }';
+            var variables = { raffleId: raffleId, limit: 12, offset: 0 };
+            var res = await fetch(CONFIG.apiUrl + '/graphql', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-access-token': accessToken
                 },
-                body: JSON.stringify({ query, variables })
+                body: JSON.stringify({ query: query, variables: variables })
             });
-            
-            const data = await res.json();
+            var data = await res.json();
             if (data?.data?.raffle) {
                 return {
                     id: data.data.raffle.id,
@@ -441,16 +335,13 @@
                 };
             }
             return null;
-        } catch(e) {
-            console.error('[RAFFLE] Error:', e);
-            return null;
-        }
+        } catch(e) { console.error('[RAFFLE] Error:', e); return null; }
     }
 
     async function checkAllRaffles() {
-        let totalTickets = 0;
-        for (let id of STATE.raffleIds) {
-            const result = await checkRaffleTickets(id);
+        var totalTickets = 0;
+        for (var i = 0; i < STATE.raffleIds.length; i++) {
+            var result = await checkRaffleTickets(STATE.raffleIds[i]);
             if (result) {
                 STATE.raffleData[result.id] = result;
                 totalTickets += result.ticketCount;
@@ -477,7 +368,7 @@
                 var bals = json.data.user.balances || [];
                 var sel = document.getElementById("p-currency");
                 if (sel && sel.options.length === 0) {
-                    var fallback = ["USDT", "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT"];
+                    var fallback = ["USDT", "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT", "LTC", "POL"];
                     for (var j = 0; j < fallback.length; j++) {
                         var opt2 = document.createElement("option");
                         opt2.value = fallback[j].toLowerCase();
@@ -498,6 +389,7 @@
                     STATE.balance = parseFloat(active.available.amount);
                     STATE.startBalance = STATE.balance;
                     STATE.peakBalanceEver = STATE.balance;
+                    await updateMinBet();
                 }
                 return true;
             }
@@ -507,11 +399,11 @@
 
     // ==================== 10. PLACE DICE BET ====================
     async function placeDiceBet(amount, chance, condition) {
-        const target = condition === 'above' ? (100 - chance) : chance;
-        const apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
+        var target = condition === 'above' ? (100 - chance) : chance;
+        var apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
         
         try {
-            const payload = {
+            var payload = {
                 amount: apiAmount,
                 currency: STATE.selectedCurrency,
                 target: target,
@@ -519,7 +411,7 @@
                 identifier: generateId()
             };
             
-            const res = await fetch(CONFIG.apiUrl + '/casino/dice/roll', {
+            var res = await fetch(CONFIG.apiUrl + '/casino/dice/roll', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -529,24 +421,24 @@
                 body: JSON.stringify(payload)
             });
             
-            const data = await res.json();
+            var data = await res.json();
             
             if (data.error || !data.diceRoll) {
                 return null;
             }
             
-            const d = data.diceRoll;
-            let win = false;
-            const payoutMultiplier = parseFloat(d.payoutMultiplier) || 0;
-            const payout = parseFloat(d.payout) || 0;
-            const winAmount = parseFloat(d.amount) || apiAmount;
+            var d = data.diceRoll;
+            var win = false;
+            var payoutMultiplier = parseFloat(d.payoutMultiplier) || 0;
+            var payout = parseFloat(d.payout) || 0;
+            var winAmount = parseFloat(d.amount) || apiAmount;
             
             if (d.win !== undefined) {
                 win = d.win;
             } else if (payoutMultiplier > 1) {
                 win = true;
             } else {
-                const state = d.state;
+                var state = d.state;
                 if (state && state.result !== undefined && state.target !== undefined) {
                     win = state.condition === "above" ? state.result > state.target : state.result < state.target;
                 }
@@ -555,7 +447,7 @@
             if (d.user && d.user.wallets && d.user.wallets[0]) {
                 STATE.balance = parseFloat(d.user.wallets[0].balance);
             } else {
-                const pnl = win ? (payout - winAmount) : -winAmount;
+                var pnl = win ? (payout - winAmount) : -winAmount;
                 STATE.balance += pnl;
                 if (STATE.balance < 0) STATE.balance = 0;
             }
@@ -581,12 +473,15 @@
 
     // ==================== 11. PAROLI RECOVERY ====================
     function startRecovery() {
-        const basebet = STATE.balance * (STATE.baseBetPercent / 100);
-        const p = STATE.paroli;
+        var basebet = STATE.balance * (STATE.baseBetPercent / 100);
+        if (basebet < STATE.minBet) basebet = STATE.minBet;
+        
+        var p = STATE.paroli;
         
         p.level = 1;
         p.unit = basebet;
-        p.currentBet = p.unit * Math.pow(2, p.level - 1); // 1, 2, 4, 8 unit
+        p.currentBet = p.unit * Math.pow(2, p.level - 1);
+        if (p.currentBet < STATE.minBet) p.currentBet = STATE.minBet;
         p.currentChance = 50.5;
         p.currentCondition = 'above';
         p.isProcessing = false;
@@ -608,19 +503,16 @@
     }
 
     function handleRecoveryResult(win, betAmount) {
-        const p = STATE.paroli;
+        var p = STATE.paroli;
         
         if (win) {
-            // WIN: naik level
             p.lossStreak = 0;
             p.level++;
-            p.totalLoss += betAmount; // profit dari win
+            p.totalLoss += betAmount;
             
             console.log('[RECOVERY] WIN | Level:', p.level, '| Total Profit:', p.totalLoss);
             
-            // Cek BEP: jika sudah mencapai level 4 (8x unit)
             if (p.level > p.maxLevel) {
-                // RECOVERY SUCCESS
                 p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
@@ -633,23 +525,22 @@
                 return;
             }
             
-            // Update bet untuk level berikutnya (double)
             p.currentBet = p.unit * Math.pow(2, p.level - 1);
+            if (p.currentBet < STATE.minBet) p.currentBet = STATE.minBet;
             p.currentChance = p.level % 2 === 0 ? 49.5 : 50.5;
             p.currentCondition = p.level % 2 === 0 ? 'below' : 'above';
             
         } else {
-            // LOSS: reset ke level 1, tambah loss streak
             p.lossStreak++;
             p.totalLoss -= betAmount;
             p.level = 1;
             p.currentBet = p.unit;
+            if (p.currentBet < STATE.minBet) p.currentBet = STATE.minBet;
             p.currentChance = 50.5;
             p.currentCondition = 'above';
             
             console.log('[RECOVERY] LOSS | Loss Streak:', p.lossStreak, '| Total Loss:', p.totalLoss);
             
-            // Cek cutloss: loss streak >= 5
             if (p.lossStreak >= p.maxLossStreak) {
                 p.level = 0;
                 STATE.isRecoveryMode = false;
@@ -663,8 +554,7 @@
                 return;
             }
             
-            // Cek drawdown cutloss (safety net)
-            const drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
+            var drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.maxDrawdownPct) {
                 p.level = 0;
                 STATE.isRecoveryMode = false;
@@ -679,7 +569,6 @@
             }
         }
         
-        // Cap bet
         if (STATE.maxBetCap > 0) {
             p.currentBet = Math.min(p.currentBet, STATE.maxBetCap);
         }
@@ -699,10 +588,9 @@
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
-        const isWin = result.win;
-        const profit = isWin ? betAmount : -betAmount;
-        const chance = result.chance || STATE.normalChance;
-        
+        var isWin = result.win;
+        var profit = isWin ? betAmount : -betAmount;
+        var chance = result.chance || STATE.normalChance;
         var gameLabel = mode === 'recovery' ? 'dice[R]' : 'dice';
         
         STATE.bets++;
@@ -729,7 +617,7 @@
         if (mode === 'recovery') {
             handleRecoveryResult(isWin, betAmount);
         } else {
-            const drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
+            var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode) {
                 console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
                 startRecovery();
@@ -771,7 +659,7 @@
         }
     }
 
-    // ==================== 14. FIRE & FORGET HANDLER ====================
+    // ==================== 14. FIRE & FORGET ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode || STATE.paroli.level > 0) {
             console.log('[F&F] Recovery active, skipping...');
@@ -780,8 +668,7 @@
         
         if (!STATE.isRunning || STATE.isPaused) return;
         
-        // Cek trigger recovery: drawdown >= 0.125%
-        const drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
+        var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
         if (drawdownPct >= STATE.triggerDrawdownPct) {
             console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
             startRecovery();
@@ -811,7 +698,7 @@
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
-    // ==================== 15. RECOVERY SEQUENTIAL LOOP ====================
+    // ==================== 15. RECOVERY SEQUENTIAL ====================
     async function runRecoverySequential() {
         if (!STATE.isRunning || STATE.isPaused) return;
         if (!STATE.isRecoveryMode || STATE.paroli.level <= 0) {
@@ -820,7 +707,7 @@
             return;
         }
         
-        const p = STATE.paroli;
+        var p = STATE.paroli;
         if (p.isProcessing) {
             setTimeout(runRecoverySequential, 100);
             return;
@@ -836,14 +723,14 @@
         
         p.isProcessing = true;
         
-        const betAmount = p.currentBet;
-        const chance = p.currentChance;
-        const condition = p.currentCondition;
+        var betAmount = p.currentBet;
+        var chance = p.currentChance;
+        var condition = p.currentCondition;
         
         console.log('[RECOVERY] Sequential bet:', betAmount, 'chance:', chance);
         
         try {
-            const result = await placeDiceBet(betAmount, chance, condition);
+            var result = await placeDiceBet(betAmount, chance, condition);
             if (result) {
                 processBetResult(result, betAmount, 'recovery', false);
             } else {
@@ -974,16 +861,9 @@
         var sessionTarget = STATE.startBalance * STATE.targetPct / 100;
         
         var vaultDisplay = Object.entries(STATE.vaultBalances)
-            .filter(([k, v]) => v > 0)
-            .map(([k, v]) => `${k.toUpperCase()}: ${v.toFixed(8)}`)
+            .filter(function(kv) { return kv[1] > 0; })
+            .map(function(kv) { return kv[0].toUpperCase() + ': ' + kv[1].toFixed(8); })
             .join(' | ') || 'Empty';
-        
-        var reloadDisplay = '⏳ Checking...';
-        if (STATE.reload.amount > 0) {
-            var nextText = STATE.reload.nextClaim ? 
-                STATE.reload.nextClaim.toLocaleTimeString() : 'Unknown';
-            reloadDisplay = `${STATE.reload.amount.toFixed(4)} ${STATE.reload.currency.toUpperCase()} | Next: ${nextText}`;
-        }
         
         var map = {
             "st-user": STATE.stakeUser,
@@ -1006,8 +886,8 @@
             "st-loss-per-split": STATE.paroli.totalLoss.toFixed(8),
             "st-vault": vaultDisplay,
             "st-raffle": '🎟️ ' + STATE.raffleTickets + ' tickets',
-            "st-reload-info": reloadDisplay,
-            "st-bonus-info": 'Rakeback: ' + (Object.keys(STATE.rakebackBalances).length > 0 ? '✅' : '⏳')
+            "st-bonus-info": 'Rakeback: ' + (Object.keys(STATE.rakebackBalances).length > 0 ? '✅' : '⏳'),
+            "st-minbet": STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ' (2 IDR)'
         };
         for (var id in map) {
             var el = document.getElementById(id);
@@ -1029,37 +909,27 @@
         if (el) el.textContent = pct + '% (≈ ' + STATE.wagerLossTolerance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ')';
     }
 
-    function updateReloadDisplay() {
-        const el = document.getElementById('st-reload-info');
-        if (el) {
-            var nextText = STATE.reload.nextClaim ? 
-                STATE.reload.nextClaim.toLocaleTimeString() : 'Unknown';
-            var status = STATE.reload.active ? '✅' : '⏳';
-            el.textContent = `${STATE.reload.amount.toFixed(4)} ${STATE.reload.currency.toUpperCase()} ${status} | Next: ${nextText}`;
-        }
-    }
-
     function updateBonusDisplay() {
-        const el = document.getElementById('st-bonus-info');
+        var el = document.getElementById('st-bonus-info');
         if (el) {
-            const rakebackCount = Object.keys(STATE.rakebackBalances).length;
-            el.textContent = 'Rakeback: ' + (rakebackCount > 0 ? '✅' : '⏳');
+            var count = Object.keys(STATE.rakebackBalances).length;
+            el.textContent = 'Rakeback: ' + (count > 0 ? '✅' : '⏳');
         }
     }
 
     function updateVaultDisplay() {
-        const el = document.getElementById('st-vault');
+        var el = document.getElementById('st-vault');
         if (el) {
-            const entries = Object.entries(STATE.vaultBalances)
-                .filter(([k, v]) => v > 0)
-                .map(([k, v]) => `${k.toUpperCase()}: ${v.toFixed(8)}`)
+            var entries = Object.entries(STATE.vaultBalances)
+                .filter(function(kv) { return kv[1] > 0; })
+                .map(function(kv) { return kv[0].toUpperCase() + ': ' + kv[1].toFixed(8); })
                 .join(' | ');
             el.textContent = entries || 'Empty';
         }
     }
 
     function updateRaffleDisplay() {
-        const el = document.getElementById('st-raffle');
+        var el = document.getElementById('st-raffle');
         if (el) {
             el.textContent = '🎟️ ' + STATE.raffleTickets + ' tickets';
         }
@@ -1078,6 +948,7 @@
                       'User: ' + STATE.stakeUser + '\n' +
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
+                      'MinBet: ' + STATE.minBet.toFixed(8) + ' (' + STATE.selectedCurrency.toUpperCase() + ')\n' +
                       'Drawdown: ' + drawdownPct.toFixed(2) + '%\n' +
                       'Total Wager: ' + STATE.wagerTotalAccumulated.toFixed(8) + ' / ' + STATE.wagerTotalTarget.toFixed(8) + '\n' +
                       'Profit: ' + (STATE.profit >= 0 ? '+' : '') + STATE.profit.toFixed(8) + ' (' + profitPct.toFixed(2) + '%)\n' +
@@ -1227,6 +1098,7 @@
                     <div class="stats-block">
                         <div class="line"><span class="label">User</span><span class="value" id="st-user">-</span></div>
                         <div class="line"><span class="label">Balance</span><span class="value" id="st-balance">0</span></div>
+                        <div class="line"><span class="label">💳 MinBet</span><span class="value" id="st-minbet">-</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">📋 SESSION #</span><span class="value" id="st-session-num">1</span></div>
                         <div class="line"><span class="label">🎯 TARGET</span><span class="value" id="st-session-target">5% (0.00 USDT)</span></div>
@@ -1251,7 +1123,6 @@
                         <div class="divider"></div>
                         <div class="line"><span class="label">🏦 VAULT</span><span class="value" id="st-vault">Empty</span></div>
                         <div class="line"><span class="label">🎟️ RAFFLE</span><span class="value" id="st-raffle">0 tickets</span></div>
-                        <div class="line"><span class="label">🔄 RELOAD</span><span class="value" id="st-reload-info">-</span></div>
                         <div class="line"><span class="label">🎁 BONUS</span><span class="value" id="st-bonus-info">-</span></div>
                     </div>
                 </div>
@@ -1262,6 +1133,7 @@
                             <div class="md-field"><label>🎲 DICE CHANCE (%)</label><input type="number" id="p-normal-chance" value="99.98" step="0.01" min="1" max="99.98"></div>
                             <div class="md-field"><label>💰 BET (% balance)</label><input type="number" id="p-basebet-normal" value="0.125" step="0.001" min="0.01" max="10"></div>
                         </div>
+                        <div class="minbet-info" id="minbet-info">≈ 0.00000000 crypto (2 IDR)</div>
                     </div>
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🔄 PAROLI RECOVERY</div>
@@ -1272,35 +1144,6 @@
                         <div class="grid-2">
                             <div class="md-field"><label>✂️ CUTLOSS STREAK</label><input type="number" id="p-paroli-cutloss" value="5" step="1" min="2" max="10"></div>
                         </div>
-                    </div>
-                    <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 RELOAD (Manual Claim)</div>
-                        <div class="grid-2">
-                            <div class="md-field">
-                                <label>💱 Currency</label>
-                                <select id="p-reload-currency">
-                                    <option value="usdt">USDT</option>
-                                    <option value="btc">BTC</option>
-                                    <option value="eth">ETH</option>
-                                    <option value="bnb">BNB</option>
-                                    <option value="sol">SOL</option>
-                                    <option value="doge">DOGE</option>
-                                    <option value="trx">TRX</option>
-                                    <option value="idr">IDR</option>
-                                    <option value="usdc">USDC</option>
-                                    <option value="ltc">LTC</option>
-                                    <option value="xrp">XRP</option>
-                                    <option value="ada">ADA</option>
-                                    <option value="dot">DOT</option>
-                                    <option value="pol">POL</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div style="display:flex;gap:8px;margin-top:6px;">
-                            <button id="p-reload-claim" class="btn-login" style="flex:1;background:#00e5c0;color:black;">🎯 CLAIM NOW</button>
-                            <button id="p-reload-check" class="btn-login" style="flex:1;">🔍 CHECK</button>
-                        </div>
-                        <div style="font-size:8px;color:var(--text-light);margin-top:6px;" id="reload-status">⏳ Checking reload status...</div>
                     </div>
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🎯 WAGER FARMING</div>
@@ -1317,9 +1160,9 @@
                             <div class="md-field"><label>🔄 RECOVERY (ms)</label><input type="number" id="p-delay-recovery" value="200" step="1" min="0" max="500"></div>
                         </div>
                         <div class="grid-2">
-                            <div class="md-field"><label>MIN BET (IDR)</label><input type="number" id="p-minbet-idr" value="2" step="1"></div>
+                            <div class="md-field"><label>📊 MAX DRAWDOWN (%)</label><input type="number" id="p-max-drawdown" value="5" step="0.5" min="1" max="20"></div>
+                            <div class="md-field"><label>MAX BET CAP</label><input type="number" id="p-max-cap" value="0" step="0.001"></div>
                         </div>
-                        <div class="minbet-info" id="minbet-info">≈ 0.00000000 crypto</div>
                     </div>
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🎮 DEMO MODE</div>
@@ -1333,13 +1176,10 @@
                             <div class="md-field"><label>TARGET % (Session)</label><input type="number" id="p-target-pct" value="5" step="0.5"></div>
                             <div class="md-field"><label>STOP LOSS % (Session)</label><input type="number" id="p-stop-pct" value="100" step="0.5"></div>
                         </div>
-                        <div class="grid-2">
-                            <div class="md-field"><label>MAX BET CAP</label><input type="number" id="p-max-cap" value="0" step="0.001"></div>
-                        </div>
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>💳 MinBet: 2 IDR (auto convert)</div></div>
                 </div>
             </div>
         </div>`;
@@ -1394,10 +1234,10 @@
                 var success = await syncUserInfo();
                 if (success) {
                     document.getElementById("p-start").disabled = false;
-                    await checkReloadStatus(STATE.reload.currency);
                     await fetchRakebackInfo();
                     await fetchVaultBalance();
                     await checkAllRaffles();
+                    await updateMinBet();
                     updateAllUI();
                     sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
                 }
@@ -1409,29 +1249,13 @@
             refreshBtn.onclick = async function() {
                 if (!accessToken) return;
                 await syncUserInfo();
-                await checkReloadStatus(STATE.reload.currency);
                 await fetchRakebackInfo();
                 await fetchVaultBalance();
                 await checkAllRaffles();
+                await updateMinBet();
                 updateAllUI();
             };
         }
-        
-        // ===== RELOAD EVENTS =====
-        document.getElementById('p-reload-currency').onchange = function() {
-            STATE.reload.currency = this.value;
-            checkReloadStatus(this.value);
-            updateAllUI();
-        };
-        
-        document.getElementById('p-reload-claim').onclick = async function() {
-            await claimReload(STATE.reload.currency);
-        };
-        
-        document.getElementById('p-reload-check').onclick = async function() {
-            await checkReloadStatus(STATE.reload.currency);
-            updateAllUI();
-        };
         
         // ===== START =====
         var startBtn = document.getElementById("p-start");
@@ -1462,7 +1286,6 @@
                 STATE.maxBetCap = safeFloat("p-max-cap", 0);
                 STATE.delayNormal = safeInt("p-delay-normal", 50);
                 STATE.delayRecovery = safeInt("p-delay-recovery", 200);
-                STATE.minBetIdr = safeFloat("p-minbet-idr", 2);
                 
                 var targetUSD = safeFloat("p-wager-total-target-usd", 1000);
                 var lossPct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1492,6 +1315,7 @@
                     sendTelegramMessage('🎮 FLASH/DEMO MODE ACTIVE\nBalance: ' + balance.toFixed(8) + ' (virtual)\nAPI: Real with amount 0');
                 } else {
                     await syncUserInfo();
+                    await updateMinBet();
                     balance = STATE.balance;
                     if (!balance || balance === 0) {
                         sendTelegramMessage('❌ Balance 0! Check your wallet.');
@@ -1529,7 +1353,6 @@
                 STATE.isPaused = false;
                 STATE.betTimestamps = [];
                 
-                await checkReloadStatus(STATE.reload.currency);
                 await fetchRakebackInfo();
                 await fetchVaultBalance();
                 await checkAllRaffles();
@@ -1538,7 +1361,7 @@
                 updateAllUI();
                 
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak');
                 
                 runLoop();
             };
@@ -1582,6 +1405,7 @@
         if (currencyEl) {
             currencyEl.onchange = function() {
                 STATE.selectedCurrency = this.value;
+                updateMinBet();
                 updateAllUI();
             };
         }
@@ -1601,6 +1425,10 @@
         };
         document.getElementById("p-trigger-drawdown").onchange = function() {
             STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
+            updateAllUI();
+        };
+        document.getElementById("p-max-drawdown").onchange = function() {
+            STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
             updateAllUI();
         };
         document.getElementById("p-wager-total-target-usd").oninput = updateAllUI;
@@ -1654,10 +1482,10 @@
             accessToken = saved;
             document.getElementById("p-token").value = saved;
             syncUserInfo().then(function() {
-                checkReloadStatus(STATE.reload.currency);
                 fetchRakebackInfo();
                 fetchVaultBalance();
                 checkAllRaffles();
+                updateMinBet();
                 updateAllUI();
             });
         }
@@ -1667,7 +1495,6 @@
         setInterval(updateAllUI, 500);
         setInterval(function() {
             if (accessToken) {
-                checkReloadStatus(STATE.reload.currency);
                 fetchRakebackInfo();
                 fetchVaultBalance();
                 checkAllRaffles();
