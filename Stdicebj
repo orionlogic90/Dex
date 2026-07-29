@@ -1,11 +1,11 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY + MINBET AUTO
+// CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY + RAFFLE PROGRESS
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%)
 // RECOVERY MODE: PAROLI (Sequential, Level 1-4)
-// TRIGGER: Drawdown > 0.125% (1x basebet)
-// CUTLOSS: Loss Streak >= 5x di Recovery
-// MINBET: 2 IDR (auto convert ke crypto)
+// TRIGGER: Drawdown > 0.125%
+// CUTLOSS: Loss Streak >= 5x
+// RAFFLE: Progress Bar + Next Ticket
 // ========================================================================
 
 (function () {
@@ -36,7 +36,7 @@
         darkMode: false,
         minimized: false,
         
-        // ===== PAROLI RECOVERY =====
+        // ===== PAROLI =====
         paroli: {
             level: 0,
             maxLevel: 4,
@@ -65,10 +65,22 @@
         drawdown: 0,
         
         // ===== MINBET =====
-        minBet: 0.0014,           // default, akan diupdate
-        minBetIdr: 2,             // 2 IDR
+        minBet: 0.0014,
+        minBetIdr: 2,
         fiatRates: { usdt: 0, idr: 0 },
         fiatRateFetched: false,
+        
+        // ===== RAFFLE =====
+        raffle: {
+            id: '299d4c87-d395-4386-8022-4a3072ad09a7',
+            name: 'Undian Mingguan $75k',
+            progress: 0,
+            ticketValue: 1000,
+            totalTickets: 0,
+            userTickets: 0,
+            wageredFromBot: 0,
+            nextTicketRemaining: 1000
+        },
         
         // ===== NORMAL =====
         normalChance: 99.98,
@@ -90,19 +102,10 @@
         stakeUser: "Loading...",
         selectedCurrency: "usdt",
         
-        // ===== RAKEBACK =====
         rakebackBalances: {},
-        
-        // ===== VAULT =====
         vaultBalances: {},
         vaultTotal: 0,
         
-        // ===== RAFFLE =====
-        raffleTickets: 0,
-        raffleData: {},
-        raffleIds: ['299d4c87-d395-4386-8022-4a3072ad09a7'],
-        
-        // ===== WAGER =====
         wagerTotalAccumulated: 0,
         wagerSesiCounter: 0,
         wagerSesiStartBal: 0,
@@ -182,7 +185,95 @@
         } catch(e) {}
     }
 
-    // ==================== 5. MINBET (2 IDR) ====================
+    // ==================== 5. RAFFLE ====================
+    async function fetchRaffleProgress() {
+        if (!accessToken) return;
+        try {
+            var query = `query ActiveRaffles($isAuthenticated: Boolean = false) {
+                activeRaffles {
+                    id
+                    name
+                    ticketValue
+                    ticketCount
+                    raffleUser @include(if: $isAuthenticated) {
+                        progress
+                        ticketCount
+                    }
+                }
+            }`;
+            var variables = { isAuthenticated: true };
+            var res = await fetch(CONFIG.apiUrl + '/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-access-token': accessToken
+                },
+                body: JSON.stringify({ query: query, variables: variables })
+            });
+            var data = await res.json();
+            if (data?.data?.activeRaffles?.length > 0) {
+                var raffle = data.data.activeRaffles[0];
+                STATE.raffle.id = raffle.id;
+                STATE.raffle.name = raffle.name;
+                STATE.raffle.progress = raffle.raffleUser?.progress || 0;
+                STATE.raffle.ticketValue = raffle.ticketValue || 1000;
+                STATE.raffle.totalTickets = raffle.ticketCount || 0;
+                STATE.raffle.userTickets = raffle.raffleUser?.ticketCount || 0;
+                
+                // Hitung sisa ke next ticket
+                var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
+                var totalWagered = wageredFromStake + STATE.raffle.wageredFromBot;
+                STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
+                if (STATE.raffle.nextTicketRemaining <= 0) {
+                    STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
+                }
+                updateRaffleDisplay();
+            }
+        } catch(e) {
+            console.error('[RAFFLE] Error:', e);
+        }
+    }
+
+    function updateRaffleDisplay() {
+        var el = document.getElementById('st-raffle');
+        if (!el) return;
+        
+        var progress = STATE.raffle.progress || 0;
+        var progressPct = (progress * 100).toFixed(1);
+        var remaining = STATE.raffle.nextTicketRemaining || STATE.raffle.ticketValue;
+        var tickets = STATE.raffle.userTickets || 0;
+        var wagered = STATE.raffle.wageredFromBot || 0;
+        var ticketValue = STATE.raffle.ticketValue || 1000;
+        var wageredTotal = (progress * ticketValue) + wagered;
+        var wageredDisplay = wageredTotal.toFixed(2);
+        
+        var barColor = '#ff6b81';
+        if (progressPct >= 80) barColor = '#ff922b';
+        if (progressPct >= 90) barColor = '#00e5c0';
+        if (progressPct >= 100) barColor = '#00e5c0';
+        
+        el.innerHTML = `
+            <div style="text-align:left;width:100%;">
+                <div style="font-size:8px;color:var(--text-light);margin-bottom:1px;">
+                    🎟️ ${STATE.raffle.name}
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <div style="flex:1;background:var(--border);border-radius:3px;height:5px;position:relative;overflow:hidden;">
+                        <div style="width:${Math.min(progressPct, 100)}%;height:100%;background:${barColor};border-radius:3px;transition:width 0.5s;"></div>
+                    </div>
+                    <span style="font-size:8px;font-weight:bold;color:${barColor};min-width:35px;">${progressPct}%</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:7px;color:var(--text-light);margin-top:1px;flex-wrap:wrap;gap:2px;">
+                    <span>💰 $${wageredDisplay}</span>
+                    <span>🎯 $${remaining.toFixed(2)} to ticket</span>
+                    <span>🤖 $${wagered.toFixed(2)}</span>
+                    <span>🎫 ${tickets} tickets</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // ==================== 6. MINBET ====================
     function getCoinGeckoId(coin) {
         var map = {
             "USDT": "tether",
@@ -258,7 +349,7 @@
         return false;
     }
 
-    // ==================== 6. RAKEBACK ====================
+    // ==================== 7. RAKEBACK ====================
     async function fetchRakebackInfo() {
         if (!accessToken) return;
         try {
@@ -282,7 +373,7 @@
         } catch(e) { console.error('[BONUS] Error:', e); }
     }
 
-    // ==================== 7. VAULT ====================
+    // ==================== 8. VAULT ====================
     async function fetchVaultBalance() {
         if (!accessToken) return;
         try {
@@ -309,47 +400,6 @@
                 updateVaultDisplay();
             }
         } catch(e) { console.error('[VAULT] Error:', e); }
-    }
-
-    // ==================== 8. RAFFLE ====================
-    async function checkRaffleTickets(raffleId) {
-        if (!accessToken || !raffleId) return null;
-        try {
-            var query = 'query TicketList($raffleId: String!, $offset: Int, $limit: Int) { raffle(raffleId: $raffleId) { id name raffleUser { ticketCount ticketList(limit: $limit, offset: $offset) { ticketNumber raffle { name } } } } }';
-            var variables = { raffleId: raffleId, limit: 12, offset: 0 };
-            var res = await fetch(CONFIG.apiUrl + '/graphql', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': accessToken
-                },
-                body: JSON.stringify({ query: query, variables: variables })
-            });
-            var data = await res.json();
-            if (data?.data?.raffle) {
-                return {
-                    id: data.data.raffle.id,
-                    name: data.data.raffle.name,
-                    ticketCount: data.data.raffle.raffleUser?.ticketCount || 0,
-                    tickets: data.data.raffle.raffleUser?.ticketList || []
-                };
-            }
-            return null;
-        } catch(e) { console.error('[RAFFLE] Error:', e); return null; }
-    }
-
-    async function checkAllRaffles() {
-        var totalTickets = 0;
-        for (var i = 0; i < STATE.raffleIds.length; i++) {
-            var result = await checkRaffleTickets(STATE.raffleIds[i]);
-            if (result) {
-                STATE.raffleData[result.id] = result;
-                totalTickets += result.ticketCount;
-            }
-        }
-        STATE.raffleTickets = totalTickets;
-        updateRaffleDisplay();
-        return totalTickets;
     }
 
     // ==================== 9. SYNC USER INFO ====================
@@ -612,6 +662,15 @@
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
         if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
         
+        // Update raffle wager
+        STATE.raffle.wageredFromBot += betAmount;
+        var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
+        var totalWagered = wageredFromStake + STATE.raffle.wageredFromBot;
+        STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
+        if (STATE.raffle.nextTicketRemaining <= 0) {
+            STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
+        }
+        
         logBet(STATE.bets, betAmount, chance, isWin ? 'win' : 'loss', profit, gameLabel);
         
         if (mode === 'recovery') {
@@ -821,6 +880,7 @@
         STATE.maxDrawdownVal = 0;
         STATE.lossStreak = 0;
         STATE.drawdown = 0;
+        STATE.raffle.wageredFromBot = 0;
         STATE.betTimestamps = [];
         STATE.startTime = null;
         STATE.sessionStartTime = null;
@@ -832,6 +892,7 @@
     function updateAllUI() {
         updateStatsDisplay();
         updateLossToleranceDisplay();
+        updateRaffleDisplay();
         
         var now = Date.now();
         if (now - STATE.lastTGReport >= CONFIG.tgReportInterval && STATE.bets > 0) {
@@ -885,7 +946,6 @@
             "st-cutloss-count": STATE.paroli.lossStreak + 'x / 5x',
             "st-loss-per-split": STATE.paroli.totalLoss.toFixed(8),
             "st-vault": vaultDisplay,
-            "st-raffle": '🎟️ ' + STATE.raffleTickets + ' tickets',
             "st-bonus-info": 'Rakeback: ' + (Object.keys(STATE.rakebackBalances).length > 0 ? '✅' : '⏳'),
             "st-minbet": STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ' (2 IDR)'
         };
@@ -928,13 +988,6 @@
         }
     }
 
-    function updateRaffleDisplay() {
-        var el = document.getElementById('st-raffle');
-        if (el) {
-            el.textContent = '🎟️ ' + STATE.raffleTickets + ' tickets';
-        }
-    }
-
     // ==================== 18. SESSION REPORT ====================
     async function sendSessionReport() {
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
@@ -942,6 +995,8 @@
         var runTime = getDuration();
         var status = STATE.isRecoveryMode ? '🔄 PAROLI' : '⚡ NORMAL';
         var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
+        var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
+        var raffleTickets = STATE.raffle.userTickets;
         
         var message = '💰 CHEAPCHEATX v2.0\n' +
                       '"Your Stake Wagered Partner"\n' +
@@ -955,6 +1010,7 @@
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
                       'Paroli Level: ' + STATE.paroli.level + '\n' +
+                      '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets\n' +
                       'Status: ' + status + '\n' +
                       '🎲 Mode: Dice Only';
         await sendTelegramMessage(message);
@@ -1122,8 +1178,8 @@
                         <div class="line"><span class="label">📉 TOTAL LOSS</span><span class="value" id="st-loss-per-split">0</span></div>
                         <div class="divider"></div>
                         <div class="line"><span class="label">🏦 VAULT</span><span class="value" id="st-vault">Empty</span></div>
-                        <div class="line"><span class="label">🎟️ RAFFLE</span><span class="value" id="st-raffle">0 tickets</span></div>
                         <div class="line"><span class="label">🎁 BONUS</span><span class="value" id="st-bonus-info">-</span></div>
+                        <div class="line"><span class="label">🎟️ RAFFLE</span><span class="value" id="st-raffle" style="max-width:65%;">-</span></div>
                     </div>
                 </div>
                 <div id="tab-cfg" class="tab-content">
@@ -1179,7 +1235,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>💳 MinBet: 2 IDR (auto convert)</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -1236,7 +1292,7 @@
                     document.getElementById("p-start").disabled = false;
                     await fetchRakebackInfo();
                     await fetchVaultBalance();
-                    await checkAllRaffles();
+                    await fetchRaffleProgress();
                     await updateMinBet();
                     updateAllUI();
                     sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
@@ -1251,7 +1307,7 @@
                 await syncUserInfo();
                 await fetchRakebackInfo();
                 await fetchVaultBalance();
-                await checkAllRaffles();
+                await fetchRaffleProgress();
                 await updateMinBet();
                 updateAllUI();
             };
@@ -1339,6 +1395,7 @@
                 STATE.paroli.level = 0;
                 STATE.paroli.totalLoss = 0;
                 STATE.paroli.lossStreak = 0;
+                STATE.raffle.wageredFromBot = 0;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1355,13 +1412,13 @@
                 
                 await fetchRakebackInfo();
                 await fetchVaultBalance();
-                await checkAllRaffles();
+                await fetchRaffleProgress();
                 
                 toggleStartStop(true);
                 updateAllUI();
                 
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n🎟️ Raffle: Tracking progress');
                 
                 runLoop();
             };
@@ -1484,7 +1541,7 @@
             syncUserInfo().then(function() {
                 fetchRakebackInfo();
                 fetchVaultBalance();
-                checkAllRaffles();
+                fetchRaffleProgress();
                 updateMinBet();
                 updateAllUI();
             });
@@ -1497,7 +1554,7 @@
             if (accessToken) {
                 fetchRakebackInfo();
                 fetchVaultBalance();
-                checkAllRaffles();
+                fetchRaffleProgress();
             }
         }, 60000);
     }
