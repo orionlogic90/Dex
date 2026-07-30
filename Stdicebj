@@ -2,7 +2,7 @@
 // CHEAPCHEATX v2.0 - DICE ONLY + ML RECOVERY + RAFFLE PROGRESS
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%) - ORIGINAL
-// RECOVERY MODE: ML PAROLI (Target 50% Recovery)
+// RECOVERY MODE: ML PAROLI (Target 50% Recovery - DRIBBLE)
 // TRIGGER: Drawdown > 0.5%
 // CUTLOSS: Loss Streak >= 5x
 // EXIT STRATEGY: Safe (Balance >= Start Balance) / Aggressive (Max Level)
@@ -17,7 +17,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 2,
+        wagerParallelCap: 5,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
@@ -503,7 +503,7 @@
         }
     }
 
-    // ==================== 9. ML RECOVERY SYSTEM ====================
+    // ==================== 9. ML RECOVERY SYSTEM - FIXED ====================
     class MLRecoverySystem {
         constructor() {
             this.isActive = false;
@@ -518,14 +518,14 @@
             this.winStreak = 0;
             this.lossStreak = 0;
             this.optimalChance = 80;
-            this.optimalBetMultiplier = 1.0;
+            this.optimalBetMultiplier = 0.5;
             this.lastAction = null;
             this.actionHistory = [];
             this.performanceScore = 0;
             this.recoverySessionActive = false;
             this.sessionStartLoss = 0;
             this.bestChance = 80;
-            this.bestBetMultiplier = 1.0;
+            this.bestBetMultiplier = 0.5;
             this.bestPerformance = 0;
             this.consecutiveWins = 0;
             this.consecutiveLosses = 0;
@@ -539,6 +539,7 @@
             this.lastRecoveredAmount = 0;
             this.timeoutId = null;
             this.recoveryAttempts = 0;
+            this.recoveryProfit = 0; // akumulasi profit recovery
         }
 
         startRecovery(totalLoss, initialBalance, minBet, maxBet) {
@@ -546,9 +547,10 @@
             this.totalLoss = totalLoss;
             this.targetRecovery = totalLoss * 0.5;
             this.recoveredAmount = 0;
+            this.recoveryProfit = 0;
             this.recoverySessionActive = true;
             this.sessionStartLoss = totalLoss;
-            this.currentBetMultiplier = 1.0;
+            this.currentBetMultiplier = 0.5;
             this.currentChanceOffset = 0;
             this.winStreak = 0;
             this.lossStreak = 0;
@@ -558,16 +560,23 @@
             this.actionHistory = [];
             this.performanceScore = 0;
             this.optimalChance = 80;
-            this.optimalBetMultiplier = 1.0;
+            this.optimalBetMultiplier = 0.5;
             this.bestChance = 80;
-            this.bestBetMultiplier = 1.0;
+            this.bestBetMultiplier = 0.5;
             this.bestPerformance = 0;
             this.noProgressCounter = 0;
             this.lastRecoveredAmount = 0;
             this.recoveryAttempts++;
             
-            this.baseBet = Math.max(initialBalance * 0.01, minBet);
-            this.maxBet = maxBet || initialBalance * 0.2;
+            // ===== FIX: BASE BET DARI TARGET & CHANCE =====
+            // Hitung base bet dengan chance 80% dulu (nanti di adjust di calculateOptimalAction)
+            const defaultChance = 80;
+            const payoutMultiplier = 100 / (100 - defaultChance);
+            const profitPerUnit = payoutMultiplier - 1;
+            this.baseBet = this.targetRecovery / profitPerUnit;
+            
+            // Max bet = 80% dari target (aman, tidak nekat)
+            this.maxBet = this.targetRecovery * 0.8;
             this.minBet = minBet;
             this.initialBalance = initialBalance;
             this.currentBalance = initialBalance;
@@ -577,7 +586,8 @@
             console.log('[ML] Recovery session started');
             console.log('[ML] Total Loss:', totalLoss);
             console.log('[ML] Target Recovery (50%):', this.targetRecovery);
-            console.log('[ML] Base Bet:', this.baseBet);
+            console.log('[ML] Base Bet (80% chance):', this.baseBet);
+            console.log('[ML] Max Bet:', this.maxBet);
             
             return this.calculateOptimalAction();
         }
@@ -589,9 +599,9 @@
                     const data = JSON.parse(saved);
                     if (data.bestPerformance > 0) {
                         this.optimalChance = data.optimalChance || 80;
-                        this.optimalBetMultiplier = data.optimalBetMultiplier || 1.0;
+                        this.optimalBetMultiplier = data.optimalBetMultiplier || 0.5;
                         this.bestChance = data.bestChance || 80;
-                        this.bestBetMultiplier = data.bestBetMultiplier || 1.0;
+                        this.bestBetMultiplier = data.bestBetMultiplier || 0.5;
                         this.bestPerformance = data.bestPerformance || 0;
                         console.log('[ML] Loaded learning data:', data);
                     } else {
@@ -625,73 +635,105 @@
                 return null;
             }
 
-            if (this.recoveredAmount === this.lastRecoveredAmount && this.history.length > 0) {
-                this.noProgressCounter++;
-                if (this.noProgressCounter > this.maxNoProgress) {
-                    console.log('[ML] No progress detected, forcing strategy change');
-                    this.currentChanceOffset += (Math.random() > 0.5 ? 1 : -1) * 5;
-                    this.optimalBetMultiplier *= 1.2;
-                    this.noProgressCounter = 0;
-                }
-            } else {
-                this.noProgressCounter = 0;
-                this.lastRecoveredAmount = this.recoveredAmount;
-            }
-
+            // Cek progress
             const recoveryProgress = this.targetRecovery > 0 ? this.recoveredAmount / this.targetRecovery : 0;
-            const remainingToRecover = this.targetRecovery - this.recoveredAmount;
             
-            let riskLevel = 1.0;
-            if (recoveryProgress < 0.3) {
-                riskLevel = 1.5;
-            } else if (recoveryProgress > 0.7) {
-                riskLevel = 0.7;
-            }
-
-            if (this.consecutiveWins >= 3) {
-                riskLevel = Math.min(riskLevel * 1.2, 2.0);
-            }
-            if (this.consecutiveLosses >= 2) {
-                riskLevel = Math.max(riskLevel * 0.8, 0.5);
-            }
-
-            let betMultiplier = this.optimalBetMultiplier * riskLevel;
-            
-            const recoveryRatio = remainingToRecover / (this.targetRecovery || 1);
-            if (recoveryRatio > 0.5) {
-                betMultiplier *= 1.2;
-            } else if (recoveryRatio < 0.2 && recoveryRatio > 0) {
-                betMultiplier *= 0.8;
-            }
-
+            // ===== PILIH CHANCE =====
             let chance = this.optimalChance + this.currentChanceOffset;
             
+            // Adjust chance berdasarkan progress
+            if (recoveryProgress > 0.7) {
+                chance = Math.min(chance + 3, 95); // Mendekati target, chance naik
+            } else if (recoveryProgress < 0.3) {
+                chance = Math.max(chance - 3, 65); // Jauh dari target, chance turun
+            }
+            
+            // Adjust chance berdasarkan win/loss streak
             if (this.consecutiveWins >= 2) {
                 chance = Math.min(chance + 2, 95);
             }
             if (this.consecutiveLosses >= 2) {
                 chance = Math.max(chance - 3, 60);
             }
-
-            chance = Math.max(60, Math.min(99.98, chance));
-            betMultiplier = Math.max(0.5, Math.min(2.5, betMultiplier));
-
-            const finalBet = Math.min(this.baseBet * betMultiplier, this.maxBet);
-            const finalChance = chance;
-
+            
+            chance = Math.max(60, Math.min(95, chance));
+            
+            // ===== HITUNG BASE BET DARI CHANCE =====
+            const payoutMultiplier = 100 / (100 - chance);
+            const profitPerUnit = payoutMultiplier - 1;
+            const baseBetFromChance = this.targetRecovery / profitPerUnit;
+            
+            // ===== PILIH MULTIPLIER (0.3x - 0.8x) =====
+            let betMultiplier = this.optimalBetMultiplier;
+            
+            // Adjust multiplier berdasarkan progress
+            if (recoveryProgress < 0.3) {
+                betMultiplier = Math.min(betMultiplier * 1.1, 0.8); // Agresif dikit di awal
+            } else if (recoveryProgress > 0.7) {
+                betMultiplier = Math.max(betMultiplier * 0.9, 0.3); // Konservatif di akhir
+            }
+            
+            // Adjust multiplier berdasarkan streak
+            if (this.consecutiveWins >= 3) {
+                betMultiplier = Math.min(betMultiplier * 1.1, 0.8);
+            }
+            if (this.consecutiveLosses >= 2) {
+                betMultiplier = Math.max(betMultiplier * 0.9, 0.3);
+            }
+            
+            betMultiplier = Math.max(0.3, Math.min(0.8, betMultiplier));
+            
+            // ===== HITUNG FINAL BET =====
+            let finalBet = baseBetFromChance * betMultiplier;
+            
+            // Clamp ke min/max
+            finalBet = Math.max(finalBet, this.minBet);
+            finalBet = Math.min(finalBet, this.maxBet);
+            
+            // ===== CEK APAKAH BET TERLALU KECIL =====
+            // Kalau bet < minBet, coba naikkan chance (biar profit per unit lebih kecil)
+            if (finalBet < this.minBet) {
+                // Naikkan chance sampai bet >= minBet atau chance max
+                let tempChance = chance;
+                while (tempChance < 98 && finalBet < this.minBet) {
+                    tempChance += 1;
+                    const tempPayout = 100 / (100 - tempChance);
+                    const tempProfit = tempPayout - 1;
+                    const tempBet = this.targetRecovery / tempProfit * betMultiplier;
+                    if (tempBet > finalBet) {
+                        finalBet = Math.max(tempBet, this.minBet);
+                        chance = tempChance;
+                    }
+                }
+            }
+            
+            // ===== CEK APAKAH BET TERLALU BESAR =====
+            if (finalBet > this.maxBet) {
+                finalBet = this.maxBet;
+            }
+            
+            // Pastikan tidak lebih dari 50% balance
+            finalBet = Math.min(finalBet, this.currentBalance * 0.5);
+            
             this.lastAction = {
                 betAmount: finalBet,
-                chance: finalChance,
+                chance: chance,
                 betMultiplier: betMultiplier,
                 chanceOffset: this.currentChanceOffset,
+                baseBetFromChance: baseBetFromChance,
                 timestamp: Date.now()
             };
 
-            console.log(`[ML] Action calculated: Bet: ${finalBet.toFixed(8)} (x${betMultiplier.toFixed(2)}) Chance: ${finalChance.toFixed(1)}%`);
+            console.log(`[ML] Action calculated:`);
+            console.log(`  - Chance: ${chance.toFixed(1)}% (multiplier: ${payoutMultiplier.toFixed(2)}x)`);
+            console.log(`  - Base Bet: ${baseBetFromChance.toFixed(8)}`);
+            console.log(`  - Multiplier: ${betMultiplier.toFixed(2)}x`);
+            console.log(`  - Final Bet: ${finalBet.toFixed(8)}`);
+            console.log(`  - Recovery: ${this.recoveredAmount.toFixed(8)}/${this.targetRecovery.toFixed(8)} (${(recoveryProgress*100).toFixed(1)}%)`);
 
             return {
-                betAmount: Math.max(finalBet, this.minBet),
-                chance: finalChance,
+                betAmount: finalBet,
+                chance: chance,
                 condition: 'above'
             };
         }
@@ -707,6 +749,7 @@
                 this.consecutiveLosses = 0;
                 this.winStreak++;
                 this.recoveredAmount += profit;
+                this.recoveryProfit += profit;
                 
                 if (this.lastAction) {
                     const performance = profit / (betAmount || 1);
@@ -723,6 +766,8 @@
                 this.consecutiveLosses++;
                 this.consecutiveWins = 0;
                 this.lossStreak++;
+                this.recoveredAmount -= Math.abs(profit);
+                this.recoveryProfit -= Math.abs(profit);
                 
                 if (this.lastAction) {
                     this.currentChanceOffset -= (this.lastAction.chanceOffset > 0 ? 1 : -1) * this.learningRate * 2;
@@ -730,17 +775,20 @@
                 }
             }
 
-            this.optimalChance = Math.max(60, Math.min(99.98, this.optimalChance));
-            this.optimalBetMultiplier = Math.max(0.5, Math.min(2.5, this.optimalBetMultiplier));
+            this.optimalChance = Math.max(60, Math.min(95, this.optimalChance));
+            this.optimalBetMultiplier = Math.max(0.3, Math.min(0.8, this.optimalBetMultiplier));
 
+            // ===== CEK TARGET TERCAPAI =====
             if (this.recoveredAmount >= this.targetRecovery) {
                 this.isActive = false;
                 this.recoverySessionActive = false;
                 this.saveLearningData();
                 console.log('[ML] ✅ Recovery target achieved!');
+                console.log(`[ML] Recovered: ${this.recoveredAmount.toFixed(8)} / ${this.targetRecovery.toFixed(8)}`);
                 return;
             }
 
+            // ===== CEK FAILED =====
             if (this.recoveredAmount < -this.totalLoss * 0.5) {
                 this.isActive = false;
                 this.recoverySessionActive = false;
@@ -765,6 +813,7 @@
             }
 
             console.log(`[ML] Progress: ${(this.recoveredAmount/this.targetRecovery*100).toFixed(1)}%`);
+            console.log(`[ML] ${win ? '✅ WIN' : '❌ LOSS'} | Recovered: ${this.recoveredAmount.toFixed(8)}`);
         }
 
         getStatus() {
@@ -773,9 +822,10 @@
                 totalLoss: this.totalLoss,
                 targetRecovery: this.targetRecovery,
                 recoveredAmount: this.recoveredAmount,
+                recoveryProfit: this.recoveryProfit,
                 progress: this.targetRecovery > 0 ? this.recoveredAmount / this.targetRecovery : 0,
                 remaining: this.targetRecovery - this.recoveredAmount,
-                currentChance: Math.min(this.optimalChance + this.currentChanceOffset, 99.98),
+                currentChance: Math.min(this.optimalChance + this.currentChanceOffset, 95),
                 currentMultiplier: this.optimalBetMultiplier,
                 winStreak: this.winStreak,
                 lossStreak: this.lossStreak,
@@ -791,6 +841,7 @@
             this.totalLoss = 0;
             this.targetRecovery = 0;
             this.recoveredAmount = 0;
+            this.recoveryProfit = 0;
             this.consecutiveWins = 0;
             this.consecutiveLosses = 0;
             this.winStreak = 0;
@@ -911,6 +962,7 @@
                 return;
             }
             
+            // Dapatkan action dari ML
             if (STATE.mlSystem && STATE.mlSystem.isActive && STATE.mlSystem.recoverySessionActive) {
                 const mlAction = STATE.mlSystem.calculateOptimalAction();
                 if (mlAction) {
@@ -934,6 +986,7 @@
             if (result) {
                 const profit = result.win ? betAmount : -betAmount;
                 
+                // Update ML
                 if (STATE.mlSystem && STATE.mlSystem.isActive) {
                     STATE.mlSystem.updateWithResult(result.win, profit, betAmount, chance);
                     
@@ -943,16 +996,17 @@
                         STATE.paroli.mlActive = false;
                         p.isProcessing = false;
                         resetProfitOnNormalReturn();
-                        sendTelegramMessage('✅ ML RECOVERY COMPLETED\nRecovered: ' + 
-                            STATE.mlSystem.getStatus().recoveredAmount.toFixed(8) + 
-                            '\nNew Balance: ' + STATE.balance.toFixed(8));
+                        const status = STATE.mlSystem.getStatus();
+                        sendTelegramMessage('✅ ML RECOVERY COMPLETED\n' +
+                            'Recovered: ' + status.recoveredAmount.toFixed(8) + ' / ' + status.targetRecovery.toFixed(8) + '\n' +
+                            'New Balance: ' + STATE.balance.toFixed(8));
                         updateAllUI();
                         setTimeout(sendFireAndForgetBet, 100);
                         return;
                     }
                 }
                 
-                // ===== UPDATE STATS =====
+                // Update stats
                 STATE.bets++;
                 STATE.wagered += betAmount;
                 STATE.betTimestamps.push(Date.now());
@@ -984,7 +1038,7 @@
                 
                 logBet(STATE.bets, betAmount, chance, result.win ? betAmount : -betAmount);
                 
-                // ===== UPDATE LOSS STREAK DI PAROLI =====
+                // Update paroli loss streak
                 if (result.win) {
                     STATE.paroli.lossStreak = 0;
                 } else {
@@ -1033,6 +1087,23 @@
                     return;
                 }
                 
+                // ===== CEK TARGET ML =====
+                if (STATE.mlSystem && STATE.mlSystem.isActive) {
+                    const status = STATE.mlSystem.getStatus();
+                    if (status.recoveredAmount >= status.targetRecovery) {
+                        STATE.isRecoveryMode = false;
+                        STATE.paroli.level = 0;
+                        STATE.paroli.mlActive = false;
+                        resetProfitOnNormalReturn();
+                        sendTelegramMessage('✅ ML RECOVERY SUCCESS!\n' +
+                            'Recovered: ' + status.recoveredAmount.toFixed(8) + ' / ' + status.targetRecovery.toFixed(8) + '\n' +
+                            'New Balance: ' + STATE.balance.toFixed(8));
+                        updateAllUI();
+                        setTimeout(sendFireAndForgetBet, 100);
+                        return;
+                    }
+                }
+                
                 // ===== UPDATE LEVEL =====
                 if (result.win) {
                     STATE.paroli.level++;
@@ -1056,8 +1127,7 @@
                     STATE.paroli.level = 0;
                     STATE.paroli.mlActive = false;
                     resetProfitOnNormalReturn();
-                    sendTelegramMessage('✅ ML RECOVERY SUCCESS!\nProfit: ' + 
-                        STATE.balance.toFixed(8) + '\nBack to Normal');
+                    sendTelegramMessage('✅ PAROLI RECOVERY SUCCESS!\nBack to Normal');
                     updateAllUI();
                     setTimeout(sendFireAndForgetBet, 100);
                     return;
@@ -1139,9 +1209,12 @@
         STATE.isRecoveryMode = true;
         
         const status = STATE.mlSystem.getStatus();
-        sendTelegramMessage('🤖 ML RECOVERY STARTED\nTotal Loss: ' + totalLoss.toFixed(8) + 
-            '\nTarget (50%): ' + status.targetRecovery.toFixed(8) +
-            '\nBet: ' + p.currentBet.toFixed(8) + '\nChance: ' + p.currentChance.toFixed(1) + '%');
+        sendTelegramMessage('🤖 ML RECOVERY STARTED\n' +
+            'Total Loss: ' + totalLoss.toFixed(8) + '\n' +
+            'Target (50%): ' + status.targetRecovery.toFixed(8) + '\n' +
+            'Bet: ' + p.currentBet.toFixed(8) + '\n' +
+            'Chance: ' + p.currentChance.toFixed(1) + '%\n' +
+            '📊 Dribble mode: akumulasi profit sampai target');
         
         updateAllUI();
         setTimeout(runRecoverySequentialWithML, 200);
@@ -1234,7 +1307,8 @@
         logBet(STATE.bets, betAmount, chance, profit);
         
         if (mode === 'recovery') {
-            handleRecoveryResult(isWin, betAmount);
+            // Recovery dihandle oleh runRecoverySequentialWithML
+            // Tidak perlu handle di sini
         } else {
             var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode) {
@@ -1251,114 +1325,7 @@
         updateAllUI();
     }
 
-    // ==================== 15. HANDLE RECOVERY RESULT - ORIGINAL ====================
-    function handleRecoveryResult(win, betAmount) {
-        var p = STATE.paroli;
-        
-        if (win) {
-            p.lossStreak = 0;
-            p.level++;
-            p.totalLoss += betAmount;
-            p.currentChance = Math.min(p.currentChance + p.incrementPerWin, p.maxChance);
-            
-            if (p.exitStrategy === 'safe' && STATE.balance >= STATE.startBalance) {
-                p.level = 0;
-                STATE.isRecoveryMode = false;
-                STATE.lossStreak = 0;
-                p.isProcessing = false;
-                var profit = STATE.balance - STATE.startBalance;
-                p.totalLoss = 0;
-                p.currentChance = p.baseChance;
-                p.mlActive = false;
-                
-                resetProfitOnNormalReturn();
-                sendTelegramMessage('🛡️ SAFE EXIT!\nProfit: ' + profit.toFixed(8) + '\nBack to Normal');
-                updateAllUI();
-                setTimeout(sendFireAndForgetBet, 100);
-                return;
-            }
-            
-            if (p.level > p.maxLevel) {
-                p.level = 0;
-                STATE.isRecoveryMode = false;
-                STATE.lossStreak = 0;
-                p.isProcessing = false;
-                var profit = STATE.balance - STATE.startBalance;
-                p.totalLoss = 0;
-                p.currentChance = p.baseChance;
-                p.mlActive = false;
-                
-                resetProfitOnNormalReturn();
-                sendTelegramMessage('✅ PAROLI RECOVERY SUCCESS!\nProfit: ' + profit.toFixed(8) + '\nBack to Normal');
-                updateAllUI();
-                setTimeout(sendFireAndForgetBet, 100);
-                return;
-            }
-            
-            p.currentBet = p.unit * Math.pow(2, p.level - 1);
-            if (p.currentBet < STATE.minBet) p.currentBet = STATE.minBet;
-            p.currentCondition = p.level % 2 === 0 ? 'below' : 'above';
-            
-        } else {
-            p.lossStreak++;
-            p.totalLoss -= betAmount;
-            p.level = 1;
-            p.currentBet = p.unit;
-            if (p.currentBet < STATE.minBet) p.currentBet = STATE.minBet;
-            p.currentChance = p.baseChance;
-            p.currentCondition = 'above';
-            
-            if (p.lossStreak >= p.maxLossStreak) {
-                p.level = 0;
-                STATE.isRecoveryMode = false;
-                STATE.lossStreak = 0;
-                p.isProcessing = false;
-                p.currentChance = p.baseChance;
-                var loss = p.totalLoss;
-                p.totalLoss = 0;
-                p.mlActive = false;
-                
-                resetProfitOnNormalReturn();
-                sendTelegramMessage('✂️ PAROLI CUTLOSS!\nLoss: ' + loss.toFixed(8) + '\nBack to Normal');
-                updateAllUI();
-                setTimeout(sendFireAndForgetBet, 100);
-                return;
-            }
-            
-            var drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
-            if (drawdownPct >= STATE.maxDrawdownPct) {
-                p.level = 0;
-                STATE.isRecoveryMode = false;
-                STATE.lossStreak = 0;
-                p.isProcessing = false;
-                p.currentChance = p.baseChance;
-                var loss = p.totalLoss;
-                p.totalLoss = 0;
-                p.mlActive = false;
-                
-                resetProfitOnNormalReturn();
-                sendTelegramMessage('✂️ PAROLI CUTLOSS!\nDrawdown: ' + drawdownPct.toFixed(2) + '%\nBack to Normal');
-                updateAllUI();
-                setTimeout(sendFireAndForgetBet, 100);
-                return;
-            }
-        }
-        
-        if (STATE.maxBetCap > 0) {
-            p.currentBet = Math.min(p.currentBet, STATE.maxBetCap);
-        }
-        p.currentBet = Math.min(p.currentBet, STATE.balance * 0.5);
-        p.currentBet = Math.max(p.currentBet, STATE.minBet);
-        
-        updateAllUI();
-        
-        p.isProcessing = false;
-        if (STATE.isRecoveryMode && p.level > 0) {
-            setTimeout(runRecoverySequentialWithML, STATE.delayRecovery);
-        }
-    }
-
-    // ==================== 16. LOGGING ====================
+    // ==================== 15. LOGGING ====================
     function logBet(betNumber, amount, chance, profit) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -1381,7 +1348,7 @@
         }
     }
 
-    // ==================== 17. RESET FUNCTIONS ====================
+    // ==================== 16. RESET FUNCTIONS ====================
     function resetToBreakeven() {
         var currentBalance = STATE.balance;
         var lossTolerancePct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1473,7 +1440,7 @@
         updateAllUI();
     }
 
-    // ==================== 18. UI UPDATES ====================
+    // ==================== 17. UI UPDATES ====================
     function updateMLDisplay() {
         if (!STATE.mlSystem) {
             var statusEl = document.getElementById('ml-status');
@@ -1581,7 +1548,7 @@
         }
     }
 
-    // ==================== 19. SESSION REPORT ====================
+    // ==================== 18. SESSION REPORT ====================
     async function sendSessionReport() {
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
@@ -1600,7 +1567,8 @@
                      '  Target: ' + mlStatus.targetRecovery.toFixed(8) + '\n' +
                      '  Recovered: ' + mlStatus.recoveredAmount.toFixed(8) + '\n' +
                      '  Progress: ' + (mlStatus.progress * 100).toFixed(1) + '%\n' +
-                     '  Current Chance: ' + mlStatus.currentChance.toFixed(1) + '%';
+                     '  Current Chance: ' + mlStatus.currentChance.toFixed(1) + '%\n' +
+                     '  Dribble Mode: Akumulasi profit';
         }
         
         var message = '💰 CHEAPCHEATX v2.0 (ML Enhanced)\n' +
@@ -1620,7 +1588,7 @@
         await sendTelegramMessage(message);
     }
 
-    // ==================== 20. RUN LOOP ====================
+    // ==================== 19. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1631,7 +1599,7 @@
         }
     }
 
-    // ==================== 21. UI CONTROLS ====================
+    // ==================== 20. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1653,7 +1621,7 @@
         }
     }
 
-    // ==================== 22. CREATE UI ====================
+    // ==================== 21. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1886,7 +1854,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: ML Paroli (Target 50%)<br>📉 Trigger: Drawdown > 0.5%<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe / Aggressive<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: ML Paroli (Target 50% - Dribble)<br>📉 Trigger: Drawdown > 0.5%<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe / Aggressive<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -2135,7 +2103,7 @@
                 
                 var exitLabel = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Balance >= Start)' : '⚡ Aggressive (Max Level)';
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: ML Paroli (Target 50%)\nExit: ' + exitLabel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n🎟️ Raffle: Tracking progress');
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: ML Paroli (Target 50% - Dribble)\nExit: ' + exitLabel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n🎟️ Raffle: Tracking progress');
                 
                 runLoop();
             };
@@ -2290,7 +2258,7 @@
         }, 60000);
     }
 
-    // ==================== 23. START ====================
+    // ==================== 22. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
