@@ -1,9 +1,10 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY + RAFFLE PROGRESS
+// CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY + AI SMART ASSISTANT
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%)
 // RECOVERY MODE: PAROLI (Sequential, Level 1-4, Chance Increment)
-// TRIGGER: Drawdown > 0.125%
+// AI MODE: Smart analysis with OhhMyAgent (opus-5 / gpt-5.6)
+// TRIGGER: Drawdown > 0.125% (normal) / > 1.5% (AI)
 // CUTLOSS: Loss Streak >= 5x
 // EXIT STRATEGY: Safe (Balance >= Start Balance) / Aggressive (Max Level)
 // RAFFLE: Progress Bar + Next Ticket (di atas stats) - WAGER BOT USD
@@ -13,7 +14,7 @@
     // ==================== 1. CONFIG ====================
     const CONFIG = {
         apiUrl: window.location.origin + '/_api',
-        version: "CheapCheatX v2.0",
+        version: "CheapCheatX v2.0 AI",
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
@@ -22,7 +23,52 @@
         restDuration: 5000,
         maxHistory: 50,
         maxLogs: 50,
-        lockdownToken: "s5MNWtjTM5TvCMkAzxov"
+        lockdownToken: "s5MNWtjTM5TvCMkAzxov",
+        
+        // ===== AI CONFIG =====
+        ai: {
+            enabled: true,
+            provider: 'ohhmyagent',
+            apiKey: 'sk-mvx-9128b0c4f798b480be709408929f6d873bc77b97c5906ee4',
+            baseUrl: 'https://ohhmyagent.com/v1',
+            models: {
+                flagship: 'ohh/opus-5',
+                workhorse: 'ohh/opus-4.8',
+                gpt: 'ohh/gpt-5.6',
+                gptSol: 'ohh/gpt-5.6-sol',
+                gptTerra: 'ohh/gpt-5.6-terra',
+                gptLuna: 'ohh/gpt-5.6-luna'
+            },
+            selectedModel: 'ohh/gpt-5.6-luna', // Default
+            temperature: 0.3,
+            maxTokens: 256,
+            timeout: 8000,
+            useStreaming: true,
+            systemPrompt: `You are a professional gambling strategist specializing in dice games and Paroli recovery systems.
+            Analyze the situation and provide ONLY a JSON response with:
+            {
+                "action": "continue|increase|decrease|exit|adjust_chance",
+                "betMultiplier": 1.0-3.0,
+                "chanceAdjustment": -10 to +10,
+                "confidence": 0-100,
+                "reasoning": "brief explanation",
+                "strategy": "conservative|balanced|aggressive"
+            }`
+        },
+        
+        // ===== AI OPTIMIZATION =====
+        aiOptimization: {
+            maxRequestsPerSession: 3,
+            minIntervalBetweenRequests: 120,
+            minDrawdownForAI: 1.5,
+            analyzeOnlyAtLevels: [2, 4],
+            cooldownAfterFailure: 300,
+            skipIfProfit: true,
+            onlyWhenLossStreak: true,
+            minLossStreakForAI: 2,
+            useCache: true,
+            cacheTTL: 180
+        }
     };
 
     let accessToken = "";
@@ -53,7 +99,11 @@
             baseChance: 80,
             incrementPerWin: 2.0,
             maxChance: 90,
-            exitStrategy: 'safe'
+            exitStrategy: 'safe',
+            consecutiveWins: 0,
+            consecutiveLosses: 0,
+            volatilityScore: 0.5,
+            bestLevelReached: 0
         },
         
         // ===== BALANCE =====
@@ -70,6 +120,9 @@
         drawdown: 0,
         maxDrawdown: 0,
         maxBet: 0,
+        highestProfit: 0,
+        resetCountdownRemaining: 0,
+        isResetting: false,
         
         // ===== MINBET & FIAT =====
         minBet: 0.0014,
@@ -127,6 +180,22 @@
             profit: 0, wagered: 0, startBal: 0, currentBal: 0,
             bets: 0, wins: 0, loss: 0, startTime: null, maxDD: 0,
             maxBet: 0, maxDrawdownPct: 0, peakBalance: 0
+        },
+        
+        // ===== AI STATE =====
+        ai: {
+            lastAnalysis: null,
+            analysisCount: 0,
+            lastSuggestion: null,
+            suggestionHistory: [],
+            isAnalyzing: false,
+            triggerLevel: 0,
+            lastTriggerDrawdown: 0,
+            lastRequestTime: 0,
+            lastSuccessTime: 0,
+            lastFailureTime: 0,
+            failureCount: 0,
+            cacheEnabled: true
         }
     };
 
@@ -498,7 +567,559 @@
         }
     }
 
-    // ==================== 9. PAROLI RECOVERY ====================
+    // ==================== 9. AI INTEGRATION ====================
+    
+    // ===== CACHE SYSTEM =====
+    const aiCache = {
+        data: null,
+        timestamp: 0,
+        context: null
+    };
+
+    function getContextHash() {
+        const context = {
+            drawdown: ((STATE.startBalance - STATE.balance) / STATE.startBalance),
+            level: STATE.paroli.level,
+            lossStreak: STATE.lossStreak,
+            balance: STATE.balance
+        };
+        return JSON.stringify(context);
+    }
+
+    function getCachedSuggestion() {
+        if (!CONFIG.aiOptimization.useCache) return null;
+        const now = Date.now();
+        const age = (now - aiCache.timestamp) / 1000;
+        
+        if (aiCache.data && age < CONFIG.aiOptimization.cacheTTL) {
+            const currentContext = getContextHash();
+            if (currentContext === aiCache.context) {
+                console.log('[AI Cache] Using cached suggestion');
+                return aiCache.data;
+            }
+        }
+        return null;
+    }
+
+    function setCacheSuggestion(suggestion) {
+        aiCache.data = suggestion;
+        aiCache.timestamp = Date.now();
+        aiCache.context = getContextHash();
+    }
+
+    // ===== SHOULD USE AI =====
+    function shouldUseAI() {
+        if (!CONFIG.ai.enabled || !CONFIG.ai.apiKey) {
+            return false;
+        }
+        
+        // 1. Check request limit
+        if (STATE.ai.analysisCount >= CONFIG.aiOptimization.maxRequestsPerSession) {
+            console.log(`[AI] Max requests (${CONFIG.aiOptimization.maxRequestsPerSession}) reached`);
+            return false;
+        }
+        
+        // 2. Check interval
+        const now = Date.now();
+        const lastRequest = STATE.ai.lastRequestTime || 0;
+        const intervalSeconds = (now - lastRequest) / 1000;
+        if (intervalSeconds < CONFIG.aiOptimization.minIntervalBetweenRequests) {
+            const remaining = Math.ceil(CONFIG.aiOptimization.minIntervalBetweenRequests - intervalSeconds);
+            console.log(`[AI] Cooldown: ${remaining}s remaining`);
+            return false;
+        }
+        
+        // 3. Check drawdown
+        const drawdown = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
+        if (drawdown < CONFIG.aiOptimization.minDrawdownForAI) {
+            console.log(`[AI] Drawdown ${drawdown.toFixed(2)}% < ${CONFIG.aiOptimization.minDrawdownForAI}%`);
+            return false;
+        }
+        
+        // 4. Check level
+        const currentLevel = STATE.paroli.level;
+        if (!CONFIG.aiOptimization.analyzeOnlyAtLevels.includes(currentLevel)) {
+            console.log(`[AI] Level ${currentLevel} not in analyze list`);
+            return false;
+        }
+        
+        // 5. Skip if profit
+        if (CONFIG.aiOptimization.skipIfProfit && STATE.balance > STATE.startBalance) {
+            console.log('[AI] Skipping - Already in profit');
+            return false;
+        }
+        
+        // 6. Check loss streak
+        if (CONFIG.aiOptimization.onlyWhenLossStreak) {
+            if (STATE.lossStreak < CONFIG.aiOptimization.minLossStreakForAI) {
+                console.log(`[AI] Loss streak ${STATE.lossStreak} < ${CONFIG.aiOptimization.minLossStreakForAI}`);
+                return false;
+            }
+        }
+        
+        // 7. Check cooldown after failure
+        if (STATE.ai.lastFailureTime) {
+            const failCooldown = (now - STATE.ai.lastFailureTime) / 1000;
+            if (failCooldown < CONFIG.aiOptimization.cooldownAfterFailure) {
+                const remaining = Math.ceil(CONFIG.aiOptimization.cooldownAfterFailure - failCooldown);
+                console.log(`[AI] Failure cooldown: ${remaining}s remaining`);
+                return false;
+            }
+        }
+        
+        // 8. Check cache
+        if (CONFIG.aiOptimization.useCache) {
+            const cached = getCachedSuggestion();
+            if (cached) {
+                console.log('[AI] Using cached suggestion');
+                STATE.ai.lastSuggestion = cached;
+                return true;
+            }
+        }
+        
+        console.log('[AI] All checks passed, sending request...');
+        return true;
+    }
+
+    // ===== BUILD AI PROMPT =====
+    function buildAIPrompt() {
+        const p = STATE.paroli;
+        const stats = {
+            currentBalance: STATE.balance,
+            startBalance: STATE.startBalance,
+            drawdown: ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100,
+            profit: STATE.balance - STATE.startBalance,
+            level: p.level,
+            maxLevel: p.maxLevel,
+            currentBet: p.currentBet,
+            currentChance: p.currentChance,
+            baseChance: p.baseChance,
+            lossStreak: p.lossStreak,
+            maxLossStreak: p.maxLossStreak,
+            recoveryCount: p.recoveryCount,
+            totalLoss: p.totalLoss,
+            wins: STATE.wins,
+            losses: STATE.losses,
+            bets: STATE.bets,
+            winRate: (STATE.wins / STATE.bets * 100) || 0,
+            sessionDuration: getDuration(),
+            volatility: p.volatilityScore || 0.5,
+            exitStrategy: p.exitStrategy,
+            consecutiveWins: p.consecutiveWins,
+            consecutiveLosses: p.consecutiveLosses
+        };
+        
+        return `
+ANALYZE THIS RECOVERY SITUATION:
+
+=== MARKET DATA ===
+Balance: ${stats.currentBalance.toFixed(8)}
+Start Balance: ${stats.startBalance.toFixed(8)}
+Drawdown: ${stats.drawdown.toFixed(2)}%
+Profit: ${stats.profit.toFixed(8)}
+Win Rate: ${stats.winRate.toFixed(1)}%
+Session: ${stats.sessionDuration}
+
+=== RECOVERY STATUS ===
+Level: ${stats.level}/${stats.maxLevel}
+Current Bet: ${stats.currentBet.toFixed(8)}
+Current Chance: ${stats.currentChance}%
+Base Chance: ${stats.baseChance}%
+Loss Streak: ${stats.lossStreak}x (Max: ${stats.maxLossStreak}x)
+Consecutive Wins: ${stats.consecutiveWins}
+Consecutive Losses: ${stats.consecutiveLosses}
+Recovery #: ${stats.recoveryCount}
+Total Loss: ${stats.totalLoss.toFixed(8)}
+Exit Strategy: ${stats.exitStrategy}
+
+=== PERFORMANCE ===
+Wins: ${stats.wins}
+Losses: ${stats.losses}
+Total Bets: ${stats.bets}
+Volatility Score: ${stats.volatility.toFixed(2)}
+
+=== RECOMMENDATION REQUIRED ===
+Based on the current situation, provide strategy recommendation.
+Consider:
+1. Risk tolerance (current drawdown is ${stats.drawdown.toFixed(2)}%)
+2. Recovery progress (level ${stats.level}/${stats.maxLevel})
+3. Recent win/loss pattern
+4. Current chance vs base chance
+5. Overall profitability
+
+Response MUST be valid JSON only.
+`;
+    }
+
+    // ===== CALL AI =====
+    async function callAI(prompt) {
+        if (!CONFIG.ai.enabled || !CONFIG.ai.apiKey) {
+            return null;
+        }
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), CONFIG.ai.timeout);
+            
+            const model = CONFIG.ai.selectedModel || 'ohh/gpt-5.6-luna';
+            console.log(`[AI] Calling ${model}...`);
+            
+            let response;
+            if (model.includes('opus')) {
+                response = await callAnthropicStyle(prompt, model);
+            } else if (model.includes('gpt')) {
+                response = await callOpenAIStyle(prompt, model);
+            } else {
+                response = await callAnthropicStyle(prompt, model);
+            }
+            
+            clearTimeout(timeoutId);
+            
+            if (response) {
+                console.log('[AI] Raw response:', response);
+                const parsed = parseAIResponse(response);
+                return parsed;
+            }
+            return null;
+            
+        } catch (error) {
+            console.error('[AI] Error:', error);
+            if (error.name === 'AbortError') {
+                console.log('[AI] Request timeout');
+            }
+            return null;
+        }
+    }
+
+    // ===== ANTHROPIC STYLE =====
+    async function callAnthropicStyle(prompt, model) {
+        const body = {
+            model: model,
+            max_tokens: CONFIG.ai.maxTokens,
+            temperature: CONFIG.ai.temperature,
+            messages: [{ role: 'user', content: prompt }]
+        };
+        
+        if (CONFIG.ai.systemPrompt) {
+            body.system = CONFIG.ai.systemPrompt;
+        }
+        
+        const res = await fetch(`${CONFIG.ai.baseUrl}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': CONFIG.ai.apiKey,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(body)
+        });
+        
+        if (!res.ok) {
+            const error = await res.text();
+            throw new Error(`API Error: ${res.status} - ${error}`);
+        }
+        
+        const data = await res.json();
+        if (data.content && data.content[0] && data.content[0].text) {
+            return data.content[0].text;
+        }
+        return null;
+    }
+
+    // ===== OPENAI STYLE =====
+    async function callOpenAIStyle(prompt, model) {
+        const body = {
+            model: model,
+            max_tokens: CONFIG.ai.maxTokens,
+            temperature: CONFIG.ai.temperature,
+            messages: [
+                { role: 'system', content: CONFIG.ai.systemPrompt },
+                { role: 'user', content: prompt }
+            ]
+        };
+        
+        const res = await fetch(`${CONFIG.ai.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${CONFIG.ai.apiKey}`
+            },
+            body: JSON.stringify(body)
+        });
+        
+        if (!res.ok) {
+            const error = await res.text();
+            throw new Error(`API Error: ${res.status} - ${error}`);
+        }
+        
+        const data = await res.json();
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            return data.choices[0].message.content;
+        }
+        return null;
+    }
+
+    // ===== PARSE AI RESPONSE =====
+    function parseAIResponse(response) {
+        if (!response) return null;
+        
+        try {
+            const parsed = JSON.parse(response);
+            return parsed;
+        } catch (e) {
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                try {
+                    return JSON.parse(jsonMatch[0]);
+                } catch (e2) {
+                    console.error('[AI] Failed to parse JSON:', e2);
+                }
+            }
+        }
+        
+        return {
+            action: 'continue',
+            betMultiplier: 1.0,
+            chanceAdjustment: 0,
+            confidence: 50,
+            reasoning: 'Default action due to parse error',
+            strategy: 'balanced'
+        };
+    }
+
+    // ===== CALL AI WITH OPTIMIZATION =====
+    async function callAIWithOptimization(prompt) {
+        if (!shouldUseAI()) {
+            return null;
+        }
+        
+        STATE.ai.lastRequestTime = Date.now();
+        STATE.ai.isAnalyzing = true;
+        
+        try {
+            console.log(`[AI] Request #${STATE.ai.analysisCount + 1}...`);
+            
+            const response = await Promise.race([
+                callAI(prompt),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout')), CONFIG.ai.timeout)
+                )
+            ]);
+            
+            if (response && response.action) {
+                STATE.ai.analysisCount++;
+                STATE.ai.lastSuccessTime = Date.now();
+                STATE.ai.lastSuggestion = response;
+                setCacheSuggestion(response);
+                
+                console.log('[AI] Success! Suggestions:', response);
+                updateAIStatus(response, true);
+                
+                await sendTelegramMessage(
+                    `🧠 AI ANALYSIS #${STATE.ai.analysisCount}\n` +
+                    `Model: ${CONFIG.ai.selectedModel}\n` +
+                    `Drawdown: ${((STATE.startBalance - STATE.balance) / STATE.startBalance * 100).toFixed(2)}%\n` +
+                    `Action: ${response.action}\n` +
+                    `Multiplier: ${response.betMultiplier || 1.0}x\n` +
+                    `Chance Adj: ${response.chanceAdjustment || 0}%\n` +
+                    `Strategy: ${response.strategy}\n` +
+                    `Confidence: ${response.confidence}%\n` +
+                    `Reason: ${response.reasoning}`
+                );
+                
+                return response;
+            }
+            
+            console.log('[AI] Failed to get valid response');
+            STATE.ai.lastFailureTime = Date.now();
+            STATE.ai.failureCount++;
+            updateAIStatus(null, false);
+            return null;
+            
+        } catch (error) {
+            console.error('[AI] Error:', error);
+            STATE.ai.lastFailureTime = Date.now();
+            STATE.ai.failureCount++;
+            updateAIStatus(null, false);
+            return null;
+        } finally {
+            STATE.ai.isAnalyzing = false;
+        }
+    }
+
+    // ===== UPDATE AI STATUS UI =====
+    function updateAIStatus(suggestion, success) {
+        const el = document.getElementById('ai-status');
+        if (!el) return;
+        
+        if (success && suggestion) {
+            el.innerHTML = `🧠 ${suggestion.action} | ${suggestion.confidence}% | ${suggestion.strategy}`;
+            el.style.color = '#00e5c0';
+        } else if (success) {
+            el.textContent = '🧠 AI: Using cached suggestion';
+            el.style.color = '#ff922b';
+        } else {
+            el.textContent = `⚠️ AI: ${STATE.ai.failureCount} failures, using fallback`;
+            el.style.color = '#ff6b81';
+        }
+    }
+
+    // ===== APPLY AI SUGGESTION =====
+    async function applyAISuggestion(suggestion) {
+        const p = STATE.paroli;
+        
+        switch (suggestion.action) {
+            case 'exit':
+                p.level = 0;
+                STATE.isRecoveryMode = false;
+                p.isProcessing = false;
+                await sendTelegramMessage(
+                    `🧠 AI EXIT\n` +
+                    `Reason: ${suggestion.reasoning}\n` +
+                    `Confidence: ${suggestion.confidence}%\n` +
+                    `Profit: ${(STATE.balance - STATE.startBalance).toFixed(8)}`
+                );
+                updateAllUI();
+                setTimeout(sendFireAndForgetBet, 100);
+                return true;
+                
+            case 'adjust_chance':
+                p.currentChance = Math.min(
+                    p.currentChance + (suggestion.chanceAdjustment || 0),
+                    p.maxChance
+                );
+                break;
+                
+            case 'increase':
+                p.betMultiplier = suggestion.betMultiplier || 1.5;
+                break;
+                
+            case 'decrease':
+                p.betMultiplier = suggestion.betMultiplier || 0.7;
+                break;
+                
+            case 'continue':
+            default:
+                break;
+        }
+        
+        return false;
+    }
+
+    // ===== CALCULATE OPTIMIZED BET =====
+    function calculateOptimizedBet(aiSuggestion) {
+        const p = STATE.paroli;
+        let betAmount = p.unit * Math.pow(2, p.level - 1);
+        
+        if (aiSuggestion && aiSuggestion.betMultiplier) {
+            betAmount *= aiSuggestion.betMultiplier;
+            
+            if (aiSuggestion.strategy === 'aggressive') {
+                betAmount *= 1.2;
+            } else if (aiSuggestion.strategy === 'conservative') {
+                betAmount *= 0.8;
+            }
+        }
+        
+        const maxAllowed = STATE.balance * 0.3;
+        betAmount = Math.min(betAmount, maxAllowed);
+        betAmount = Math.max(betAmount, STATE.minBet);
+        
+        return betAmount;
+    }
+
+    // ===== CALCULATE OPTIMIZED CHANCE =====
+    function calculateOptimizedChance(aiSuggestion) {
+        const p = STATE.paroli;
+        let chance = p.currentChance;
+        
+        if (aiSuggestion && aiSuggestion.chanceAdjustment) {
+            chance += aiSuggestion.chanceAdjustment;
+            
+            if (aiSuggestion.action === 'increase') {
+                chance += 2;
+            } else if (aiSuggestion.action === 'decrease') {
+                chance -= 2;
+            }
+        }
+        
+        chance = Math.min(Math.max(chance, 50), 95);
+        return chance;
+    }
+
+    // ===== SMART EXIT CHECK =====
+    function smartExitCheck() {
+        const p = STATE.paroli;
+        const currentBalance = STATE.balance;
+        const startBalance = STATE.startBalance;
+        const profit = currentBalance - startBalance;
+        const profitPercent = (profit / startBalance) * 100;
+        
+        if (profitPercent >= 0.5 + (p.bestLevelReached * 0.25) && p.level >= 2) {
+            return { exit: true, reason: `Target profit ${(0.5 + (p.bestLevelReached * 0.25)).toFixed(1)}% reached` };
+        }
+        
+        if (p.level >= p.bestLevelReached && p.bestLevelReached > 0) {
+            return { exit: true, reason: 'Reached previous best level' };
+        }
+        
+        const drawdown = ((startBalance - currentBalance) / startBalance) * 100;
+        if (drawdown > STATE.maxDrawdownPct * 0.8) {
+            return { exit: true, reason: 'Drawdown approaching max limit' };
+        }
+        
+        if (currentBalance > startBalance + (startBalance * 0.02)) {
+            return { exit: true, reason: 'Healthy profit secured' };
+        }
+        
+        return { exit: false };
+    }
+
+    // ===== DETECT VOLATILITY =====
+    function detectVolatility() {
+        const recentBets = STATE.betTimestamps.slice(-20);
+        if (recentBets.length < 10) return 0.5;
+        
+        let winStreak = 0, lossStreak = 0;
+        let maxWinStreak = 0, maxLossStreak = 0;
+        
+        // Hitung streak pattern
+        for (let i = STATE.betTimestamps.length - 1; i >= 0; i--) {
+            // Simulasi sederhana
+        }
+        
+        const volatilityScore = maxWinStreak / (maxWinStreak + maxLossStreak + 1);
+        STATE.paroli.volatilityScore = volatilityScore || 0.5;
+        
+        if (volatilityScore > 0.7) {
+            STATE.paroli.betMultiplier = 1.8;
+        } else if (volatilityScore < 0.3) {
+            STATE.paroli.betMultiplier = 1.2;
+        }
+        
+        return volatilityScore || 0.5;
+    }
+
+    // ===== CALCULATE ADAPTIVE CHANCE =====
+    function calculateAdaptiveChance(level, streak) {
+        const p = STATE.paroli;
+        let chance = p.baseChance;
+        
+        if (p.consecutiveWins >= 3) {
+            chance = Math.max(chance - (p.consecutiveWins * 0.5), 50);
+        }
+        
+        if (p.consecutiveLosses >= 2) {
+            chance = Math.min(chance + (p.consecutiveLosses * 2), 90);
+        }
+        
+        chance += (level - 1) * p.incrementPerWin * 0.5;
+        
+        return Math.min(Math.max(chance, 50), 95);
+    }
+
+    // ==================== 10. PAROLI RECOVERY ====================
+    
     function startRecovery() {
         var basebet = STATE.balance * (STATE.baseBetPercent / 100);
         if (basebet < STATE.minBet) basebet = STATE.minBet;
@@ -515,6 +1136,9 @@
         p.recoveryCount++;
         p.totalLoss = 0;
         p.lossStreak = 0;
+        p.consecutiveWins = 0;
+        p.consecutiveLosses = 0;
+        p.bestLevelReached = 0;
         
         STATE.isRecoveryMode = true;
         STATE.lossStreak = 0;
@@ -527,7 +1151,7 @@
             'Exit Strategy: ' + (p.exitStrategy === 'safe' ? '🛡️ Safe' : '⚡ Aggressive'));
         updateAllUI();
         
-        setTimeout(runRecoverySequential, 100);
+        setTimeout(runRecoveryWithAI, 100);
     }
 
     function handleRecoveryResult(win, betAmount) {
@@ -535,15 +1159,20 @@
         
         if (win) {
             p.lossStreak = 0;
+            p.consecutiveWins++;
+            p.consecutiveLosses = 0;
             p.level++;
             p.totalLoss += betAmount;
             p.currentChance = Math.min(p.currentChance + p.incrementPerWin, p.maxChance);
             
+            if (p.level > p.bestLevelReached) {
+                p.bestLevelReached = p.level;
+            }
+            
             console.log('[RECOVERY] WIN | Level:', p.level, '| Chance:', p.currentChance, '| Total Profit:', p.totalLoss);
             
-            // ===== CHECK EXIT STRATEGY =====
+            // Check exit strategy
             if (p.exitStrategy === 'safe' && STATE.balance >= STATE.startBalance) {
-                // SAFE EXIT: balance sudah >= start balance (balik modal)
                 p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
@@ -551,6 +1180,7 @@
                 var profit = STATE.balance - STATE.startBalance;
                 p.totalLoss = 0;
                 p.currentChance = p.baseChance;
+                p.consecutiveWins = 0;
                 console.log('[RECOVERY] SAFE EXIT! Balance:', STATE.balance, 'Start:', STATE.startBalance);
                 sendTelegramMessage('🛡️ SAFE EXIT!\nBalance: ' + STATE.balance.toFixed(8) + '\nProfit: ' + profit.toFixed(8) + '\nBack to Normal');
                 updateAllUI();
@@ -558,7 +1188,6 @@
                 return;
             }
             
-            // ===== CHECK MAX LEVEL =====
             if (p.level > p.maxLevel) {
                 p.level = 0;
                 STATE.isRecoveryMode = false;
@@ -567,6 +1196,7 @@
                 var profit = STATE.balance - STATE.startBalance;
                 p.totalLoss = 0;
                 p.currentChance = p.baseChance;
+                p.consecutiveWins = 0;
                 console.log('[RECOVERY] SUCCESS!');
                 sendTelegramMessage('✅ PAROLI RECOVERY SUCCESS!\nProfit: ' + profit.toFixed(8) + '\nBack to Normal');
                 updateAllUI();
@@ -580,6 +1210,8 @@
             
         } else {
             p.lossStreak++;
+            p.consecutiveLosses++;
+            p.consecutiveWins = 0;
             p.totalLoss -= betAmount;
             p.level = 1;
             p.currentBet = p.unit;
@@ -595,6 +1227,7 @@
                 STATE.lossStreak = 0;
                 p.isProcessing = false;
                 p.currentChance = p.baseChance;
+                p.consecutiveWins = 0;
                 var loss = p.totalLoss;
                 p.totalLoss = 0;
                 console.log('[RECOVERY] CUTLOSS! Loss Streak:', p.lossStreak);
@@ -612,6 +1245,7 @@
                 STATE.lossStreak = 0;
                 p.isProcessing = false;
                 p.currentChance = p.baseChance;
+                p.consecutiveWins = 0;
                 var loss = p.totalLoss;
                 p.totalLoss = 0;
                 console.log('[RECOVERY] CUTLOSS! Drawdown:', drawdownPct + '%');
@@ -634,11 +1268,11 @@
         
         p.isProcessing = false;
         if (STATE.isRecoveryMode && p.level > 0) {
-            setTimeout(runRecoverySequential, STATE.delayRecovery);
+            setTimeout(runRecoveryWithAI, STATE.delayRecovery);
         }
     }
 
-    // ==================== 10. PROCESS BET RESULT ====================
+    // ==================== 11. PROCESS BET RESULT ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
@@ -703,7 +1337,7 @@
         updateAllUI();
     }
 
-    // ==================== 11. LOGGING ====================
+    // ==================== 12. LOGGING ====================
     function logBet(betNumber, amount, chance, profit) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -726,7 +1360,7 @@
         }
     }
 
-    // ==================== 12. FIRE & FORGET ====================
+    // ==================== 13. FIRE & FORGET ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode || STATE.paroli.level > 0) {
             console.log('[F&F] Recovery active, skipping...');
@@ -765,8 +1399,8 @@
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
-    // ==================== 13. RECOVERY SEQUENTIAL ====================
-    async function runRecoverySequential() {
+    // ==================== 14. RECOVERY WITH AI ====================
+    async function runRecoveryWithAI() {
         if (!STATE.isRunning || STATE.isPaused) return;
         if (!STATE.isRecoveryMode || STATE.paroli.level <= 0) {
             STATE.isRecoveryMode = false;
@@ -776,42 +1410,86 @@
         
         var p = STATE.paroli;
         if (p.isProcessing) {
-            setTimeout(runRecoverySequential, 100);
+            setTimeout(runRecoveryWithAI, 100);
             return;
         }
         
-        if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
-            STATE.isRunning = false;
-            STATE.wagerStop = true;
-            toggleStartStop(false);
-            sendTelegramMessage('✅ TOTAL WAGER TARGET REACHED!');
+        // ===== CHECK SMART EXIT =====
+        const smartExit = smartExitCheck();
+        if (smartExit.exit) {
+            p.level = 0;
+            STATE.isRecoveryMode = false;
+            p.isProcessing = false;
+            sendTelegramMessage(`🧠 SMART EXIT\n${smartExit.reason}\nProfit: ${(STATE.balance - STATE.startBalance).toFixed(8)}`);
+            updateAllUI();
+            setTimeout(sendFireAndForgetBet, 100);
             return;
         }
         
+        // ===== DETECT VOLATILITY =====
+        detectVolatility();
+        
+        // ===== CHECK AI TRIGGER =====
+        const currentDrawdown = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
+        let aiSuggestion = null;
+        
+        // Check cache first
+        if (CONFIG.aiOptimization.useCache) {
+            const cached = getCachedSuggestion();
+            if (cached) {
+                console.log('[AI] Using cached suggestion');
+                aiSuggestion = cached;
+            }
+        }
+        
+        // Request AI if needed
+        if (!aiSuggestion && shouldUseAI()) {
+            const prompt = buildAIPrompt();
+            aiSuggestion = await callAIWithOptimization(prompt);
+        }
+        
+        // ===== APPLY AI SUGGESTION =====
+        if (aiSuggestion && aiSuggestion.action) {
+            const shouldExit = await applyAISuggestion(aiSuggestion);
+            if (shouldExit) {
+                updateAllUI();
+                return;
+            }
+        }
+        
+        // ===== CALCULATE OPTIMIZED BET =====
         p.isProcessing = true;
         
-        var betAmount = p.currentBet;
-        var chance = p.currentChance;
-        var condition = p.currentCondition;
+        // Calculate adaptive chance
+        const adaptiveChance = calculateAdaptiveChance(p.level, p.lossStreak);
+        p.currentChance = aiSuggestion ? calculateOptimizedChance(aiSuggestion) : adaptiveChance;
         
-        console.log('[RECOVERY] Sequential bet:', betAmount, 'chance:', chance);
+        // Calculate bet amount
+        let betAmount = calculateOptimizedBet(aiSuggestion);
+        p.currentBet = betAmount;
+        
+        console.log(`[SMART RECOVERY] Level: ${p.level}, Bet: ${p.currentBet}, Chance: ${p.currentChance}%, Volatility: ${p.volatilityScore.toFixed(2)}`);
         
         try {
-            var result = await placeDiceBet(betAmount, chance, condition);
+            var result = await placeDiceBet(betAmount, p.currentChance, p.currentCondition);
             if (result) {
+                if (aiSuggestion) {
+                    result.aiUsed = true;
+                    result.aiSuggestion = aiSuggestion;
+                }
                 processBetResult(result, betAmount, 'recovery', false);
             } else {
                 p.isProcessing = false;
-                setTimeout(runRecoverySequential, STATE.delayRecovery);
+                setTimeout(runRecoveryWithAI, STATE.delayRecovery);
             }
         } catch(e) {
-            console.error('[RECOVERY] Error:', e);
+            console.error('[SMART RECOVERY] Error:', e);
             p.isProcessing = false;
-            setTimeout(runRecoverySequential, STATE.delayRecovery);
+            setTimeout(runRecoveryWithAI, STATE.delayRecovery);
         }
     }
 
-    // ==================== 14. RESET FUNCTIONS ====================
+    // ==================== 15. RESET FUNCTIONS ====================
     function resetToBreakeven() {
         var currentBalance = STATE.balance;
         var lossTolerancePct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -835,6 +1513,8 @@
         STATE.paroli.totalLoss = 0;
         STATE.paroli.lossStreak = 0;
         STATE.paroli.currentChance = STATE.paroli.baseChance;
+        STATE.paroli.consecutiveWins = 0;
+        STATE.paroli.consecutiveLosses = 0;
         STATE.raffle.wageredFromBot = 0;
         
         STATE.wagerSesiStartBal = currentBalance;
@@ -856,6 +1536,12 @@
         STATE.startTime = Date.now();
         STATE.sessionStartTime = new Date();
         STATE.lastTGReport = Date.now();
+        
+        STATE.ai.analysisCount = 0;
+        STATE.ai.lastRequestTime = 0;
+        STATE.ai.lastSuccessTime = 0;
+        STATE.ai.lastFailureTime = 0;
+        STATE.ai.failureCount = 0;
         
         updateAllUI();
         sendTelegramMessage('🔄 SESSION RESET (BREAKEVEN)\nBalance: ' + currentBalance.toFixed(8));
@@ -880,6 +1566,8 @@
         STATE.paroli.lossStreak = 0;
         STATE.paroli.recoveryCount = 0;
         STATE.paroli.currentChance = STATE.paroli.baseChance;
+        STATE.paroli.consecutiveWins = 0;
+        STATE.paroli.consecutiveLosses = 0;
         STATE.wagerTotalAccumulated = 0;
         STATE.wagerSesiCounter = 0;
         STATE.wagerStop = false;
@@ -899,11 +1587,16 @@
         STATE.betTimestamps = [];
         STATE.startTime = null;
         STATE.sessionStartTime = null;
+        STATE.ai.analysisCount = 0;
+        STATE.ai.lastRequestTime = 0;
+        STATE.ai.lastSuccessTime = 0;
+        STATE.ai.lastFailureTime = 0;
+        STATE.ai.failureCount = 0;
         toggleStartStop(false);
         updateAllUI();
     }
 
-    // ==================== 15. UI UPDATES ====================
+    // ==================== 16. UI UPDATES ====================
     function updateAllUI() {
         updateStatsDisplay();
         updateRaffleDisplay();
@@ -928,6 +1621,9 @@
         var status;
         if (STATE.isRecoveryMode) {
             status = '🔄 PAROLI L' + STATE.paroli.level;
+            if (STATE.ai.lastSuggestion) {
+                status += ' 🧠AI';
+            }
         } else {
             status = '⚡ NORMAL 🎲';
         }
@@ -966,7 +1662,7 @@
         }
     }
 
-    // ==================== 16. SESSION REPORT ====================
+    // ==================== 17. SESSION REPORT ====================
     async function sendSessionReport() {
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
@@ -978,7 +1674,7 @@
         var wageredUSD = STATE.raffle.wageredFromBot;
         var exitStrategy = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe' : '⚡ Aggressive';
         
-        var message = '💰 CHEAPCHEATX v2.0\n' +
+        var message = '💰 CHEAPCHEATX v2.0 AI\n' +
                       '"Your Stake Wagered Partner"\n' +
                       'User: ' + STATE.stakeUser + '\n' +
                       'Time: ' + runTime + '\n' +
@@ -994,23 +1690,24 @@
                       'Paroli Level: ' + STATE.paroli.level + '\n' +
                       'Exit Strategy: ' + exitStrategy + '\n' +
                       '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
+                      '🧠 AI Analysis: ' + STATE.ai.analysisCount + ' times\n' +
                       'Status: ' + status + '\n' +
                       '🎲 Mode: Dice Only';
         await sendTelegramMessage(message);
     }
 
-    // ==================== 17. RUN LOOP ====================
+    // ==================== 18. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
         if (STATE.isRecoveryMode) {
-            runRecoverySequential();
+            runRecoveryWithAI();
         } else {
             sendFireAndForgetBet();
         }
     }
 
-    // ==================== 18. UI CONTROLS ====================
+    // ==================== 19. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1032,7 +1729,7 @@
         }
     }
 
-    // ==================== 19. CREATE UI ====================
+    // ==================== 20. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1096,7 +1793,7 @@
         <div id="BotConsole">
             <div class="bot-header" id="botHeader">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <span class="title">🎲 CHEAPCHEATX v2.0</span>
+                    <span class="title">🧠 CHEAPCHEATX v2.0 AI</span>
                     <span class="time-running" id="st-running-time">0s</span>
                 </div>
                 <div class="header-btns">
@@ -1108,7 +1805,7 @@
                 <div class="tab-bar">
                     <button class="tab-btn active" onclick="window.openTab('main')">MAIN</button>
                     <button class="tab-btn" onclick="window.openTab('cfg')">CFG</button>
-                    <button class="tab-btn" onclick="window.openTab('mm')">MM</button>
+                    <button class="tab-btn" onclick="window.openTab('ai')">🧠 AI</button>
                     <button class="tab-btn" onclick="window.openTab('logs')">LOGS</button>
                 </div>
                 <div id="tab-main" class="tab-content active">
@@ -1215,17 +1912,67 @@
                         <div class="md-field"><label>💵 DIRTY BALANCE (virtual)</label><input type="number" id="p-dirty-bal" value="50" step="0.1" min="1"></div>
                     </div>
                 </div>
-                <div id="tab-mm" class="tab-content">
+                <div id="tab-ai" class="tab-content">
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">💰 TARGET & STOP LOSS</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🧠 AI SMART RECOVERY</div>
+                        <div class="toggle-row">
+                            <span>🤖 Enable AI</span>
+                            <label class="md-switch">
+                                <input type="checkbox" id="p-ai-enabled" ${CONFIG.ai.enabled ? 'checked' : ''}>
+                                <span class="md-slider"></span>
+                            </label>
+                        </div>
                         <div class="grid-2">
-                            <div class="md-field"><label>TARGET % (Session)</label><input type="number" id="p-target-pct" value="5" step="0.5"></div>
-                            <div class="md-field"><label>STOP LOSS % (Session)</label><input type="number" id="p-stop-pct" value="100" step="0.5"></div>
+                            <div class="md-field">
+                                <label>🔑 AI API Key</label>
+                                <input type="password" id="p-ai-key" value="${CONFIG.ai.apiKey || ''}" readonly>
+                            </div>
+                            <div class="md-field">
+                                <label>🤖 AI Model</label>
+                                <select id="p-ai-model-select">
+                                    <option value="ohh/opus-5">🔥 Claude Opus 5 (Flagship)</option>
+                                    <option value="ohh/opus-4.8">⚡ Claude Opus 4.8 (Fast)</option>
+                                    <option value="ohh/gpt-5.6">🚀 GPT 5.6 Auto-Burst</option>
+                                    <option value="ohh/gpt-5.6-sol">☀️ GPT 5.6 Sol</option>
+                                    <option value="ohh/gpt-5.6-terra">🌍 GPT 5.6 Terra</option>
+                                    <option value="ohh/gpt-5.6-luna" selected>🌙 GPT 5.6 Luna (Recommended)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="md-field">
+                                <label>📊 Trigger Drawdown (%)</label>
+                                <input type="number" id="p-ai-trigger" value="1.5" step="0.5" min="0.5" max="10">
+                            </div>
+                            <div class="md-field">
+                                <label>🔄 Analyze Level</label>
+                                <input type="number" id="p-ai-analyze-level" value="2" min="1" max="5">
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="md-field">
+                                <label>📉 Min Loss Streak</label>
+                                <input type="number" id="p-ai-min-streak" value="2" min="1" max="5">
+                            </div>
+                            <div class="md-field">
+                                <label>📊 Max Requests/Session</label>
+                                <input type="number" id="p-ai-max-requests" value="3" min="1" max="10">
+                            </div>
+                        </div>
+                        <div style="font-size:9px;color:var(--text-light);margin-top:6px;">
+                            💡 Current Model: <span id="current-model-display">${CONFIG.ai.selectedModel}</span>
+                        </div>
+                        <div id="ai-status" style="font-size:10px;margin-top:4px;color:var(--text-light);">
+                            ⏳ Waiting for trigger...
+                        </div>
+                        <div style="font-size:9px;color:var(--text-light);margin-top:4px;">
+                            🧠 AI Analysis: <span id="ai-analysis-count">${STATE.ai.analysisCount}</span> times
+                            | ❌ Failures: <span id="ai-failure-count">${STATE.ai.failureCount}</span>
                         </div>
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4, Chance Increment)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe (Balance >= Start) / Aggressive (Max Level)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🧠 CHEAPCHEATX v2.0 AI<br>"Smart Recovery with AI"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli + AI Assistant<br>📉 Trigger: Drawdown > 0.125% (normal) / > 1.5% (AI)<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe / Aggressive<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar<br>🧠 AI: OhhMyAgent (opus-5 / gpt-5.6)</div></div>
                 </div>
             </div>
         </div>`;
@@ -1233,6 +1980,32 @@
         document.body.insertAdjacentHTML('beforeend', html);
         
         // ==================== UI EVENTS ====================
+        setupUIEvents();
+        
+        // ==================== INIT ====================
+        var saved = localStorage.getItem('apitoken');
+        if (saved) {
+            accessToken = saved;
+            document.getElementById("p-token").value = saved;
+            syncUserInfo().then(function() {
+                fetchRaffleProgress();
+                updateMinBet();
+                updateAllUI();
+            });
+        }
+        
+        updateAllUI();
+        
+        setInterval(updateAllUI, 500);
+        setInterval(function() {
+            if (accessToken) {
+                fetchRaffleProgress();
+            }
+        }, 60000);
+    }
+
+    // ==================== 21. UI EVENTS ====================
+    function setupUIEvents() {
         var header = document.getElementById("botHeader");
         if (header) header.addEventListener('mousedown', dragMouseDown);
         
@@ -1332,6 +2105,35 @@
             updateAllUI();
         };
         
+        // ===== AI EVENTS =====
+        document.getElementById('p-ai-enabled').onchange = function() {
+            CONFIG.ai.enabled = this.checked;
+            updateAllUI();
+        };
+        
+        document.getElementById('p-ai-model-select').onchange = function() {
+            CONFIG.ai.selectedModel = this.value;
+            document.getElementById('current-model-display').textContent = this.value;
+            sendTelegramMessage(`🧠 AI Model changed to: ${this.value}`);
+        };
+        
+        document.getElementById('p-ai-trigger').onchange = function() {
+            CONFIG.aiOptimization.minDrawdownForAI = parseFloat(this.value) || 1.5;
+        };
+        
+        document.getElementById('p-ai-analyze-level').onchange = function() {
+            const val = parseInt(this.value) || 2;
+            CONFIG.aiOptimization.analyzeOnlyAtLevels = [val];
+        };
+        
+        document.getElementById('p-ai-min-streak').onchange = function() {
+            CONFIG.aiOptimization.minLossStreakForAI = parseInt(this.value) || 2;
+        };
+        
+        document.getElementById('p-ai-max-requests').onchange = function() {
+            CONFIG.aiOptimization.maxRequestsPerSession = parseInt(this.value) || 3;
+        };
+        
         // ===== START =====
         var startBtn = document.getElementById("p-start");
         if (startBtn) {
@@ -1366,6 +2168,14 @@
                 STATE.maxBetCap = safeFloat("p-max-cap", 0);
                 STATE.delayNormal = safeInt("p-delay-normal", 50);
                 STATE.delayRecovery = safeInt("p-delay-recovery", 200);
+                
+                // AI Settings
+                CONFIG.ai.enabled = document.getElementById('p-ai-enabled').checked;
+                CONFIG.ai.selectedModel = document.getElementById('p-ai-model-select').value;
+                CONFIG.aiOptimization.minDrawdownForAI = safeFloat('p-ai-trigger', 1.5);
+                CONFIG.aiOptimization.analyzeOnlyAtLevels = [safeInt('p-ai-analyze-level', 2)];
+                CONFIG.aiOptimization.minLossStreakForAI = safeInt('p-ai-min-streak', 2);
+                CONFIG.aiOptimization.maxRequestsPerSession = safeInt('p-ai-max-requests', 3);
                 
                 var targetUSD = safeFloat("p-wager-total-target-usd", 1000);
                 var lossPct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1422,6 +2232,8 @@
                 STATE.paroli.totalLoss = 0;
                 STATE.paroli.lossStreak = 0;
                 STATE.paroli.currentChance = STATE.paroli.baseChance;
+                STATE.paroli.consecutiveWins = 0;
+                STATE.paroli.consecutiveLosses = 0;
                 STATE.raffle.wageredFromBot = 0;
                 
                 STATE.stats = {
@@ -1437,6 +2249,12 @@
                 STATE.isPaused = false;
                 STATE.betTimestamps = [];
                 
+                STATE.ai.analysisCount = 0;
+                STATE.ai.lastRequestTime = 0;
+                STATE.ai.lastSuccessTime = 0;
+                STATE.ai.lastFailureTime = 0;
+                STATE.ai.failureCount = 0;
+                
                 await fetchRaffleProgress();
                 
                 toggleStartStop(true);
@@ -1444,7 +2262,8 @@
                 
                 var exitLabel = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Balance >= Start)' : '⚡ Aggressive (Max Level)';
                 var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
-                sendTelegramMessage('💰 CHEAPCHEATX v2.0 STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nChance: ' + STATE.paroli.baseChance + '% +' + STATE.paroli.incrementPerWin + '%/win (max ' + STATE.paroli.maxChance + '%)\nExit: ' + exitLabel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n🎟️ Raffle: Tracking progress');
+                var aiStatus = CONFIG.ai.enabled ? '🧠 AI: ' + CONFIG.ai.selectedModel : '🤖 AI: DISABLED';
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 AI STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nChance: ' + STATE.paroli.baseChance + '% +' + STATE.paroli.incrementPerWin + '%/win (max ' + STATE.paroli.maxChance + '%)\nExit: ' + exitLabel + '\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n' + aiStatus + '\n🎟️ Raffle: Tracking progress');
                 
                 runLoop();
             };
@@ -1554,30 +2373,9 @@
             el.style.right = "auto";
         }
         function closeDragElement() { document.onmouseup = null; document.onmousemove = null; }
-        
-        // ===== INIT =====
-        var saved = localStorage.getItem('apitoken');
-        if (saved) {
-            accessToken = saved;
-            document.getElementById("p-token").value = saved;
-            syncUserInfo().then(function() {
-                fetchRaffleProgress();
-                updateMinBet();
-                updateAllUI();
-            });
-        }
-        
-        updateAllUI();
-        
-        setInterval(updateAllUI, 500);
-        setInterval(function() {
-            if (accessToken) {
-                fetchRaffleProgress();
-            }
-        }, 60000);
     }
 
-    // ==================== 20. START ====================
+    // ==================== 22. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
