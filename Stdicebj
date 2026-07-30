@@ -1,5 +1,5 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - ML RECOVERY 50% + WAGERED KEEP
+// CHEAPCHEATX v2.0 - ML RECOVERY 50% + SYNC FIX + WAGERED KEEP
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%)
 // RECOVERY MODE: ML + PAROLI (50% target, adaptive chance)
@@ -39,7 +39,7 @@
             enabled: true,
             maxHistory: 200,
             minSamplesForPrediction: 10,
-            saveInterval: 60000, // Save setiap 1 menit
+            saveInterval: 60000,
         }
     };
 
@@ -465,7 +465,7 @@
         return false;
     }
 
-    // ==================== 8. PLACE DICE BET ====================
+    // ==================== 8. PLACE DICE BET (FIXED SYNC) ====================
     async function placeDiceBet(amount, chance, condition) {
         var target = condition === 'above' ? (100 - chance) : chance;
         var apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
@@ -512,6 +512,7 @@
                 }
             }
             
+            // ===== UPDATE BALANCE =====
             if (d.user && d.user.wallets && d.user.wallets[0]) {
                 STATE.balance = parseFloat(d.user.wallets[0].balance);
             } else {
@@ -519,6 +520,13 @@
                 STATE.balance += pnl;
                 if (STATE.balance < 0) STATE.balance = 0;
             }
+            
+            // ===== SYNC: Update profit & drawdown =====
+            STATE.profit = STATE.balance - STATE.startBalance;
+            STATE.drawdown = STATE.startBalance - STATE.balance;
+            if (STATE.drawdown < 0) STATE.drawdown = 0;
+            
+            console.log(`[SYNC] Balance: ${STATE.balance.toFixed(8)}, Profit: ${STATE.profit.toFixed(8)}`);
             
             updateAllUI();
             
@@ -530,7 +538,9 @@
                 state: d.state,
                 result: win ? 'win' : 'loss',
                 game: 'dice',
-                chance: chance
+                chance: chance,
+                realBalance: STATE.balance,
+                profit: STATE.profit
             };
             
         } catch (error) {
@@ -554,7 +564,6 @@
         },
         predictions: [],
         
-        // ===== LEARN FROM RESULT =====
         learn: function(result) {
             if (!result) return;
             
@@ -576,7 +585,6 @@
             STATE.ml.isActive = true;
         },
         
-        // ===== ANALYZE PATTERNS =====
         analyzePatterns: function() {
             if (this.history.length < 5) return;
             
@@ -610,11 +618,9 @@
                 this.patterns.volatility *= 1.5;
             }
             
-            // Update ML stats
             STATE.ml.accuracy = this.patterns.winRate * 100;
         },
         
-        // ===== PREDICT NEXT OUTCOME =====
         predict: function() {
             if (this.history.length < CONFIG.ml.minSamplesForPrediction || !CONFIG.ml.enabled) {
                 return { 
@@ -628,17 +634,15 @@
             let wp = this.patterns.winRate;
             let conf = Math.min(this.history.length / 50, 0.85);
             
-            // Adjust based on current streak
             if (this.patterns.lossStreak >= 3) {
-                wp += 0.12; // Law of averages
+                wp += 0.12;
                 conf += 0.05;
             }
             if (this.patterns.winStreak >= 3) {
-                wp -= 0.10; // Regression to mean
+                wp -= 0.10;
                 conf += 0.05;
             }
             
-            // Alternating pattern adjustment
             if (this.patterns.alternating > 0.7) {
                 const lastWin = this.history[this.history.length - 1]?.win;
                 if (lastWin) {
@@ -649,28 +653,20 @@
                 conf += 0.1;
             }
             
-            // Volatility adjustment
             if (this.patterns.volatility > 0.6) {
-                wp *= 0.9; // Less predictable
+                wp *= 0.9;
                 conf *= 0.8;
             }
             
             wp = Math.min(Math.max(wp, 0.25), 0.92);
             conf = Math.min(conf, 0.9);
             
-            // Calculate suggested chance
             let suggestedChance = 80;
-            if (wp > 0.7) {
-                suggestedChance = 85;
-            } else if (wp > 0.6) {
-                suggestedChance = 82;
-            } else if (wp > 0.5) {
-                suggestedChance = 80;
-            } else if (wp > 0.4) {
-                suggestedChance = 75;
-            } else {
-                suggestedChance = 70;
-            }
+            if (wp > 0.7) suggestedChance = 85;
+            else if (wp > 0.6) suggestedChance = 82;
+            else if (wp > 0.5) suggestedChance = 80;
+            else if (wp > 0.4) suggestedChance = 75;
+            else suggestedChance = 70;
             
             const prediction = {
                 winProbability: wp,
@@ -687,7 +683,6 @@
             return prediction;
         },
         
-        // ===== GET OPTIMAL BET MULTIPLIER =====
         getOptimalMultiplier: function(confidence) {
             if (confidence > 0.7) return 1.3;
             if (confidence > 0.5) return 1.1;
@@ -695,7 +690,6 @@
             return 0.7;
         },
         
-        // ===== SAVE ML DATA =====
         save: function() {
             try {
                 const data = {
@@ -704,12 +698,9 @@
                     timestamp: Date.now()
                 };
                 localStorage.setItem('mlData', JSON.stringify(data));
-            } catch(e) {
-                // Silent fail
-            }
+            } catch(e) {}
         },
         
-        // ===== LOAD ML DATA =====
         load: function() {
             try {
                 const data = localStorage.getItem('mlData');
@@ -718,8 +709,6 @@
                     this.history = parsed.history || [];
                     this.patterns = parsed.patterns || this.patterns;
                     console.log(`[ML] Loaded ${this.history.length} records`);
-                    
-                    // Restore patterns from history
                     if (this.history.length > 0) {
                         this.analyzePatterns();
                         console.log(`[ML] Win Rate: ${(this.patterns.winRate * 100).toFixed(1)}%`);
@@ -732,7 +721,6 @@
             return false;
         },
         
-        // ===== GET STATS =====
         getStats: function() {
             return {
                 records: this.history.length,
@@ -790,17 +778,14 @@
         adjust: function(base, drawdown, lossStreak) {
             let c = base;
             
-            // Drawdown adjustment
             if (drawdown > 5) c -= 8;
             else if (drawdown > 3) c -= 5;
             else if (drawdown > 2) c -= 3;
             else if (drawdown > 1) c -= 1;
             
-            // Loss streak adjustment
             if (lossStreak >= 4) c += 8;
             else if (lossStreak >= 2) c += 5;
             
-            // ML optimal blend
             const mlOpt = this.getOptimal();
             if (mlOpt !== 80 && this.performance[mlOpt]?.count > 10) {
                 c = (c + mlOpt) / 2;
@@ -853,7 +838,6 @@
             STATE.lossStreak
         );
         
-        // Blend with ML suggestion
         let finalChance = mlChance;
         if (pred.suggestedChance && pred.confidence > 0.5) {
             finalChance = Math.round((mlChance + pred.suggestedChance) / 2);
@@ -918,7 +902,6 @@
         const pred = ML.predict();
         const optChance = ChanceOptimizer.adjust(p.baseChance, drawdown, STATE.lossStreak);
         
-        // Blend with ML
         let finalChance = optChance;
         if (pred.suggestedChance && pred.confidence > 0.5) {
             finalChance = Math.round((optChance + pred.suggestedChance) / 2);
@@ -929,13 +912,12 @@
         // ===== DYNAMIC BET MULTIPLIER =====
         let mult = ML.getOptimalMultiplier(pred.confidence);
         
-        // Pattern-based adjustment
         if (ML.patterns.alternating > 0.7) {
-            mult = 1.0; // Alternating pattern, keep stable
+            mult = 1.0;
         } else if (ML.patterns.lossStreak >= 3) {
-            mult = Math.min(mult * 1.2, 1.5); // More aggressive on loss streak
+            mult = Math.min(mult * 1.2, 1.5);
         } else if (ML.patterns.winStreak >= 3) {
-            mult = Math.min(mult * 1.1, 1.3); // Slightly aggressive on win streak
+            mult = Math.min(mult * 1.1, 1.3);
         }
         
         // ===== CALCULATE BET =====
@@ -974,7 +956,7 @@
         var chance = result.chance || STATE.normalChance;
         
         STATE.bets++;
-        STATE.wagered += betAmount;  // ✅ WAGERED TETAP DI-TRACK!
+        STATE.wagered += betAmount;
         STATE.betTimestamps.push(Date.now());
         if (STATE.betTimestamps.length > 100) STATE.betTimestamps.shift();
         
@@ -990,24 +972,47 @@
             STATE.paroli.consecutiveWins = 0;
         }
         
-        // ===== UPDATE RECOVERY PROGRESS =====
-        if (isWin) {
+        // ===== SYNC PROFIT FROM REAL BALANCE =====
+        STATE.profit = STATE.balance - STATE.startBalance;
+        STATE.drawdown = STATE.startBalance - STATE.balance;
+        if (STATE.drawdown < 0) STATE.drawdown = 0;
+        
+        if (STATE.drawdown > STATE.maxDrawdown) {
+            STATE.maxDrawdown = STATE.drawdown;
+        }
+        
+        if (betAmount > STATE.maxBet) {
+            STATE.maxBet = betAmount;
+        }
+        
+        STATE.wagerSesiCounter += betAmount;
+        STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
+        if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
+        
+        var wageredUSD = betAmount * STATE.fiatRates.usd;
+        STATE.raffle.wageredFromBot += wageredUSD;
+        var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
+        var totalWagered = wageredFromStake + STATE.raffle.wageredFromBot;
+        STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
+        if (STATE.raffle.nextTicketRemaining <= 0) {
+            STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
+        }
+        
+        logBet(STATE.bets, betAmount, chance, STATE.profit);
+        
+        if (STATE.isRecoveryMode && isWin) {
             STATE.recovery.recoveredAmount += betAmount;
             STATE.recovery.wageredDuringRecovery += betAmount;
         }
         
-        const wageredUSD = betAmount * STATE.fiatRates.usd;
-        STATE.raffle.wageredFromBot += wageredUSD;
+        console.log(`[SYNC] #${STATE.bets} | Win:${isWin} | Bal:${STATE.balance.toFixed(8)} | Profit:${STATE.profit.toFixed(8)}`);
         
-        logBet(STATE.bets, betAmount, chance, isWin ? betAmount : -betAmount);
-        
-        // ===== CHECK RECOVERY TARGET (50%) =====
+        // ===== CHECK RECOVERY TARGET =====
         if (STATE.isRecoveryMode && isWin) {
             const target = STATE.recovery.targetRecovery;
             const recovered = STATE.recovery.recoveredAmount;
             
             if (recovered >= target) {
-                // ✅ RECOVERY 50% SUCCESS!
                 const lossAmount = STATE.recovery.initialLoss;
                 const remainingLoss = lossAmount - recovered;
                 
@@ -1015,25 +1020,21 @@
                 STATE.profit = 0;
                 STATE.startBalance = STATE.balance;
                 
-                console.log(`[RECOVERY] ✅ 50% Target reached! Wagered: ${STATE.wagered.toFixed(8)} (KEEP!)`);
+                console.log(`[RECOVERY] ✅ 50% Target reached! Balance: ${STATE.balance.toFixed(8)}`);
                 
                 STATE.isRecoveryMode = false;
                 STATE.paroli.level = 0;
                 STATE.paroli.isProcessing = false;
                 STATE.paroli.currentChance = STATE.paroli.baseChance;
                 
-                // Send success report
                 const mlStats = ML.getStats();
                 sendTelegramMessage(
                     `✅ RECOVERY 50% SUCCESS!\n` +
-                    `Loss: ${lossAmount.toFixed(8)}\n` +
                     `Recovered: ${recovered.toFixed(8)}\n` +
-                    `Remaining: ${remainingLoss.toFixed(8)}\n` +
                     `Balance: ${STATE.balance.toFixed(8)}\n` +
-                    `Profit: ${STATE.profit.toFixed(8)} (RESET)\n` +
+                    `Profit: 0 (RESET)\n` +
                     `Wagered: ${STATE.wagered.toFixed(8)} (KEEP!) ✅\n` +
-                    `ML Win Rate: ${mlStats.winRate}\n` +
-                    `Back to Normal Mode`
+                    `ML Win Rate: ${mlStats.winRate}`
                 );
                 
                 updateAllUI();
@@ -1054,10 +1055,10 @@
                 STATE.isRecoveryMode = false;
                 STATE.paroli.level = 0;
                 STATE.paroli.isProcessing = false;
+                STATE.paroli.currentChance = STATE.paroli.baseChance;
                 
                 sendTelegramMessage(
                     `✅ MAX LEVEL RECOVERY!\n` +
-                    `Recovered: ${recovered.toFixed(8)}\n` +
                     `Balance: ${STATE.balance.toFixed(8)}\n` +
                     `Wagered: ${STATE.wagered.toFixed(8)} (KEEP!) ✅`
                 );
@@ -1067,7 +1068,7 @@
                 return;
             }
             
-            // ===== CONTINUE TO NEXT LEVEL =====
+            // Continue to next level
             STATE.paroli.level++;
             STATE.paroli.currentBet = STATE.paroli.unit * Math.pow(2, STATE.paroli.level - 1);
             if (STATE.paroli.currentBet < STATE.minBet) STATE.paroli.currentBet = STATE.minBet;
@@ -1078,7 +1079,7 @@
             STATE.paroli.currentCondition = STATE.paroli.level % 2 === 0 ? 'below' : 'above';
             
         } else if (STATE.isRecoveryMode && !isWin) {
-            // ===== LOSS =====
+            // LOSS
             STATE.paroli.level = 1;
             STATE.paroli.currentBet = STATE.paroli.unit;
             if (STATE.paroli.currentBet < STATE.minBet) STATE.paroli.currentBet = STATE.minBet;
@@ -1143,7 +1144,7 @@
             }
         }
         
-        // ===== CONTINUE RECOVERY =====
+        // ===== CONTINUE =====
         if (STATE.maxBetCap > 0) {
             STATE.paroli.currentBet = Math.min(STATE.paroli.currentBet, STATE.maxBetCap);
         }
@@ -1206,7 +1207,6 @@
         if (!result) return;
         
         var isWin = result.win;
-        var profit = isWin ? betAmount : -betAmount;
         var chance = result.chance || STATE.normalChance;
         
         STATE.bets++;
@@ -1224,6 +1224,7 @@
         
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.drawdown = STATE.startBalance - STATE.balance;
+        if (STATE.drawdown < 0) STATE.drawdown = 0;
         
         if (STATE.drawdown > STATE.maxDrawdown) {
             STATE.maxDrawdown = STATE.drawdown;
@@ -1246,10 +1247,10 @@
             STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
         }
         
-        logBet(STATE.bets, betAmount, chance, profit);
+        logBet(STATE.bets, betAmount, chance, STATE.profit);
         
         if (mode === 'recovery') {
-            // ML sudah handle recovery
+            // Already handled
         } else {
             var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode) {
@@ -2156,7 +2157,6 @@
                             pred.pattern === 'win_streak' ? '#00e5c0' : '#a0a0a0';
         }
         
-        // Chance performance
         var chanceEl = document.getElementById('ml-chance-stats');
         if (chanceEl) {
             const perf = ChanceOptimizer.getStats();
@@ -2184,4 +2184,5 @@ console.log('✅ CHEAPCHEATX v2.0 ML LOADED!');
 console.log('🧠 Machine Learning Active');
 console.log('🎯 Recovery Target: 50%');
 console.log('💾 Wagered: KEEP (TIDAK DI-RESET)');
+console.log('📊 Balance & Profit: SYNC FIXED');
 console.log('📊 ML Stats:', ML.getStats());
