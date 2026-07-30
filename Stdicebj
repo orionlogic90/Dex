@@ -3,7 +3,7 @@
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%) - ORIGINAL
 // RECOVERY MODE: ML PAROLI (Target 50% Recovery)
-// TRIGGER: Drawdown > 0.125%
+// TRIGGER: Drawdown > 0.5%
 // CUTLOSS: Loss Streak >= 5x
 // EXIT STRATEGY: Safe (Balance >= Start Balance) / Aggressive (Max Level)
 // RAFFLE: Progress Bar + Next Ticket (di atas stats) - WAGER BOT USD
@@ -17,7 +17,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 5,
+        wagerParallelCap: 2,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
@@ -873,7 +873,7 @@
         return wagerStats;
     }
 
-    // ==================== 11. RECOVERY SEQUENTIAL WITH ML ====================
+    // ==================== 11. RECOVERY SEQUENTIAL WITH ML - FIXED ====================
     async function runRecoverySequentialWithML() {
         if (!STATE.isRunning || STATE.isPaused) return;
         if (!STATE.isRecoveryMode || STATE.paroli.level <= 0) {
@@ -952,21 +952,131 @@
                     }
                 }
                 
-                processBetResultML(result, betAmount, 'recovery');
+                // ===== UPDATE STATS =====
+                STATE.bets++;
+                STATE.wagered += betAmount;
+                STATE.betTimestamps.push(Date.now());
+                if (STATE.betTimestamps.length > 100) STATE.betTimestamps.shift();
+                
+                if (result.win) {
+                    STATE.wins++;
+                    STATE.lossStreak = 0;
+                } else {
+                    STATE.losses++;
+                    STATE.lossStreak++;
+                }
+                
+                STATE.profit = STATE.balance - STATE.startBalance;
+                STATE.drawdown = STATE.startBalance - STATE.balance;
+                if (STATE.drawdown > STATE.maxDrawdown) STATE.maxDrawdown = STATE.drawdown;
+                if (betAmount > STATE.maxBet) STATE.maxBet = betAmount;
+                
+                STATE.wagerSesiCounter += betAmount;
+                STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
+                if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
+                
+                var wageredUSD = betAmount * STATE.fiatRates.usd;
+                STATE.raffle.wageredFromBot += wageredUSD;
+                var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
+                var totalWagered = wageredFromStake + STATE.raffle.wageredFromBot;
+                STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
+                if (STATE.raffle.nextTicketRemaining <= 0) STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
+                
+                logBet(STATE.bets, betAmount, chance, result.win ? betAmount : -betAmount);
+                
+                // ===== UPDATE LOSS STREAK DI PAROLI =====
+                if (result.win) {
+                    STATE.paroli.lossStreak = 0;
+                } else {
+                    STATE.paroli.lossStreak++;
+                }
+                
+                p.isProcessing = false;
+                
+                // ===== CEK CUTLOSS =====
+                if (STATE.paroli.lossStreak >= STATE.paroli.maxLossStreak) {
+                    STATE.isRecoveryMode = false;
+                    STATE.paroli.level = 0;
+                    STATE.paroli.mlActive = false;
+                    resetProfitOnNormalReturn();
+                    sendTelegramMessage('✂️ ML RECOVERY CUTLOSS!\nLoss Streak: ' + 
+                        STATE.paroli.lossStreak + 'x\nBack to Normal');
+                    updateAllUI();
+                    setTimeout(sendFireAndForgetBet, 100);
+                    return;
+                }
+                
+                // ===== CEK MAX DRAWDOWN =====
+                var drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
+                if (drawdownPct >= STATE.maxDrawdownPct) {
+                    STATE.isRecoveryMode = false;
+                    STATE.paroli.level = 0;
+                    STATE.paroli.mlActive = false;
+                    resetProfitOnNormalReturn();
+                    sendTelegramMessage('✂️ ML RECOVERY CUTLOSS!\nDrawdown: ' + 
+                        drawdownPct.toFixed(2) + '%\nBack to Normal');
+                    updateAllUI();
+                    setTimeout(sendFireAndForgetBet, 100);
+                    return;
+                }
+                
+                // ===== CEK SAFE EXIT =====
+                if (STATE.paroli.exitStrategy === 'safe' && STATE.balance >= STATE.startBalance) {
+                    STATE.isRecoveryMode = false;
+                    STATE.paroli.level = 0;
+                    STATE.paroli.mlActive = false;
+                    var profit2 = STATE.balance - STATE.startBalance;
+                    resetProfitOnNormalReturn();
+                    sendTelegramMessage('🛡️ SAFE EXIT!\nProfit: ' + profit2.toFixed(8) + '\nBack to Normal');
+                    updateAllUI();
+                    setTimeout(sendFireAndForgetBet, 100);
+                    return;
+                }
+                
+                // ===== UPDATE LEVEL =====
+                if (result.win) {
+                    STATE.paroli.level++;
+                    STATE.paroli.totalLoss += betAmount;
+                    STATE.paroli.currentChance = Math.min(STATE.paroli.currentChance + STATE.paroli.incrementPerWin, STATE.paroli.maxChance);
+                    STATE.paroli.currentBet = STATE.paroli.unit * Math.pow(2, STATE.paroli.level - 1);
+                    if (STATE.paroli.currentBet < STATE.minBet) STATE.paroli.currentBet = STATE.minBet;
+                    STATE.paroli.currentCondition = STATE.paroli.level % 2 === 0 ? 'below' : 'above';
+                } else {
+                    STATE.paroli.totalLoss -= betAmount;
+                    STATE.paroli.level = 1;
+                    STATE.paroli.currentBet = STATE.paroli.unit;
+                    if (STATE.paroli.currentBet < STATE.minBet) STATE.paroli.currentBet = STATE.minBet;
+                    STATE.paroli.currentChance = STATE.paroli.baseChance;
+                    STATE.paroli.currentCondition = 'above';
+                }
+                
+                // ===== CEK MAX LEVEL =====
+                if (STATE.paroli.level > STATE.paroli.maxLevel) {
+                    STATE.isRecoveryMode = false;
+                    STATE.paroli.level = 0;
+                    STATE.paroli.mlActive = false;
+                    resetProfitOnNormalReturn();
+                    sendTelegramMessage('✅ ML RECOVERY SUCCESS!\nProfit: ' + 
+                        STATE.balance.toFixed(8) + '\nBack to Normal');
+                    updateAllUI();
+                    setTimeout(sendFireAndForgetBet, 100);
+                    return;
+                }
+                
+                updateAllUI();
+                setTimeout(runRecoverySequentialWithML, STATE.delayRecovery);
+                
             } else {
+                console.log('[ML] Bet returned null, retrying...');
                 p.isProcessing = false;
                 setTimeout(runRecoverySequentialWithML, STATE.delayRecovery * 2);
-                return;
             }
             
         } catch(e) {
             console.error('[ML] Error:', e);
             p.isProcessing = false;
             setTimeout(runRecoverySequentialWithML, STATE.delayRecovery);
-            return;
         }
-        
-        p.isProcessing = false;
     }
 
     // ==================== 12. START RECOVERY WITH ML ====================
@@ -1037,49 +1147,7 @@
         setTimeout(runRecoverySequentialWithML, 200);
     }
 
-    // ==================== 13. PROCESS BET RESULT FOR ML ====================
-    function processBetResultML(result, betAmount, mode) {
-        if (!result) return;
-        
-        var isWin = result.win;
-        var profit = isWin ? betAmount : -betAmount;
-        var chance = result.chance || STATE.normalChance;
-        
-        STATE.bets++;
-        STATE.wagered += betAmount;
-        STATE.betTimestamps.push(Date.now());
-        if (STATE.betTimestamps.length > 100) STATE.betTimestamps.shift();
-        
-        if (isWin) {
-            STATE.wins++;
-            STATE.lossStreak = 0;
-        } else {
-            STATE.losses++;
-            STATE.lossStreak++;
-        }
-        
-        STATE.profit = STATE.balance - STATE.startBalance;
-        STATE.drawdown = STATE.startBalance - STATE.balance;
-        
-        if (STATE.drawdown > STATE.maxDrawdown) STATE.maxDrawdown = STATE.drawdown;
-        if (betAmount > STATE.maxBet) STATE.maxBet = betAmount;
-        
-        STATE.wagerSesiCounter += betAmount;
-        STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
-        if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
-        
-        var wageredUSD = betAmount * STATE.fiatRates.usd;
-        STATE.raffle.wageredFromBot += wageredUSD;
-        var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
-        var totalWagered = wageredFromStake + STATE.raffle.wageredFromBot;
-        STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
-        if (STATE.raffle.nextTicketRemaining <= 0) STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
-        
-        logBet(STATE.bets, betAmount, chance, profit);
-        updateAllUI();
-    }
-
-    // ==================== 14. FIRE & FORGET - ORIGINAL ====================
+    // ==================== 13. FIRE & FORGET - ORIGINAL ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode || STATE.paroli.level > 0) {
             console.log('[F&F] Recovery active, skipping...');
@@ -1118,7 +1186,7 @@
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
-    // ==================== 15. PROCESS BET RESULT - ORIGINAL ====================
+    // ==================== 14. PROCESS BET RESULT - ORIGINAL ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
@@ -1183,7 +1251,7 @@
         updateAllUI();
     }
 
-    // ==================== 16. HANDLE RECOVERY RESULT - ORIGINAL ====================
+    // ==================== 15. HANDLE RECOVERY RESULT - ORIGINAL ====================
     function handleRecoveryResult(win, betAmount) {
         var p = STATE.paroli;
         
@@ -1290,7 +1358,7 @@
         }
     }
 
-    // ==================== 17. LOGGING ====================
+    // ==================== 16. LOGGING ====================
     function logBet(betNumber, amount, chance, profit) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -1313,7 +1381,7 @@
         }
     }
 
-    // ==================== 18. RESET FUNCTIONS ====================
+    // ==================== 17. RESET FUNCTIONS ====================
     function resetToBreakeven() {
         var currentBalance = STATE.balance;
         var lossTolerancePct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1405,7 +1473,7 @@
         updateAllUI();
     }
 
-    // ==================== 19. UI UPDATES ====================
+    // ==================== 18. UI UPDATES ====================
     function updateMLDisplay() {
         if (!STATE.mlSystem) {
             var statusEl = document.getElementById('ml-status');
@@ -1513,7 +1581,7 @@
         }
     }
 
-    // ==================== 20. SESSION REPORT ====================
+    // ==================== 19. SESSION REPORT ====================
     async function sendSessionReport() {
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
@@ -1552,7 +1620,7 @@
         await sendTelegramMessage(message);
     }
 
-    // ==================== 21. RUN LOOP ====================
+    // ==================== 20. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1563,7 +1631,7 @@
         }
     }
 
-    // ==================== 22. UI CONTROLS ====================
+    // ==================== 21. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1585,7 +1653,7 @@
         }
     }
 
-    // ==================== 23. CREATE UI ====================
+    // ==================== 22. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -2222,7 +2290,7 @@
         }, 60000);
     }
 
-    // ==================== 24. START ====================
+    // ==================== 23. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
