@@ -2,7 +2,7 @@
 // CHEAPCHEATX v2.0 - DICE ONLY + PAROLI RECOVERY + RAFFLE PROGRESS
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dice 99.98%)
-// RECOVERY MODE: PAROLI (Sequential, Level 1-4, Chance Increment)
+// RECOVERY MODE: ML PAROLI (Sequential, Level 1-4, Chance Increment)
 // TRIGGER: Drawdown > 0.125%
 // CUTLOSS: Loss Streak >= 5x
 // EXIT STRATEGY: Safe (Balance >= Start Balance) / Aggressive (Max Level)
@@ -17,7 +17,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 7,
+        wagerParallelCap: 9,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
@@ -97,7 +97,7 @@
         targetPct: 5,
         stopLossPct: 100,
         maxDrawdownPct: 5,
-        triggerDrawdownPct: 0.125,
+        triggerDrawdownPct: 0.5,
         
         // ===== DELAY =====
         delayNormal: 50,
@@ -431,8 +431,28 @@
 
     // ==================== 8. PLACE DICE BET ====================
     async function placeDiceBet(amount, chance, condition) {
+        // ===== FIX: CEK CHANCE TIDAK BOLEH 100% =====
+        if (chance >= 100) {
+            console.log('[DICE] Chance >= 100, adjusting to 99.98');
+            chance = 99.98;
+        }
+        if (chance <= 0) {
+            console.log('[DICE] Chance <= 0, adjusting to 1');
+            chance = 1;
+        }
+        
         var target = condition === 'above' ? (100 - chance) : chance;
         var apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
+        
+        // CEK: balance cukup
+        if (apiAmount > STATE.balance * 0.9) {
+            console.log('[DICE] Bet too high, adjusting');
+            apiAmount = STATE.balance * 0.5;
+        }
+        if (apiAmount < 0.00000001) {
+            console.log('[DICE] Bet too low, skipping');
+            return null;
+        }
         
         try {
             var payload = {
@@ -442,6 +462,8 @@
                 condition: condition || "above",
                 identifier: generateId()
             };
+            
+            console.log('[DICE] Payload:', JSON.stringify(payload));
             
             var res = await fetch(CONFIG.apiUrl + '/casino/dice/roll', {
                 method: 'POST',
@@ -456,6 +478,7 @@
             var data = await res.json();
             
             if (data.error || !data.diceRoll) {
+                console.log('[DICE] Error response:', data);
                 return null;
             }
             
@@ -538,6 +561,8 @@
             this.maxNoProgress = 10;
             this.lastRecoveredAmount = 0;
             this.timeoutId = null;
+            this.recoveryAttempts = 0;
+            this.maxRecoveryAttempts = 3;
         }
 
         startRecovery(totalLoss, initialBalance, minBet, maxBet) {
@@ -563,6 +588,7 @@
             this.bestPerformance = 0;
             this.noProgressCounter = 0;
             this.lastRecoveredAmount = 0;
+            this.recoveryAttempts++;
             
             this.baseBet = Math.max(initialBalance * 0.01, minBet);
             this.maxBet = maxBet || initialBalance * 0.2;
@@ -585,12 +611,18 @@
                 const saved = localStorage.getItem('ml_recovery_data');
                 if (saved) {
                     const data = JSON.parse(saved);
-                    this.optimalChance = data.optimalChance || 80;
-                    this.optimalBetMultiplier = data.optimalBetMultiplier || 1.0;
-                    this.bestChance = data.bestChance || 80;
-                    this.bestBetMultiplier = data.bestBetMultiplier || 1.0;
-                    this.bestPerformance = data.bestPerformance || 0;
-                    console.log('[ML] Loaded learning data:', data);
+                    // ===== FIX: ONLY LOAD IF BEST PERFORMANCE > 0 =====
+                    if (data.bestPerformance > 0) {
+                        this.optimalChance = data.optimalChance || 80;
+                        this.optimalBetMultiplier = data.optimalBetMultiplier || 1.0;
+                        this.bestChance = data.bestChance || 80;
+                        this.bestBetMultiplier = data.bestBetMultiplier || 1.0;
+                        this.bestPerformance = data.bestPerformance || 0;
+                        console.log('[ML] Loaded learning data:', data);
+                    } else {
+                        console.log('[ML] Best performance <= 0, using fresh data');
+                        localStorage.removeItem('ml_recovery_data');
+                    }
                 }
             } catch(e) {
                 console.log('[ML] No saved learning data');
@@ -599,15 +631,21 @@
 
         saveLearningData() {
             try {
-                const data = {
-                    optimalChance: this.optimalChance,
-                    optimalBetMultiplier: this.optimalBetMultiplier,
-                    bestChance: this.bestChance,
-                    bestBetMultiplier: this.bestBetMultiplier,
-                    bestPerformance: this.bestPerformance,
-                    timestamp: Date.now()
-                };
-                localStorage.setItem('ml_recovery_data', JSON.stringify(data));
+                // ===== FIX: ONLY SAVE IF BEST PERFORMANCE > 0 =====
+                if (this.bestPerformance > 0) {
+                    const data = {
+                        optimalChance: this.optimalChance,
+                        optimalBetMultiplier: this.optimalBetMultiplier,
+                        bestChance: this.bestChance,
+                        bestBetMultiplier: this.bestBetMultiplier,
+                        bestPerformance: this.bestPerformance,
+                        timestamp: Date.now()
+                    };
+                    localStorage.setItem('ml_recovery_data', JSON.stringify(data));
+                    console.log('[ML] Saved learning data:', data);
+                } else {
+                    console.log('[ML] Best performance <= 0, not saving');
+                }
             } catch(e) {
                 console.log('[ML] Failed to save learning data');
             }
@@ -666,7 +704,8 @@
                 chance = Math.max(chance - 3, 60);
             }
 
-            chance = Math.max(60, Math.min(95, chance));
+            // ===== FIX: CLAMP CHANCE - TIDAK BOLEH 100% =====
+            chance = Math.max(60, Math.min(99.98, chance));
             betMultiplier = Math.max(0.5, Math.min(2.5, betMultiplier));
 
             const finalBet = Math.min(this.baseBet * betMultiplier, this.maxBet);
@@ -737,7 +776,8 @@
                 }
             }
 
-            this.optimalChance = Math.max(60, Math.min(95, this.optimalChance));
+            // ===== FIX: CLAMP VALUE =====
+            this.optimalChance = Math.max(60, Math.min(99.98, this.optimalChance));
             this.optimalBetMultiplier = Math.max(0.5, Math.min(2.5, this.optimalBetMultiplier));
 
             if (this.recoveredAmount >= this.targetRecovery) {
@@ -785,13 +825,14 @@
                 recoveredAmount: this.recoveredAmount,
                 progress: this.targetRecovery > 0 ? this.recoveredAmount / this.targetRecovery : 0,
                 remaining: this.targetRecovery - this.recoveredAmount,
-                currentChance: this.optimalChance + this.currentChanceOffset,
+                currentChance: Math.min(this.optimalChance + this.currentChanceOffset, 99.98),
                 currentMultiplier: this.optimalBetMultiplier,
                 winStreak: this.winStreak,
                 lossStreak: this.lossStreak,
                 bestChance: this.bestChance,
                 bestMultiplier: this.bestBetMultiplier,
-                bestPerformance: this.bestPerformance
+                bestPerformance: this.bestPerformance,
+                recoveryAttempts: this.recoveryAttempts
             };
         }
 
@@ -915,7 +956,7 @@
         var p = STATE.paroli;
         if (p.isProcessing) {
             console.log('[ML] Already processing, waiting...');
-            setTimeout(runRecoverySequentialWithML, 100);
+            setTimeout(runRecoverySequentialWithML, 200);
             return;
         }
         
@@ -923,43 +964,53 @@
             STATE.isRunning = false;
             STATE.wagerStop = true;
             toggleStartStop(false);
-            sendTelegramMessage('✅ TOTAL WAGER TARGET REACHED!\n' +
-                'Total Wagered: ' + STATE.wagerTotalAccumulated.toFixed(8));
+            sendTelegramMessage('✅ TOTAL WAGER TARGET REACHED!');
             return;
         }
         
         p.isProcessing = true;
         
         try {
+            // CEK: Balance cukup
+            if (STATE.balance <= STATE.minBet * 2) {
+                console.log('[ML] Balance too low, stopping recovery');
+                STATE.isRecoveryMode = false;
+                STATE.paroli.level = 0;
+                p.isProcessing = false;
+                sendTelegramMessage('⚠️ BALANCE TOO LOW! Stopping recovery.');
+                setTimeout(sendFireAndForgetBet, 100);
+                return;
+            }
+            
+            // Dapatkan action dari ML
             if (STATE.mlSystem && STATE.mlSystem.isActive && STATE.mlSystem.recoverySessionActive) {
                 const mlAction = STATE.mlSystem.calculateOptimalAction();
                 if (mlAction) {
                     p.currentBet = Math.max(mlAction.betAmount, STATE.minBet);
-                    p.currentChance = mlAction.chance;
+                    p.currentChance = Math.min(mlAction.chance, 99.98);
                     p.currentCondition = mlAction.condition || 'above';
                     console.log('[ML] Using ML action - Bet:', p.currentBet, 'Chance:', p.currentChance);
                 } else {
-                    p.currentBet = Math.max(p.unit, STATE.minBet);
-                    p.currentChance = p.baseChance;
-                    p.currentCondition = 'above';
                     console.log('[ML] ML action null, using fallback');
+                    p.currentBet = Math.max(p.unit, STATE.minBet);
+                    p.currentChance = Math.min(p.baseChance, 99.98);
+                    p.currentCondition = 'above';
                 }
             } else {
-                p.currentBet = Math.max(p.unit, STATE.minBet);
-                p.currentChance = p.baseChance;
-                p.currentCondition = 'above';
                 console.log('[ML] No ML system, using fallback');
+                p.currentBet = Math.max(p.unit, STATE.minBet);
+                p.currentChance = Math.min(p.baseChance, 99.98);
+                p.currentCondition = 'above';
             }
             
             var betAmount = p.currentBet;
-            var chance = p.currentChance;
+            var chance = Math.min(p.currentChance, 99.98);
             var condition = p.currentCondition;
             
             if (betAmount > STATE.balance * 0.5) {
                 betAmount = STATE.balance * 0.5;
                 console.log('[ML] Bet capped at 50% of balance');
             }
-            
             if (betAmount < STATE.minBet) {
                 betAmount = STATE.minBet;
                 console.log('[ML] Bet adjusted to minimum');
@@ -967,10 +1018,11 @@
             
             console.log('[ML] Placing bet:', betAmount, 'chance:', chance, 'condition:', condition);
             
+            // TIMEOUT 15 detik
             const timeoutPromise = new Promise((_, reject) => {
                 setTimeout(() => {
-                    reject(new Error('Bet timeout after 10 seconds'));
-                }, 10000);
+                    reject(new Error('Bet timeout after 15 seconds'));
+                }, 15000);
             });
             
             const betPromise = placeDiceBet(betAmount, chance, condition);
@@ -984,11 +1036,6 @@
                     STATE.mlSystem.updateWithResult(result.win, profit, betAmount, chance);
                     
                     if (!STATE.mlSystem.isActive) {
-                        const status = STATE.mlSystem.getStatus();
-                        const recovered = status.recoveredAmount;
-                        const target = status.targetRecovery;
-                        const isSuccess = recovered >= target;
-                        
                         STATE.isRecoveryMode = false;
                         STATE.paroli.level = 0;
                         STATE.paroli.mlActive = false;
@@ -996,33 +1043,20 @@
                         
                         resetProfitOnNormalReturn();
                         
-                        console.log('[ML] Recovery session ended');
-                        console.log('[ML] Success:', isSuccess, 'Recovered:', recovered, 'Target:', target);
-                        
-                        sendTelegramMessage(isSuccess ? 
-                            '✅ ML RECOVERY SUCCESS!\n' +
-                            'Recovered: ' + recovered.toFixed(8) + ' / ' + target.toFixed(8) + '\n' +
-                            'Efficiency: ' + ((recovered/target)*100).toFixed(1) + '%\n' +
-                            'Best Chance: ' + STATE.mlSystem.bestChance.toFixed(1) + '%\n' +
-                            'Best Multiplier: x' + STATE.mlSystem.bestBetMultiplier.toFixed(2) + '\n' +
+                        const status = STATE.mlSystem.getStatus();
+                        sendTelegramMessage('✅ ML RECOVERY COMPLETED\n' +
+                            'Recovered: ' + status.recoveredAmount.toFixed(8) + ' / ' + status.targetRecovery.toFixed(8) + '\n' +
                             'New Balance: ' + STATE.balance.toFixed(8) + '\n' +
-                            'Total Wagered: ' + STATE.wagered.toFixed(8) + '\n' +
-                            '📊 Stats preserved!' :
-                            '❌ ML RECOVERY FAILED\n' +
-                            'Recovered: ' + recovered.toFixed(8) + ' / ' + target.toFixed(8) + '\n' +
-                            'Loss: ' + (target - recovered).toFixed(8) + '\n' +
-                            'New Balance: ' + STATE.balance.toFixed(8) + '\n' +
-                            '📊 Stats preserved!'
-                        );
+                            '📊 Stats preserved!');
                         
                         updateAllUI();
-                        p.isProcessing = false;
                         setTimeout(sendFireAndForgetBet, 100);
                         return;
                     }
                 }
                 
                 processBetResultWithReset(result, betAmount, 'recovery', false);
+                
             } else {
                 console.log('[ML] Bet returned null, retrying...');
                 p.isProcessing = false;
@@ -1049,6 +1083,14 @@
     // ==================== 12. START RECOVERY WITH ML ====================
     function startRecoveryWithML() {
         console.log('[ML] startRecoveryWithML called');
+        
+        if (STATE.balance <= STATE.minBet * 2) {
+            console.log('[ML] Balance too low for recovery');
+            STATE.isRecoveryMode = false;
+            sendTelegramMessage('⚠️ BALANCE TOO LOW! Cannot start recovery.');
+            setTimeout(sendFireAndForgetBet, 100);
+            return;
+        }
         
         var basebet = STATE.balance * (STATE.baseBetPercent / 100);
         if (basebet < STATE.minBet) basebet = STATE.minBet;
@@ -1081,8 +1123,8 @@
             console.log('[ML] ML action null, using fallback');
             p.level = 1;
             p.unit = basebet;
-            p.currentBet = Math.max(p.unit * Math.pow(2, p.level - 1), STATE.minBet);
-            p.currentChance = p.baseChance;
+            p.currentBet = Math.max(p.unit, STATE.minBet);
+            p.currentChance = Math.min(p.baseChance, 99.98);
             p.currentCondition = 'above';
             p.isProcessing = false;
             p.recoveryCount++;
@@ -1091,14 +1133,17 @@
             STATE.isRecoveryMode = true;
             STATE.lossStreak = 0;
             updateAllUI();
-            setTimeout(runRecoverySequentialWithML, 100);
+            setTimeout(runRecoverySequentialWithML, 200);
             return;
         }
         
+        var safeChance = Math.min(mlAction.chance, 99.98);
+        var safeBet = Math.max(mlAction.betAmount, STATE.minBet);
+        
         p.level = 1;
-        p.unit = mlAction.betAmount;
-        p.currentBet = Math.max(mlAction.betAmount, STATE.minBet);
-        p.currentChance = mlAction.chance;
+        p.unit = safeBet;
+        p.currentBet = safeBet;
+        p.currentChance = safeChance;
         p.currentCondition = mlAction.condition || 'above';
         p.isProcessing = false;
         p.recoveryCount++;
@@ -1119,11 +1164,10 @@
             'Target (50%): ' + status.targetRecovery.toFixed(8) + '\n' +
             'Current Bet: ' + p.currentBet.toFixed(8) + '\n' +
             'Chance: ' + p.currentChance.toFixed(1) + '%\n' +
-            'Learning from ' + (STATE.mlSystem.actionHistory.length) + ' previous actions\n' +
             '📊 Profit will reset on return to normal');
         
         updateAllUI();
-        setTimeout(runRecoverySequentialWithML, 100);
+        setTimeout(runRecoverySequentialWithML, 200);
     }
 
     // ==================== 13. HANDLE RECOVERY RESULT WITH ML ====================
@@ -1367,8 +1411,16 @@
         
         if (!STATE.isRunning || STATE.isPaused) return;
         
-        var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
-        if (drawdownPct >= STATE.triggerDrawdownPct) {
+        if (STATE.balance <= STATE.minBet) {
+            console.log('[F&F] Balance too low, stopping');
+            STATE.isRunning = false;
+            toggleStartStop(false);
+            sendTelegramMessage('⚠️ BALANCE TOO LOW! Stopping.');
+            return;
+        }
+        
+        var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
+        if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode) {
             console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
             startRecoveryWithML();
             return;
@@ -1385,16 +1437,29 @@
         var betAmount = STATE.balance * (STATE.baseBetPercent / 100);
         var finalBet = Math.max(betAmount, STATE.minBet);
         finalBet = Math.min(finalBet, STATE.balance * 0.5);
-        if (STATE.maxBetCap > 0) {
-            finalBet = Math.min(finalBet, STATE.maxBetCap);
+        if (STATE.maxBetCap > 0 && finalBet > STATE.maxBetCap) {
+            finalBet = STATE.maxBetCap;
         }
         
-        console.log('[F&F] Dice bet:', finalBet);
-        placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
-            if (result) processBetResultWithReset(result, finalBet, 'normal', true);
-        }).catch(function(e) { console.error('[F&F] Dice error:', e); });
+        if (finalBet < STATE.minBet) {
+            console.log('[F&F] Bet too small, waiting...');
+            setTimeout(sendFireAndForgetBet, STATE.delayNormal * 2);
+            return;
+        }
         
-        setTimeout(sendFireAndForgetBet, STATE.delayNormal);
+        console.log('[F&F] Dice bet:', finalBet, 'Chance:', STATE.normalChance);
+        
+        placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
+            if (result) {
+                processBetResultWithReset(result, finalBet, 'normal', true);
+            } else {
+                console.log('[F&F] Bet failed, retrying...');
+                setTimeout(sendFireAndForgetBet, STATE.delayNormal * 2);
+            }
+        }).catch(function(e) { 
+            console.error('[F&F] Dice error:', e);
+            setTimeout(sendFireAndForgetBet, STATE.delayNormal * 3);
+        });
     }
 
     // ==================== 16. LOGGING ====================
@@ -1524,9 +1589,9 @@
         
         var status;
         if (STATE.isRecoveryMode) {
-            status = '🔄 ML RECOVERY L' + STATE.paroli.level;
+            status = '🔄 RECOVERY L' + STATE.paroli.level + ' C:' + STATE.paroli.currentChance.toFixed(1) + '%';
         } else {
-            status = '⚡ NORMAL 🎲';
+            status = '⚡ NORMAL 🎲 ' + STATE.normalChance + '%';
         }
         
         var map = {
@@ -1751,6 +1816,7 @@
             .stats-block .divider { border-top: 1px solid var(--border); margin: 5px 0; }
             .progress-bar { background: var(--border); border-radius: 4px; margin: 4px 0; height: 4px; }
             .progress-fill { background: var(--success); height: 4px; border-radius: 4px; width: 0%; }
+            .progress-fill.ml-progress { background: var(--ml-color); }
             .logs-container { background: var(--log-bg); border-radius: 12px; height: 350px; overflow-y: auto; padding: 8px; font-size: 9px; border: 1px solid var(--border); font-family: monospace; }
             .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
             @media (max-width: 480px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -1850,7 +1916,7 @@
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🔄 PAROLI RECOVERY</div>
                         <div class="grid-2">
-                            <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.125" step="0.01" min="0.01" max="5"></div>
+                            <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.5" step="0.01" min="0.01" max="5"></div>
                             <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-paroli-max" value="4" step="1" min="2" max="6"></div>
                         </div>
                         <div class="grid-2">
@@ -1934,7 +2000,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4, Chance Increment)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe (Balance >= Start) / Aggressive (Max Level)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: ML Paroli (Level 1-4)<br>📉 Trigger: Drawdown > 0.5%<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe (Balance >= Start) / Aggressive (Max Level)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -2097,7 +2163,7 @@
                 STATE.paroli.maxChance = safeFloat("p-paroli-max-chance", 90);
                 STATE.paroli.exitStrategy = document.getElementById('p-exit-strategy').value || 'safe';
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
-                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
+                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.5);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
                 STATE.stopLossPct = safeFloat("p-stop-pct", 100);
                 STATE.maxBetCap = safeFloat("p-max-cap", 0);
@@ -2245,7 +2311,7 @@
         var triggerEl = document.getElementById("p-trigger-drawdown");
         if (triggerEl) {
             triggerEl.onchange = function() {
-                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
+                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.5);
                 updateAllUI();
             };
         }
