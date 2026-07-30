@@ -17,7 +17,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 9,
+        wagerParallelCap: 5,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
@@ -429,9 +429,9 @@
         return false;
     }
 
-    // ==================== 8. PLACE DICE BET ====================
+    // ==================== 8. PLACE DICE BET - FIXED ====================
     async function placeDiceBet(amount, chance, condition) {
-        // ===== FIX: CEK CHANCE TIDAK BOLEH 100% =====
+        // CEK CHANCE TIDAK BOLEH 100%
         if (chance >= 100) {
             console.log('[DICE] Chance >= 100, adjusting to 99.98');
             chance = 99.98;
@@ -441,7 +441,10 @@
             chance = 1;
         }
         
-        var target = condition === 'above' ? (100 - chance) : chance;
+        // ===== FIX: BULATKAN TARGET KE 2 DESIMAL =====
+        var rawTarget = condition === 'above' ? (100 - chance) : chance;
+        var target = Math.round(rawTarget * 100) / 100;
+        
         var apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
         
         // CEK: balance cukup
@@ -2046,11 +2049,14 @@
         var mlResetBtn = document.getElementById('btn-ml-reset');
         if (mlResetBtn) {
             mlResetBtn.onclick = function() {
-                if (STATE.mlSystem) {
-                    STATE.mlSystem.reset();
+                if (confirm('Reset all ML learning data?')) {
+                    if (STATE.mlSystem) {
+                        STATE.mlSystem.reset();
+                    }
                     localStorage.removeItem('ml_recovery_data');
                     updateMLDisplay();
                     sendTelegramMessage('🔄 ML DATA RESET\nAll learning data cleared!');
+                    console.log('✅ ML data reset!');
                 }
             };
         }
