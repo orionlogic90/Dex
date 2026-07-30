@@ -18,7 +18,7 @@
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 9,
+        wagerParallelCap: 4,
         normalCycleDuration: 30000,
         restDuration: 5000,
         maxHistory: 50,
