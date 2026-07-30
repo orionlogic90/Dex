@@ -534,6 +534,10 @@
             this.minBet = 0;
             this.initialBalance = 0;
             this.currentBalance = 0;
+            this.noProgressCounter = 0;
+            this.maxNoProgress = 10;
+            this.lastRecoveredAmount = 0;
+            this.timeoutId = null;
         }
 
         startRecovery(totalLoss, initialBalance, minBet, maxBet) {
@@ -557,6 +561,8 @@
             this.bestChance = 80;
             this.bestBetMultiplier = 1.0;
             this.bestPerformance = 0;
+            this.noProgressCounter = 0;
+            this.lastRecoveredAmount = 0;
             
             this.baseBet = Math.max(initialBalance * 0.01, minBet);
             this.maxBet = maxBet || initialBalance * 0.2;
@@ -612,7 +618,20 @@
                 return null;
             }
 
-            const recoveryProgress = this.recoveredAmount / this.targetRecovery;
+            if (this.recoveredAmount === this.lastRecoveredAmount && this.history.length > 0) {
+                this.noProgressCounter++;
+                if (this.noProgressCounter > this.maxNoProgress) {
+                    console.log('[ML] No progress detected, forcing strategy change');
+                    this.currentChanceOffset += (Math.random() > 0.5 ? 1 : -1) * 5;
+                    this.optimalBetMultiplier *= 1.2;
+                    this.noProgressCounter = 0;
+                }
+            } else {
+                this.noProgressCounter = 0;
+                this.lastRecoveredAmount = this.recoveredAmount;
+            }
+
+            const recoveryProgress = this.targetRecovery > 0 ? this.recoveredAmount / this.targetRecovery : 0;
             const remainingToRecover = this.targetRecovery - this.recoveredAmount;
             
             let riskLevel = 1.0;
@@ -631,10 +650,10 @@
 
             let betMultiplier = this.optimalBetMultiplier * riskLevel;
             
-            const recoveryRatio = remainingToRecover / this.targetRecovery;
+            const recoveryRatio = remainingToRecover / (this.targetRecovery || 1);
             if (recoveryRatio > 0.5) {
                 betMultiplier *= 1.2;
-            } else if (recoveryRatio < 0.2) {
+            } else if (recoveryRatio < 0.2 && recoveryRatio > 0) {
                 betMultiplier *= 0.8;
             }
 
@@ -650,7 +669,7 @@
             chance = Math.max(60, Math.min(95, chance));
             betMultiplier = Math.max(0.5, Math.min(2.5, betMultiplier));
 
-            const finalBet = this.baseBet * betMultiplier;
+            const finalBet = Math.min(this.baseBet * betMultiplier, this.maxBet);
             const finalChance = chance;
 
             this.lastAction = {
@@ -667,7 +686,7 @@
             console.log(`  - Recovery: ${this.recoveredAmount.toFixed(8)}/${this.targetRecovery.toFixed(8)} (${(recoveryProgress*100).toFixed(1)}%)`);
 
             return {
-                betAmount: finalBet,
+                betAmount: Math.max(finalBet, this.minBet),
                 chance: finalChance,
                 condition: 'above'
             };
@@ -697,7 +716,7 @@
                 this.recoveredAmount += profit;
                 
                 if (this.lastAction) {
-                    const performance = profit / betAmount;
+                    const performance = profit / (betAmount || 1);
                     this.performanceScore += performance * this.learningRate;
                     
                     if (performance > 0) {
@@ -717,6 +736,9 @@
                     this.optimalBetMultiplier *= (1 - this.learningRate * 0.2);
                 }
             }
+
+            this.optimalChance = Math.max(60, Math.min(95, this.optimalChance));
+            this.optimalBetMultiplier = Math.max(0.5, Math.min(2.5, this.optimalBetMultiplier));
 
             if (this.recoveredAmount >= this.targetRecovery) {
                 this.isActive = false;
@@ -750,7 +772,7 @@
                 this.saveLearningData();
             }
 
-            const recoveryProgress = (this.recoveredAmount / this.targetRecovery * 100);
+            const recoveryProgress = this.targetRecovery > 0 ? (this.recoveredAmount / this.targetRecovery * 100) : 0;
             console.log(`[ML] Recovery Progress: ${recoveryProgress.toFixed(1)}%`);
             console.log(`[ML] ${win ? '✅ WIN' : '❌ LOSS'} | Streak: W${this.consecutiveWins} L${this.consecutiveLosses}`);
         }
@@ -761,14 +783,15 @@
                 totalLoss: this.totalLoss,
                 targetRecovery: this.targetRecovery,
                 recoveredAmount: this.recoveredAmount,
-                progress: this.recoveredAmount / this.targetRecovery,
+                progress: this.targetRecovery > 0 ? this.recoveredAmount / this.targetRecovery : 0,
                 remaining: this.targetRecovery - this.recoveredAmount,
                 currentChance: this.optimalChance + this.currentChanceOffset,
                 currentMultiplier: this.optimalBetMultiplier,
                 winStreak: this.winStreak,
                 lossStreak: this.lossStreak,
                 bestChance: this.bestChance,
-                bestMultiplier: this.bestBetMultiplier
+                bestMultiplier: this.bestBetMultiplier,
+                bestPerformance: this.bestPerformance
             };
         }
 
@@ -786,6 +809,11 @@
             this.actionHistory = [];
             this.history = [];
             this.performanceScore = 0;
+            this.noProgressCounter = 0;
+            if (this.timeoutId) {
+                clearTimeout(this.timeoutId);
+                this.timeoutId = null;
+            }
         }
     }
 
@@ -860,8 +888,15 @@
 
     // ==================== 11. RECOVERY SEQUENTIAL WITH ML ====================
     async function runRecoverySequentialWithML() {
-        if (!STATE.isRunning || STATE.isPaused) return;
+        console.log('[ML] runRecoverySequentialWithML called');
+        
+        if (!STATE.isRunning || STATE.isPaused) {
+            console.log('[ML] Bot not running or paused');
+            return;
+        }
+        
         if (!STATE.isRecoveryMode || STATE.paroli.level <= 0) {
+            console.log('[ML] Recovery mode ended or level 0');
             STATE.isRecoveryMode = false;
             STATE.paroli.mlActive = false;
             
@@ -879,6 +914,7 @@
         
         var p = STATE.paroli;
         if (p.isProcessing) {
+            console.log('[ML] Already processing, waiting...');
             setTimeout(runRecoverySequentialWithML, 100);
             return;
         }
@@ -894,25 +930,55 @@
         
         p.isProcessing = true;
         
-        if (STATE.mlSystem && STATE.mlSystem.isActive && STATE.mlSystem.recoverySessionActive) {
-            const mlAction = STATE.mlSystem.calculateOptimalAction();
-            if (mlAction) {
-                p.currentBet = mlAction.betAmount;
-                p.currentChance = mlAction.chance;
-                p.currentCondition = mlAction.condition || 'above';
-            }
-        }
-        
-        var betAmount = p.currentBet;
-        var chance = p.currentChance;
-        var condition = p.currentCondition;
-        
-        console.log('[ML] Sequential bet:', betAmount, 'chance:', chance);
-        
         try {
-            var result = await placeDiceBet(betAmount, chance, condition);
+            if (STATE.mlSystem && STATE.mlSystem.isActive && STATE.mlSystem.recoverySessionActive) {
+                const mlAction = STATE.mlSystem.calculateOptimalAction();
+                if (mlAction) {
+                    p.currentBet = Math.max(mlAction.betAmount, STATE.minBet);
+                    p.currentChance = mlAction.chance;
+                    p.currentCondition = mlAction.condition || 'above';
+                    console.log('[ML] Using ML action - Bet:', p.currentBet, 'Chance:', p.currentChance);
+                } else {
+                    p.currentBet = Math.max(p.unit, STATE.minBet);
+                    p.currentChance = p.baseChance;
+                    p.currentCondition = 'above';
+                    console.log('[ML] ML action null, using fallback');
+                }
+            } else {
+                p.currentBet = Math.max(p.unit, STATE.minBet);
+                p.currentChance = p.baseChance;
+                p.currentCondition = 'above';
+                console.log('[ML] No ML system, using fallback');
+            }
+            
+            var betAmount = p.currentBet;
+            var chance = p.currentChance;
+            var condition = p.currentCondition;
+            
+            if (betAmount > STATE.balance * 0.5) {
+                betAmount = STATE.balance * 0.5;
+                console.log('[ML] Bet capped at 50% of balance');
+            }
+            
+            if (betAmount < STATE.minBet) {
+                betAmount = STATE.minBet;
+                console.log('[ML] Bet adjusted to minimum');
+            }
+            
+            console.log('[ML] Placing bet:', betAmount, 'chance:', chance, 'condition:', condition);
+            
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                    reject(new Error('Bet timeout after 10 seconds'));
+                }, 10000);
+            });
+            
+            const betPromise = placeDiceBet(betAmount, chance, condition);
+            const result = await Promise.race([betPromise, timeoutPromise]);
+            
             if (result) {
                 const profit = result.win ? betAmount : -betAmount;
+                console.log('[ML] Bet result:', result.win ? 'WIN' : 'LOSS', 'Profit:', profit);
                 
                 if (STATE.mlSystem && STATE.mlSystem.isActive) {
                     STATE.mlSystem.updateWithResult(result.win, profit, betAmount, chance);
@@ -950,6 +1016,7 @@
                         );
                         
                         updateAllUI();
+                        p.isProcessing = false;
                         setTimeout(sendFireAndForgetBet, 100);
                         return;
                     }
@@ -957,27 +1024,51 @@
                 
                 processBetResultWithReset(result, betAmount, 'recovery', false);
             } else {
+                console.log('[ML] Bet returned null, retrying...');
                 p.isProcessing = false;
+                setTimeout(runRecoverySequentialWithML, STATE.delayRecovery * 2);
+                return;
+            }
+            
+        } catch(e) {
+            console.error('[ML] Error in recovery:', e);
+            p.isProcessing = false;
+            
+            if (e.message && e.message.includes('timeout')) {
+                console.log('[ML] Timeout detected, retrying with longer delay');
+                setTimeout(runRecoverySequentialWithML, STATE.delayRecovery * 3);
+            } else {
                 setTimeout(runRecoverySequentialWithML, STATE.delayRecovery);
             }
-        } catch(e) {
-            console.error('[ML] Error:', e);
-            p.isProcessing = false;
-            setTimeout(runRecoverySequentialWithML, STATE.delayRecovery);
+            return;
         }
+        
+        p.isProcessing = false;
     }
 
     // ==================== 12. START RECOVERY WITH ML ====================
     function startRecoveryWithML() {
+        console.log('[ML] startRecoveryWithML called');
+        
         var basebet = STATE.balance * (STATE.baseBetPercent / 100);
         if (basebet < STATE.minBet) basebet = STATE.minBet;
         
         var p = STATE.paroli;
         var totalLoss = STATE.startBalance - STATE.balance;
         
+        if (totalLoss <= 0) {
+            console.log('[ML] No loss to recover, returning to normal');
+            STATE.isRecoveryMode = false;
+            setTimeout(sendFireAndForgetBet, 100);
+            return;
+        }
+        
         if (!STATE.mlSystem) {
             STATE.mlSystem = new MLRecoverySystem();
+            console.log('[ML] Created new ML system');
         }
+        
+        console.log('[ML] Starting recovery, total loss:', totalLoss);
         
         const mlAction = STATE.mlSystem.startRecovery(
             totalLoss,
@@ -987,10 +1078,10 @@
         );
         
         if (!mlAction) {
+            console.log('[ML] ML action null, using fallback');
             p.level = 1;
             p.unit = basebet;
-            p.currentBet = p.unit * Math.pow(2, p.level - 1);
-            if (p.currentBet < STATE.minBet) p.currentBet = STATE.minBet;
+            p.currentBet = Math.max(p.unit * Math.pow(2, p.level - 1), STATE.minBet);
             p.currentChance = p.baseChance;
             p.currentCondition = 'above';
             p.isProcessing = false;
@@ -1006,7 +1097,7 @@
         
         p.level = 1;
         p.unit = mlAction.betAmount;
-        p.currentBet = mlAction.betAmount;
+        p.currentBet = Math.max(mlAction.betAmount, STATE.minBet);
         p.currentChance = mlAction.chance;
         p.currentCondition = mlAction.condition || 'above';
         p.isProcessing = false;
@@ -1037,9 +1128,12 @@
 
     // ==================== 13. HANDLE RECOVERY RESULT WITH ML ====================
     function handleRecoveryResultWithML(win, betAmount) {
+        console.log('[ML] handleRecoveryResultWithML called, win:', win, 'betAmount:', betAmount);
+        
         var p = STATE.paroli;
         
         if (STATE.mlSystem && STATE.mlSystem.isActive && p.mlActive) {
+            console.log('[ML] ML is active, skipping manual handling');
             return;
         }
         
@@ -1050,6 +1144,7 @@
             p.currentChance = Math.min(p.currentChance + p.incrementPerWin, p.maxChance);
             
             if (p.exitStrategy === 'safe' && STATE.balance >= STATE.startBalance) {
+                console.log('[ML] Safe exit triggered');
                 p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
@@ -1059,9 +1154,7 @@
                 p.currentChance = p.baseChance;
                 p.mlActive = false;
                 
-                console.log('[RECOVERY] SAFE EXIT! Profit:', profit);
-                
-                const wagerStats = resetProfitOnNormalReturn();
+                resetProfitOnNormalReturn();
                 
                 sendTelegramMessage('🛡️ SAFE EXIT!\n' +
                     'Profit Recovered: ' + profit.toFixed(8) + '\n' +
@@ -1071,11 +1164,13 @@
                     '📊 Wager Stats Preserved!');
                 
                 updateAllUI();
+                p.isProcessing = false;
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
             
             if (p.level > p.maxLevel) {
+                console.log('[ML] Max level reached');
                 p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
@@ -1085,9 +1180,7 @@
                 p.currentChance = p.baseChance;
                 p.mlActive = false;
                 
-                console.log('[RECOVERY] SUCCESS! Profit:', profit);
-                
-                const wagerStats = resetProfitOnNormalReturn();
+                resetProfitOnNormalReturn();
                 
                 sendTelegramMessage('✅ PAROLI RECOVERY SUCCESS!\n' +
                     'Profit Recovered: ' + profit.toFixed(8) + '\n' +
@@ -1097,6 +1190,7 @@
                     '📊 Wager Stats Preserved!');
                 
                 updateAllUI();
+                p.isProcessing = false;
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
@@ -1115,6 +1209,7 @@
             p.currentCondition = 'above';
             
             if (p.lossStreak >= p.maxLossStreak) {
+                console.log('[ML] Cutloss triggered');
                 p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
@@ -1124,9 +1219,7 @@
                 p.totalLoss = 0;
                 p.mlActive = false;
                 
-                console.log('[RECOVERY] CUTLOSS! Loss:', loss);
-                
-                const wagerStats = resetProfitOnNormalReturn();
+                resetProfitOnNormalReturn();
                 
                 sendTelegramMessage('✂️ PAROLI CUTLOSS!\n' +
                     'Loss: ' + loss.toFixed(8) + '\n' +
@@ -1136,12 +1229,14 @@
                     '📊 Wager Stats Preserved!');
                 
                 updateAllUI();
+                p.isProcessing = false;
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
             
             var drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.maxDrawdownPct) {
+                console.log('[ML] Max drawdown triggered');
                 p.level = 0;
                 STATE.isRecoveryMode = false;
                 STATE.lossStreak = 0;
@@ -1151,19 +1246,16 @@
                 p.totalLoss = 0;
                 p.mlActive = false;
                 
-                console.log('[RECOVERY] CUTLOSS! Drawdown:', drawdownPct + '%');
-                
-                const wagerStats = resetProfitOnNormalReturn();
+                resetProfitOnNormalReturn();
                 
                 sendTelegramMessage('✂️ PAROLI CUTLOSS!\n' +
                     'Drawdown: ' + drawdownPct.toFixed(2) + '%\n' +
                     'Loss: ' + loss.toFixed(8) + '\n' +
                     'New Balance: ' + STATE.balance.toFixed(8) + '\n' +
-                    'Total Wagered: ' + STATE.wagered.toFixed(8) + '\n' +
-                    'Total Bets: ' + STATE.bets + '\n' +
-                    '📊 Wager Stats Preserved!');
+                    '📊 Stats preserved!');
                 
                 updateAllUI();
+                p.isProcessing = false;
                 setTimeout(sendFireAndForgetBet, 100);
                 return;
             }
@@ -1175,12 +1267,16 @@
         p.currentBet = Math.min(p.currentBet, STATE.balance * 0.5);
         p.currentBet = Math.max(p.currentBet, STATE.minBet);
         
-        console.log('[RECOVERY] Next Level:', p.level, '| Bet:', p.currentBet, '| Chance:', p.currentChance);
+        console.log('[ML] Next Level:', p.level, '| Bet:', p.currentBet, '| Chance:', p.currentChance);
         updateAllUI();
         
         p.isProcessing = false;
         if (STATE.isRecoveryMode && p.level > 0) {
             setTimeout(runRecoverySequentialWithML, STATE.delayRecovery);
+        } else {
+            STATE.isRecoveryMode = false;
+            resetProfitOnNormalReturn();
+            setTimeout(sendFireAndForgetBet, 100);
         }
     }
 
@@ -1467,10 +1563,55 @@
         }
     }
 
+    function updateMLDisplay() {
+        if (!STATE.mlSystem) {
+            var statusEl = document.getElementById('ml-status');
+            if (statusEl) statusEl.textContent = '⚪ Inactive';
+            return;
+        }
+        
+        const status = STATE.mlSystem.getStatus();
+        
+        var statusEl = document.getElementById('ml-status');
+        if (statusEl) {
+            if (STATE.mlSystem.isActive && STATE.mlSystem.recoverySessionActive) {
+                statusEl.textContent = '🟢 Active - Recovering...';
+                statusEl.style.color = '#00e5c0';
+            } else {
+                statusEl.textContent = '⚪ Inactive';
+                statusEl.style.color = '';
+            }
+        }
+        
+        var el = document.getElementById('ml-total-loss');
+        if (el) el.textContent = status.totalLoss.toFixed(8);
+        el = document.getElementById('ml-target');
+        if (el) el.textContent = status.targetRecovery.toFixed(8);
+        el = document.getElementById('ml-recovered');
+        if (el) el.textContent = status.recoveredAmount.toFixed(8);
+        el = document.getElementById('ml-progress');
+        if (el) el.textContent = (status.progress * 100).toFixed(1) + '%';
+        el = document.getElementById('ml-current-chance');
+        if (el) el.textContent = status.currentChance.toFixed(1) + '%';
+        el = document.getElementById('ml-current-multiplier');
+        if (el) el.textContent = 'x' + status.currentMultiplier.toFixed(2);
+        el = document.getElementById('ml-win-streak');
+        if (el) el.textContent = status.winStreak;
+        el = document.getElementById('ml-loss-streak');
+        if (el) el.textContent = status.lossStreak;
+        el = document.getElementById('ml-best-chance');
+        if (el) el.textContent = status.bestChance.toFixed(1) + '%';
+        el = document.getElementById('ml-best-multiplier');
+        if (el) el.textContent = 'x' + status.bestMultiplier.toFixed(2);
+        el = document.getElementById('ml-best-recovery');
+        if (el) el.textContent = status.bestPerformance.toFixed(8);
+    }
+
     function updateAllUI() {
         updateStatsDisplayWithWager();
         updateRaffleDisplay();
         updateExitStrategyDisplay();
+        updateMLDisplay();
         
         var now = Date.now();
         if (now - STATE.lastTGReport >= CONFIG.tgReportInterval && STATE.bets > 0) {
@@ -1567,7 +1708,7 @@
         
         var style = document.createElement("style");
         style.innerHTML = `
-            :root { --bg: #1e1f1c; --bg-block: #272822; --text: #f8f8f2; --text-light: #a0a0a0; --border: #3a3a3a; --log-bg: #0f0f0a; --accent: #ff6b81; --success: #00e5c0; --danger: #ff6b81; --recovery: #ff922b; }
+            :root { --bg: #1e1f1c; --bg-block: #272822; --text: #f8f8f2; --text-light: #a0a0a0; --border: #3a3a3a; --log-bg: #0f0f0a; --accent: #ff6b81; --success: #00e5c0; --danger: #ff6b81; --recovery: #ff922b; --ml-color: #7c3aed; }
             #BotConsole { position: fixed; top: 10px; left: 10px; right: 10px; width: auto; max-width: 580px; margin: 0 auto; background: var(--bg); border-radius: 16px; font-family: 'Segoe UI', Consolas, monospace; font-size: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid var(--border); z-index: 99999; overflow: hidden; color: var(--text); }
             @media (min-width: 768px) { #BotConsole { top: 20px; right: 20px; left: auto; width: 580px; } }
             .bot-header { background: var(--accent); padding: 8px 12px; cursor: move; display: flex; justify-content: space-between; align-items: center; color: black; touch-action: none; }
@@ -1578,6 +1719,8 @@
             .tab-bar { display: flex; padding: 0 12px; gap: 4px; border-bottom: 1px solid var(--border); background: var(--bg); overflow-x: auto; }
             .tab-btn { padding: 8px 12px; background: transparent; border: none; color: var(--text-light); font-size: 11px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
             .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+            .tab-btn.ml-tab { color: var(--ml-color); }
+            .tab-btn.ml-tab.active { color: var(--ml-color); border-bottom-color: var(--ml-color); }
             .tab-content { display: none; padding: 12px; max-height: 70vh; overflow-y: auto; }
             .tab-content.active { display: block; }
             .controls-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; background: var(--bg-block); padding: 8px; border-radius: 12px; border: 1px solid var(--border); }
@@ -1587,6 +1730,7 @@
             .btn-stop { background: var(--danger); color: black; }
             .btn-pause { background: var(--text-light); color: black; }
             .btn-reset { background: var(--text-light); color: black; }
+            .btn-ml-reset { background: var(--ml-color); color: white; padding: 6px 12px; border: none; border-radius: 6px; font-weight: 700; font-size: 10px; cursor: pointer; }
             .btn-login { background: var(--accent); color: black; padding: 8px 16px; border: none; border-radius: 8px; font-weight: 700; font-size: 11px; cursor: pointer; min-height: 38px; }
             .token-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
             .token-row input { flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--border); padding: 8px; border-radius: 8px; font-size: 11px; font-family: monospace; color: var(--text); }
@@ -1603,6 +1747,7 @@
             .stats-block .line { display: flex; justify-content: space-between; padding: 3px 0; flex-wrap: wrap; gap: 4px; }
             .stats-block .label { color: var(--text-light); font-size: 9px; }
             .stats-block .value { font-weight: 600; text-align: right; color: var(--accent); font-size: 10px; word-break: break-word; max-width: 60%; }
+            .stats-block .value.ml-value { color: var(--ml-color); }
             .stats-block .divider { border-top: 1px solid var(--border); margin: 5px 0; }
             .progress-bar { background: var(--border); border-radius: 4px; margin: 4px 0; height: 4px; }
             .progress-fill { background: var(--success); height: 4px; border-radius: 4px; width: 0%; }
@@ -1615,6 +1760,7 @@
             .md-field label { display: block; font-size: 9px; font-weight: 500; margin-bottom: 3px; color: var(--text-light); }
             .md-field input, .md-field select { width: 100%; padding: 6px; font-size: 10px; }
             .minbet-info { font-size: 8px; color: var(--text-light); margin-top: 4px; text-align: right; }
+            .ml-stat-box { background: var(--bg); border-radius: 8px; padding: 6px 8px; margin: 4px 0; border-left: 3px solid var(--ml-color); }
             ::-webkit-scrollbar { width: 3px; }
             ::-webkit-scrollbar-thumb { background: var(--border); }
         `;
@@ -1637,6 +1783,7 @@
                     <button class="tab-btn active" onclick="window.openTab('main')">MAIN</button>
                     <button class="tab-btn" onclick="window.openTab('cfg')">CFG</button>
                     <button class="tab-btn" onclick="window.openTab('mm')">MM</button>
+                    <button class="tab-btn ml-tab" onclick="window.openTab('ml')">🤖 ML</button>
                     <button class="tab-btn" onclick="window.openTab('logs')">LOGS</button>
                 </div>
                 <div id="tab-main" class="tab-content active">
@@ -1752,6 +1899,40 @@
                         </div>
                     </div>
                 </div>
+                <div id="tab-ml" class="tab-content">
+                    <div class="stats-block">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                            <span style="font-weight:bold;color:var(--ml-color);">🤖 MACHINE LEARNING RECOVERY</span>
+                            <button id="btn-ml-reset" class="btn-ml-reset">RESET ML</button>
+                        </div>
+                        <div id="ml-status-display" class="ml-stat-box">
+                            <div class="line"><span class="label">Status</span><span class="value ml-value" id="ml-status">⚪ Inactive</span></div>
+                            <div class="line"><span class="label">Total Loss</span><span class="value ml-value" id="ml-total-loss">0</span></div>
+                            <div class="line"><span class="label">Target Recovery (50%)</span><span class="value ml-value" id="ml-target">0</span></div>
+                            <div class="line"><span class="label">Recovered</span><span class="value ml-value" id="ml-recovered">0</span></div>
+                            <div class="line"><span class="label">Progress</span><span class="value ml-value" id="ml-progress">0%</span></div>
+                        </div>
+                        <div class="divider"></div>
+                        <div id="ml-strategy-display" class="ml-stat-box">
+                            <div style="font-weight:bold;font-size:9px;color:var(--text-light);margin-bottom:4px;">🎯 CURRENT STRATEGY</div>
+                            <div class="line"><span class="label">Current Chance</span><span class="value ml-value" id="ml-current-chance">-</span></div>
+                            <div class="line"><span class="label">Current Multiplier</span><span class="value ml-value" id="ml-current-multiplier">-</span></div>
+                            <div class="line"><span class="label">Win Streak</span><span class="value ml-value" id="ml-win-streak">0</span></div>
+                            <div class="line"><span class="label">Loss Streak</span><span class="value ml-value" id="ml-loss-streak">0</span></div>
+                        </div>
+                        <div class="divider"></div>
+                        <div id="ml-best-display" class="ml-stat-box">
+                            <div style="font-weight:bold;font-size:9px;color:var(--text-light);margin-bottom:4px;">🏆 BEST PERFORMANCE</div>
+                            <div class="line"><span class="label">Best Chance</span><span class="value ml-value" id="ml-best-chance">-</span></div>
+                            <div class="line"><span class="label">Best Multiplier</span><span class="value ml-value" id="ml-best-multiplier">-</span></div>
+                            <div class="line"><span class="label">Best Recovery</span><span class="value ml-value" id="ml-best-recovery">0</span></div>
+                        </div>
+                        <div class="divider"></div>
+                        <div style="font-size:8px;color:var(--text-light);padding:4px 0;">
+                            📊 ML learns from each recovery session. Optimal strategy is saved locally.
+                        </div>
+                    </div>
+                </div>
                 <div id="tab-logs" class="tab-content">
                     <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4, Chance Increment)<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>🛡️ Exit: Safe (Balance >= Start) / Aggressive (Max Level)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
@@ -1795,12 +1976,28 @@
             updateAllUI();
         };
         
+        // ===== ML RESET BUTTON =====
+        var mlResetBtn = document.getElementById('btn-ml-reset');
+        if (mlResetBtn) {
+            mlResetBtn.onclick = function() {
+                if (STATE.mlSystem) {
+                    STATE.mlSystem.reset();
+                    localStorage.removeItem('ml_recovery_data');
+                    updateMLDisplay();
+                    sendTelegramMessage('🔄 ML DATA RESET\nAll learning data cleared!');
+                }
+            };
+        }
+        
         // ===== EXIT STRATEGY =====
-        document.getElementById('p-exit-strategy').onchange = function() {
-            STATE.paroli.exitStrategy = this.value;
-            updateExitStrategyDisplay();
-            updateAllUI();
-        };
+        var exitStrategyEl = document.getElementById('p-exit-strategy');
+        if (exitStrategyEl) {
+            exitStrategyEl.onchange = function() {
+                STATE.paroli.exitStrategy = this.value;
+                updateExitStrategyDisplay();
+                updateAllUI();
+            };
+        }
         
         // ===== TOKEN =====
         var loginBtn = document.getElementById("p-login");
@@ -1835,30 +2032,42 @@
         }
         
         // ===== CURRENCY CHANGE =====
-        document.getElementById("p-currency").onchange = function() {
-            STATE.selectedCurrency = this.value;
-            var currency = STATE.selectedCurrency.toUpperCase();
-            fetchUSDRate(currency).then(function(rate) {
-                STATE.fiatRates.usd = rate;
-                updateMinBet();
-                updateAllUI();
-            });
-        };
+        var currencyEl = document.getElementById("p-currency");
+        if (currencyEl) {
+            currencyEl.onchange = function() {
+                STATE.selectedCurrency = this.value;
+                var currency = STATE.selectedCurrency.toUpperCase();
+                fetchUSDRate(currency).then(function(rate) {
+                    STATE.fiatRates.usd = rate;
+                    updateMinBet();
+                    updateAllUI();
+                });
+            };
+        }
         
         // ===== PAROLI CHANCE EVENTS =====
-        document.getElementById('p-paroli-base-chance').onchange = function() {
-            STATE.paroli.baseChance = safeFloat('p-paroli-base-chance', 80);
-            STATE.paroli.currentChance = STATE.paroli.baseChance;
-            updateAllUI();
-        };
-        document.getElementById('p-paroli-increment').onchange = function() {
-            STATE.paroli.incrementPerWin = safeFloat('p-paroli-increment', 2.0);
-            updateAllUI();
-        };
-        document.getElementById('p-paroli-max-chance').onchange = function() {
-            STATE.paroli.maxChance = safeFloat('p-paroli-max-chance', 90);
-            updateAllUI();
-        };
+        var baseChanceEl = document.getElementById('p-paroli-base-chance');
+        if (baseChanceEl) {
+            baseChanceEl.onchange = function() {
+                STATE.paroli.baseChance = safeFloat('p-paroli-base-chance', 80);
+                STATE.paroli.currentChance = STATE.paroli.baseChance;
+                updateAllUI();
+            };
+        }
+        var incrementEl = document.getElementById('p-paroli-increment');
+        if (incrementEl) {
+            incrementEl.onchange = function() {
+                STATE.paroli.incrementPerWin = safeFloat('p-paroli-increment', 2.0);
+                updateAllUI();
+            };
+        }
+        var maxChanceEl = document.getElementById('p-paroli-max-chance');
+        if (maxChanceEl) {
+            maxChanceEl.onchange = function() {
+                STATE.paroli.maxChance = safeFloat('p-paroli-max-chance', 90);
+                updateAllUI();
+            };
+        }
         
         // ===== START =====
         var startBtn = document.getElementById("p-start");
@@ -2012,34 +2221,55 @@
         }
         
         // ===== CONFIG EVENTS =====
-        document.getElementById("p-normal-chance").onchange = function() {
-            STATE.normalChance = safeFloat("p-normal-chance", 99.98);
-            updateAllUI();
-        };
-        document.getElementById("p-paroli-max").onchange = function() {
-            STATE.paroli.maxLevel = safeInt("p-paroli-max", 4);
-            updateAllUI();
-        };
-        document.getElementById("p-paroli-cutloss").onchange = function() {
-            STATE.paroli.maxLossStreak = safeInt("p-paroli-cutloss", 5);
-            updateAllUI();
-        };
-        document.getElementById("p-trigger-drawdown").onchange = function() {
-            STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
-            updateAllUI();
-        };
-        document.getElementById("p-max-drawdown").onchange = function() {
-            STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
-            updateAllUI();
-        };
-        document.getElementById("p-wager-total-target-usd").oninput = updateAllUI;
-        document.getElementById("p-wager-loss-tolerance-pct").oninput = function() {
-            var pct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
-            var currentBalance = STATE.balance || STATE.startBalance || 0;
-            STATE.wagerLossTolerance = (pct / 100) * currentBalance;
-            var el = document.getElementById("loss-tolerance-display");
-            if (el) el.textContent = pct + '% (≈ ' + STATE.wagerLossTolerance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ')';
-        };
+        var normalChanceEl = document.getElementById("p-normal-chance");
+        if (normalChanceEl) {
+            normalChanceEl.onchange = function() {
+                STATE.normalChance = safeFloat("p-normal-chance", 99.98);
+                updateAllUI();
+            };
+        }
+        var paroliMaxEl = document.getElementById("p-paroli-max");
+        if (paroliMaxEl) {
+            paroliMaxEl.onchange = function() {
+                STATE.paroli.maxLevel = safeInt("p-paroli-max", 4);
+                updateAllUI();
+            };
+        }
+        var cutlossEl = document.getElementById("p-paroli-cutloss");
+        if (cutlossEl) {
+            cutlossEl.onchange = function() {
+                STATE.paroli.maxLossStreak = safeInt("p-paroli-cutloss", 5);
+                updateAllUI();
+            };
+        }
+        var triggerEl = document.getElementById("p-trigger-drawdown");
+        if (triggerEl) {
+            triggerEl.onchange = function() {
+                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
+                updateAllUI();
+            };
+        }
+        var maxDrawdownEl = document.getElementById("p-max-drawdown");
+        if (maxDrawdownEl) {
+            maxDrawdownEl.onchange = function() {
+                STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
+                updateAllUI();
+            };
+        }
+        
+        var targetUsdEl = document.getElementById("p-wager-total-target-usd");
+        if (targetUsdEl) targetUsdEl.oninput = updateAllUI;
+        
+        var lossToleranceEl = document.getElementById("p-wager-loss-tolerance-pct");
+        if (lossToleranceEl) {
+            lossToleranceEl.oninput = function() {
+                var pct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
+                var currentBalance = STATE.balance || STATE.startBalance || 0;
+                STATE.wagerLossTolerance = (pct / 100) * currentBalance;
+                var el = document.getElementById("loss-tolerance-display");
+                if (el) el.textContent = pct + '% (≈ ' + STATE.wagerLossTolerance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ')';
+            };
+        }
         
         // ===== OPEN TAB =====
         window.openTab = function(tabName) {
@@ -2087,7 +2317,8 @@
         var saved = localStorage.getItem('apitoken');
         if (saved) {
             accessToken = saved;
-            document.getElementById("p-token").value = saved;
+            var tokenInput = document.getElementById("p-token");
+            if (tokenInput) tokenInput.value = saved;
             syncUserInfo().then(function() {
                 fetchRaffleProgress();
                 updateMinBet();
