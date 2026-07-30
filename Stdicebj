@@ -1,20 +1,15 @@
 // ========================================================================
-// CHEAPCHEATX v2.0 - ML RECOVERY 50% + WAGERED KEEP (FULL SCRIPT)
+// CHEAPCHEATX v2.0 - FULL SCRIPT (ASLI + ADD-ON)
 // ========================================================================
-// NORMAL MODE: FIRE & FORGET (Dice 99.98%)
-// RECOVERY MODE: PAROLI + ML (50% target, adaptive chance)
-// ML: Pattern recognition, adaptive chance, dynamic bet sizing
-// TRIGGER: Drawdown > 0.125%
-// CUTLOSS: Loss Streak >= 5x
-// EXIT STRATEGY: 50% Recovery (Safe) / Max Level (Aggressive)
-// RAFFLE: Progress Bar + Next Ticket - WAGER BOT USD
+// SCRIPT ASLI: Dice Only + Paroli Recovery + Raffle Progress
+// ADD-ON: 50% Recovery Target + Machine Learning + Wagered KEEP
 // ========================================================================
 
 (function () {
     // ==================== 1. CONFIG ====================
     const CONFIG = {
         apiUrl: window.location.origin + '/_api',
-        version: "CheapCheatX v2.0 ML",
+        version: "CheapCheatX v2.0 + ML",
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
@@ -25,22 +20,9 @@
         maxLogs: 50,
         lockdownToken: "s5MNWtjTM5TvCMkAzxov",
         
-        // ===== RECOVERY 50% =====
-        recovery: {
-            targetPercent: 50,          // 50% dari loss
-            minRecoveryPercent: 30,
-            maxRecoveryPercent: 70,
-            resetProfitOnExit: true,
-            keepWageredStats: true,
-        },
-        
-        // ===== ML SETTINGS =====
-        ml: {
-            enabled: true,
-            maxHistory: 200,
-            minSamplesForPrediction: 10,
-            saveInterval: 60000,
-        }
+        // ===== ADD-ON: 50% RECOVERY =====
+        recoveryTarget: 50,
+        mlEnabled: true,
     };
 
     let accessToken = "";
@@ -71,21 +53,7 @@
             baseChance: 80,
             incrementPerWin: 2.0,
             maxChance: 90,
-            exitStrategy: 'safe',
-            consecutiveWins: 0,
-            consecutiveLosses: 0,
-            volatilityScore: 0.5,
-            bestLevelReached: 0
-        },
-        
-        // ===== RECOVERY STATE =====
-        recovery: {
-            initialLoss: 0,
-            lossAmount: 0,
-            recoveredAmount: 0,
-            targetRecovery: 0,
-            isFirstRecovery: true,
-            wageredDuringRecovery: 0,
+            exitStrategy: 'safe'
         },
         
         // ===== BALANCE =====
@@ -102,7 +70,6 @@
         drawdown: 0,
         maxDrawdown: 0,
         maxBet: 0,
-        highestProfit: 0,
         
         // ===== MINBET & FIAT =====
         minBet: 0.0014,
@@ -162,7 +129,17 @@
             maxBet: 0, maxDrawdownPct: 0, peakBalance: 0
         },
         
-        // ===== ML STATE =====
+        // ===== ADD-ON: RECOVERY STATE =====
+        recovery: {
+            initialLoss: 0,
+            lossAmount: 0,
+            recoveredAmount: 0,
+            targetRecovery: 0,
+            isFirstRecovery: true,
+            wageredDuringRecovery: 0,
+        },
+        
+        // ===== ADD-ON: ML STATE =====
         ml: {
             isActive: false,
             predictions: 0,
@@ -465,176 +442,49 @@
         return false;
     }
 
-    // ==================== 8. MACHINE LEARNING CORE ====================
-    
+    // ==================== 8. MACHINE LEARNING (ADD-ON) ====================
     const ML = {
         history: [],
-        maxHistory: CONFIG.ml.maxHistory || 200,
-        patterns: { 
-            winStreak: 0, 
-            lossStreak: 0, 
-            alternating: 0, 
-            volatility: 0.5,
-            winRate: 0.5,
-            avgProfit: 0
-        },
-        predictions: [],
+        maxHistory: 200,
+        patterns: { winStreak: 0, lossStreak: 0, alternating: 0, volatility: 0.5, winRate: 0.5 },
         
         learn: function(result) {
             if (!result) return;
-            
-            this.history.push({ 
-                win: result.win, 
-                chance: result.chance, 
-                amount: result.amount,
-                profit: result.win ? result.amount : -result.amount,
-                timestamp: Date.now() 
-            });
-            
-            if (this.history.length > this.maxHistory) {
-                this.history.shift();
-            }
-            
+            this.history.push({ win: result.win, chance: result.chance, amount: result.amount, timestamp: Date.now() });
+            if (this.history.length > this.maxHistory) this.history.shift();
             this.analyzePatterns();
-            this.save();
-            
             STATE.ml.isActive = true;
         },
         
         analyzePatterns: function() {
             if (this.history.length < 5) return;
-            
-            let wins = 0, losses = 0, profit = 0;
-            let streak = 0, maxWin = 0, maxLoss = 0, alt = 0;
-            
+            let wins = 0, losses = 0, streak = 0, maxWin = 0, maxLoss = 0, alt = 0;
             for (let i = this.history.length - 1; i >= 0; i--) {
-                const h = this.history[i];
-                if (h.win) { 
-                    wins++; 
-                    profit += h.amount;
-                    streak = streak >= 0 ? streak + 1 : 1; 
-                    maxWin = Math.max(maxWin, streak); 
-                } else { 
-                    losses++; 
-                    profit -= h.amount;
-                    streak = streak <= 0 ? streak - 1 : -1; 
-                    maxLoss = Math.max(maxLoss, Math.abs(streak)); 
-                }
+                if (this.history[i].win) { wins++; streak = streak >= 0 ? streak + 1 : 1; maxWin = Math.max(maxWin, streak); }
+                else { losses++; streak = streak <= 0 ? streak - 1 : -1; maxLoss = Math.max(maxLoss, Math.abs(streak)); }
                 if (i > 0 && this.history[i].win !== this.history[i-1].win) alt++;
             }
-            
             this.patterns.winStreak = maxWin;
             this.patterns.lossStreak = maxLoss;
             this.patterns.winRate = wins / (wins + losses || 1);
-            this.patterns.avgProfit = profit / this.history.length;
             this.patterns.alternating = this.history.length > 1 ? alt / (this.history.length - 1) : 0;
             this.patterns.volatility = 1 - this.patterns.winRate;
-            
-            if (this.patterns.alternating > 0.7) {
-                this.patterns.volatility *= 1.5;
-            }
-            
             STATE.ml.accuracy = this.patterns.winRate * 100;
         },
         
         predict: function() {
-            if (this.history.length < CONFIG.ml.minSamplesForPrediction || !CONFIG.ml.enabled) {
-                return { 
-                    winProbability: 0.5, 
-                    confidence: 0.2,
-                    suggestedChance: 80,
-                    pattern: 'unknown'
-                };
-            }
-            
+            if (this.history.length < 10) return { winProbability: 0.5, confidence: 0.2, suggestedChance: 80 };
             let wp = this.patterns.winRate;
             let conf = Math.min(this.history.length / 50, 0.85);
-            
-            if (this.patterns.lossStreak >= 3) {
-                wp += 0.12;
-                conf += 0.05;
-            }
-            if (this.patterns.winStreak >= 3) {
-                wp -= 0.10;
-                conf += 0.05;
-            }
-            
+            if (this.patterns.lossStreak >= 3) wp += 0.12;
+            if (this.patterns.winStreak >= 3) wp -= 0.10;
             if (this.patterns.alternating > 0.7) {
                 const lastWin = this.history[this.history.length - 1]?.win;
-                if (lastWin) {
-                    wp -= 0.12;
-                } else {
-                    wp += 0.12;
-                }
-                conf += 0.1;
+                wp += lastWin ? -0.12 : 0.12;
             }
-            
-            if (this.patterns.volatility > 0.6) {
-                wp *= 0.9;
-                conf *= 0.8;
-            }
-            
             wp = Math.min(Math.max(wp, 0.25), 0.92);
-            conf = Math.min(conf, 0.9);
-            
-            let suggestedChance = 80;
-            if (wp > 0.7) suggestedChance = 85;
-            else if (wp > 0.6) suggestedChance = 82;
-            else if (wp > 0.5) suggestedChance = 80;
-            else if (wp > 0.4) suggestedChance = 75;
-            else suggestedChance = 70;
-            
-            const prediction = {
-                winProbability: wp,
-                confidence: conf,
-                suggestedChance: suggestedChance,
-                pattern: this.patterns.alternating > 0.7 ? 'alternating' : 
-                         this.patterns.lossStreak > 2 ? 'loss_streak' :
-                         this.patterns.winStreak > 2 ? 'win_streak' : 'normal'
-            };
-            
-            STATE.ml.lastPrediction = prediction;
-            STATE.ml.predictions++;
-            
-            return prediction;
-        },
-        
-        getOptimalMultiplier: function(confidence) {
-            if (confidence > 0.7) return 1.3;
-            if (confidence > 0.5) return 1.1;
-            if (confidence > 0.3) return 0.9;
-            return 0.7;
-        },
-        
-        save: function() {
-            try {
-                const data = {
-                    history: this.history.slice(-50),
-                    patterns: this.patterns,
-                    timestamp: Date.now()
-                };
-                localStorage.setItem('mlData', JSON.stringify(data));
-            } catch(e) {}
-        },
-        
-        load: function() {
-            try {
-                const data = localStorage.getItem('mlData');
-                if (data) {
-                    const parsed = JSON.parse(data);
-                    this.history = parsed.history || [];
-                    this.patterns = parsed.patterns || this.patterns;
-                    console.log(`[ML] Loaded ${this.history.length} records`);
-                    if (this.history.length > 0) {
-                        this.analyzePatterns();
-                        console.log(`[ML] Win Rate: ${(this.patterns.winRate * 100).toFixed(1)}%`);
-                    }
-                    return true;
-                }
-            } catch(e) {
-                console.log('[ML] No saved data');
-            }
-            return false;
+            let suggestedChance = wp > 0.7 ? 85 : wp > 0.6 ? 82 : wp > 0.5 ? 80 : wp > 0.4 ? 75 : 70;
+            return { winProbability: wp, confidence: conf, suggestedChance: suggestedChance };
         },
         
         getStats: function() {
@@ -647,71 +497,34 @@
                 predictions: STATE.ml.predictions,
                 accuracy: STATE.ml.accuracy.toFixed(1) + '%'
             };
-        }
-    };
-
-    // ==================== 9. CHANCE OPTIMIZER ====================
-    
-    const ChanceOptimizer = {
-        performance: {},
-        
-        record: function(chance, win, amount) {
-            if (!this.performance[chance]) {
-                this.performance[chance] = { wins: 0, losses: 0, profit: 0, count: 0 };
-            }
-            const p = this.performance[chance];
-            p.count++;
-            if (win) { 
-                p.wins++; 
-                p.profit += amount; 
-            } else { 
-                p.losses++; 
-                p.profit -= amount; 
-            }
         },
         
-        getOptimal: function() {
-            const chances = [55, 60, 65, 70, 75, 80, 85, 90];
-            let best = 80;
-            let bestScore = -Infinity;
-            
-            for (const c of chances) {
-                const p = this.performance[c];
-                if (!p || p.count < 5) continue;
-                
-                const winRate = p.wins / p.count;
-                const avgProfit = p.profit / p.count;
-                const score = (winRate * 100) * 0.6 + (avgProfit * 1000) * 0.4;
-                
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = c;
+        save: function() {
+            try {
+                localStorage.setItem('mlData', JSON.stringify({
+                    history: this.history.slice(-50),
+                    patterns: this.patterns
+                }));
+            } catch(e) {}
+        },
+        
+        load: function() {
+            try {
+                const data = localStorage.getItem('mlData');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    this.history = parsed.history || [];
+                    this.patterns = parsed.patterns || this.patterns;
+                    if (this.history.length > 0) {
+                        this.analyzePatterns();
+                        console.log(`[ML] Loaded ${this.history.length} records, Win Rate: ${(this.patterns.winRate * 100).toFixed(1)}%`);
+                    }
                 }
-            }
-            return best;
-        },
-        
-        adjust: function(base, drawdown, lossStreak) {
-            let c = base;
-            
-            if (drawdown > 5) c -= 8;
-            else if (drawdown > 3) c -= 5;
-            else if (drawdown > 2) c -= 3;
-            else if (drawdown > 1) c -= 1;
-            
-            if (lossStreak >= 4) c += 8;
-            else if (lossStreak >= 2) c += 5;
-            
-            const mlOpt = this.getOptimal();
-            if (mlOpt !== 80 && this.performance[mlOpt]?.count > 10) {
-                c = (c + mlOpt) / 2;
-            }
-            
-            return Math.min(Math.max(Math.round(c), 55), 92);
+            } catch(e) {}
         }
     };
 
-    // ==================== 10. PLACE DICE BET ====================
+    // ==================== 9. PLACE DICE BET (ASLI) ====================
     async function placeDiceBet(amount, chance, condition) {
         var target = condition === 'above' ? (100 - chance) : chance;
         var apiAmount = STATE.isDemo ? 0 : parseFloat(amount.toFixed(8));
@@ -758,7 +571,7 @@
                 }
             }
             
-            // ===== UPDATE BALANCE =====
+            // ===== UPDATE BALANCE (ASLI) =====
             if (d.user && d.user.wallets && d.user.wallets[0]) {
                 STATE.balance = parseFloat(d.user.wallets[0].balance);
             } else {
@@ -766,11 +579,6 @@
                 STATE.balance += pnl;
                 if (STATE.balance < 0) STATE.balance = 0;
             }
-            
-            // ===== ✅ SYNC: UPDATE PROFIT & DRAWDOWN =====
-            STATE.profit = STATE.balance - STATE.startBalance;
-            STATE.drawdown = STATE.startBalance - STATE.balance;
-            if (STATE.drawdown < 0) STATE.drawdown = 0;
             
             updateAllUI();
             
@@ -782,9 +590,7 @@
                 state: d.state,
                 result: win ? 'win' : 'loss',
                 game: 'dice',
-                chance: chance,
-                realBalance: STATE.balance,
-                profit: STATE.profit
+                chance: chance
             };
             
         } catch (error) {
@@ -793,44 +599,28 @@
         }
     }
 
-    // ==================== 11. PAROLI RECOVERY ====================
+    // ==================== 10. PAROLI RECOVERY (ASLI + 50% TARGET) ====================
     function startRecovery() {
         var basebet = STATE.balance * (STATE.baseBetPercent / 100);
         if (basebet < STATE.minBet) basebet = STATE.minBet;
         
         var p = STATE.paroli;
         
-        // ===== HITUNG LOSS & TARGET 50% =====
+        // ===== ADD-ON: HITUNG 50% TARGET =====
         const lossAmount = STATE.startBalance - STATE.balance;
-        const recoveryTarget = lossAmount * (CONFIG.recovery.targetPercent / 100);
-        const minRecovery = lossAmount * (CONFIG.recovery.minRecoveryPercent / 100);
-        const finalTarget = Math.max(recoveryTarget, minRecovery);
-        
+        const recoveryTarget = lossAmount * (CONFIG.recoveryTarget / 100);
         STATE.recovery.initialLoss = lossAmount;
         STATE.recovery.lossAmount = lossAmount;
         STATE.recovery.recoveredAmount = 0;
-        STATE.recovery.targetRecovery = finalTarget;
-        STATE.recovery.isFirstRecovery = true;
-        STATE.recovery.wageredDuringRecovery = 0;
+        STATE.recovery.targetRecovery = recoveryTarget;
         
-        // ===== ML PREDICTION =====
+        // ===== ADD-ON: ML PREDICTION =====
         const pred = ML.predict();
-        const drawdownPct = (lossAmount / STATE.startBalance) * 100;
-        const mlChance = ChanceOptimizer.adjust(
-            p.baseChance || 80, 
-            drawdownPct, 
-            STATE.lossStreak
-        );
-        
-        let finalChance = mlChance;
+        let finalChance = p.baseChance || 80;
         if (pred.suggestedChance && pred.confidence > 0.5) {
-            finalChance = Math.round((mlChance + pred.suggestedChance) / 2);
+            finalChance = Math.round((finalChance + pred.suggestedChance) / 2);
         }
         finalChance = Math.min(Math.max(finalChance, 55), 92);
-        
-        console.log(`[RECOVERY] Loss: ${lossAmount.toFixed(8)}`);
-        console.log(`[RECOVERY] Target: ${finalTarget.toFixed(8)} (${CONFIG.recovery.targetPercent}% of loss)`);
-        console.log(`[ML] Chance: ${finalChance}%, Confidence: ${(pred.confidence * 100).toFixed(0)}%`);
         
         p.level = 1;
         p.unit = basebet;
@@ -848,8 +638,9 @@
         STATE.lossStreak = 0;
         
         console.log('[RECOVERY] Paroli Started Level 1, Chance: ' + p.currentChance + '%');
+        console.log('[ADDON] 50% Recovery Target: ' + recoveryTarget.toFixed(8));
         sendTelegramMessage('🔄 PAROLI RECOVERY #' + p.recoveryCount + '\n' +
-            'Target: ' + CONFIG.recovery.targetPercent + '% of loss\n' +
+            'Target: 50% of loss\n' +
             'Level: 1\n' +
             'Bet: ' + p.currentBet.toFixed(8) + '\n' +
             'Chance: ' + p.currentChance + '%');
@@ -858,7 +649,7 @@
         setTimeout(runRecoverySequential, 100);
     }
 
-    // ==================== 12. HANDLE RECOVERY RESULT ====================
+    // ==================== 11. HANDLE RECOVERY RESULT (ASLI + 50% CHECK) ====================
     function handleRecoveryResult(win, betAmount) {
         var p = STATE.paroli;
         
@@ -869,11 +660,10 @@
             p.currentChance = Math.min(p.currentChance + p.incrementPerWin, p.maxChance);
             
             STATE.recovery.recoveredAmount += betAmount;
-            STATE.recovery.wageredDuringRecovery += betAmount;
             
             console.log('[RECOVERY] WIN | Level:', p.level, '| Recovered:', STATE.recovery.recoveredAmount.toFixed(8));
             
-            // ===== CHECK 50% TARGET =====
+            // ===== ADD-ON: CHECK 50% TARGET =====
             if (STATE.recovery.recoveredAmount >= STATE.recovery.targetRecovery) {
                 const lossAmount = STATE.recovery.initialLoss;
                 const remainingLoss = lossAmount - STATE.recovery.recoveredAmount;
@@ -899,7 +689,7 @@
                 return;
             }
             
-            // ===== CHECK MAX LEVEL =====
+            // ===== CHECK MAX LEVEL (ASLI) =====
             if (p.level > p.maxLevel) {
                 const lossAmount = STATE.recovery.initialLoss;
                 const remainingLoss = lossAmount - STATE.recovery.recoveredAmount;
@@ -935,9 +725,9 @@
             p.currentChance = p.baseChance;
             p.currentCondition = 'above';
             
-            console.log('[RECOVERY] LOSS | Streak:', p.lossStreak, '| Total Loss:', p.totalLoss.toFixed(8));
+            console.log('[RECOVERY] LOSS | Streak:', p.lossStreak);
             
-            // ===== CHECK CUTLOSS =====
+            // ===== CHECK CUTLOSS (ASLI) =====
             if (p.lossStreak >= p.maxLossStreak) {
                 const lossAmount = STATE.recovery.initialLoss;
                 const remainingLoss = lossAmount - STATE.recovery.recoveredAmount;
@@ -960,6 +750,7 @@
                 return;
             }
             
+            // ===== CHECK MAX DRAWDOWN (ASLI) =====
             var drawdownPct = ((STATE.startBalance - STATE.balance) / STATE.startBalance) * 100;
             if (drawdownPct >= STATE.maxDrawdownPct) {
                 const lossAmount = STATE.recovery.initialLoss;
@@ -999,11 +790,12 @@
         }
     }
 
-    // ==================== 13. PROCESS BET RESULT ====================
+    // ==================== 12. PROCESS BET RESULT (ASLI + ML) ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
         var isWin = result.win;
+        var profit = isWin ? betAmount : -betAmount;
         var chance = result.chance || STATE.normalChance;
         
         STATE.bets++;
@@ -1021,7 +813,6 @@
         
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.drawdown = STATE.startBalance - STATE.balance;
-        if (STATE.drawdown < 0) STATE.drawdown = 0;
         
         if (STATE.drawdown > STATE.maxDrawdown) {
             STATE.maxDrawdown = STATE.drawdown;
@@ -1044,13 +835,12 @@
             STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
         }
         
-        // ===== LEARN ML =====
-        if (CONFIG.ml.enabled) {
+        // ===== ADD-ON: LEARN ML =====
+        if (CONFIG.mlEnabled) {
             ML.learn(result);
-            ChanceOptimizer.record(chance, isWin, betAmount);
         }
         
-        logBet(STATE.bets, betAmount, chance, STATE.profit);
+        logBet(STATE.bets, betAmount, chance, profit);
         
         if (mode === 'recovery') {
             handleRecoveryResult(isWin, betAmount);
@@ -1070,7 +860,70 @@
         updateAllUI();
     }
 
-    // ==================== 14. RECOVERY SEQUENTIAL ====================
+    // ==================== 13. LOGGING ====================
+    function logBet(betNumber, amount, chance, profit) {
+        var logBox = document.getElementById("p-logs");
+        if (!logBox) return;
+        var entry = document.createElement("div");
+        entry.style.cssText = "padding:2px 6px;font-size:10px;font-family:monospace;border-bottom:1px solid " + 
+            (STATE.darkMode ? "#1a1a2e" : "#f0f0f0") + 
+            ";display:flex;justify-content:space-between;gap:8px;align-items:center;";
+        var profitColor = profit >= 0 ? '#00e5c0' : '#ff6b81';
+        var profitSign = profit >= 0 ? '+' : '';
+        var chanceDisplay = chance.toFixed(1) + '%';
+        var mlTag = STATE.ml.isActive ? '🧠' : '🎲';
+        entry.innerHTML = `
+            <span style="color:#606060;min-width:35px;font-size:9px;">#${betNumber}</span>
+            <span style="color:#9ec07c;min-width:55px;font-size:9px;">${chanceDisplay}</span>
+            <span style="color:#a0a0a0;min-width:85px;font-size:9px;">${amount.toFixed(8)}</span>
+            <span style="color:${profitColor};font-weight:bold;min-width:85px;font-size:9px;text-align:right;">${profitSign}${profit.toFixed(8)} ${mlTag}</span>
+        `;
+        logBox.insertBefore(entry, logBox.firstChild);
+        while (logBox.children.length > STATE.maxLogs) {
+            logBox.removeChild(logBox.lastChild);
+        }
+    }
+
+    // ==================== 14. FIRE & FORGET ====================
+    function sendFireAndForgetBet() {
+        if (STATE.isRecoveryMode || STATE.paroli.level > 0) {
+            console.log('[F&F] Recovery active, skipping...');
+            return;
+        }
+        
+        if (!STATE.isRunning || STATE.isPaused) return;
+        
+        var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
+        if (drawdownPct >= STATE.triggerDrawdownPct) {
+            console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
+            startRecovery();
+            return;
+        }
+        
+        if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
+            STATE.isRunning = false;
+            STATE.wagerStop = true;
+            toggleStartStop(false);
+            sendTelegramMessage('✅ TOTAL WAGER TARGET REACHED!');
+            return;
+        }
+        
+        var betAmount = STATE.balance * (STATE.baseBetPercent / 100);
+        var finalBet = Math.max(betAmount, STATE.minBet);
+        finalBet = Math.min(finalBet, STATE.balance * 0.5);
+        if (STATE.maxBetCap > 0) {
+            finalBet = Math.min(finalBet, STATE.maxBetCap);
+        }
+        
+        console.log('[F&F] Dice bet:', finalBet);
+        placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
+            if (result) processBetResult(result, finalBet, 'normal', true);
+        }).catch(function(e) { console.error('[F&F] Dice error:', e); });
+        
+        setTimeout(sendFireAndForgetBet, STATE.delayNormal);
+    }
+
+    // ==================== 15. RECOVERY SEQUENTIAL ====================
     async function runRecoverySequential() {
         if (!STATE.isRunning || STATE.isPaused) return;
         if (!STATE.isRecoveryMode || STATE.paroli.level <= 0) {
@@ -1114,45 +967,6 @@
             p.isProcessing = false;
             setTimeout(runRecoverySequential, STATE.delayRecovery);
         }
-    }
-
-    // ==================== 15. FIRE & FORGET ====================
-    function sendFireAndForgetBet() {
-        if (STATE.isRecoveryMode || STATE.paroli.level > 0) {
-            console.log('[F&F] Recovery active, skipping...');
-            return;
-        }
-        
-        if (!STATE.isRunning || STATE.isPaused) return;
-        
-        var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
-        if (drawdownPct >= STATE.triggerDrawdownPct) {
-            console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
-            startRecovery();
-            return;
-        }
-        
-        if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
-            STATE.isRunning = false;
-            STATE.wagerStop = true;
-            toggleStartStop(false);
-            sendTelegramMessage('✅ TOTAL WAGER TARGET REACHED!');
-            return;
-        }
-        
-        var betAmount = STATE.balance * (STATE.baseBetPercent / 100);
-        var finalBet = Math.max(betAmount, STATE.minBet);
-        finalBet = Math.min(finalBet, STATE.balance * 0.5);
-        if (STATE.maxBetCap > 0) {
-            finalBet = Math.min(finalBet, STATE.maxBetCap);
-        }
-        
-        console.log('[F&F] Dice bet:', finalBet);
-        placeDiceBet(finalBet, STATE.normalChance, 'above').then(function(result) {
-            if (result) processBetResult(result, finalBet, 'normal', true);
-        }).catch(function(e) { console.error('[F&F] Dice error:', e); });
-        
-        setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
     // ==================== 16. RESET FUNCTIONS ====================
@@ -1229,8 +1043,7 @@
         
         var status;
         if (STATE.isRecoveryMode) {
-            const mlStatus = STATE.ml.isActive ? '🧠ML' : '';
-            status = `🔄 PAROLI L${STATE.paroli.level} ${mlStatus}`;
+            status = '🔄 PAROLI L' + STATE.paroli.level + ' 🎯50%';
         } else {
             status = '⚡ NORMAL 🎲';
         }
@@ -1244,6 +1057,8 @@
             "st-bets": STATE.bets + ' | WR ' + winRate.toFixed(0) + '%',
             "st-speed": betSpeed.toFixed(1) + 'b/s',
             "st-chance": status + ' | DD: ' + drawdownPct.toFixed(2) + '%',
+            "st-gaphits": drawdown.toFixed(8),
+            "st-timer": STATE.isResetting ? '⏰ ' + STATE.resetCountdownRemaining + 's' : '--',
             "st-minbet": STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ' (2 IDR)',
             "st-maxdd": STATE.maxDrawdown.toFixed(8),
             "st-maxbet": STATE.maxBet.toFixed(8),
@@ -1268,15 +1083,27 @@
 
     function updateMLDisplay() {
         var el = document.getElementById('st-ml-status');
-        if (!el) return;
+        if (!el) {
+            var statusInline = document.querySelector('.status-inline');
+            if (statusInline) {
+                var span = document.createElement('span');
+                span.id = 'st-ml-status';
+                span.style.cssText = 'color:#ff922b;font-size:9px;margin-left:6px;';
+                span.textContent = '🧠 ML: Learning...';
+                statusInline.appendChild(span);
+                el = span;
+            }
+        }
         
-        if (STATE.ml.isActive) {
-            const stats = ML.getStats();
-            el.innerHTML = `🧠 ML: ${stats.winRate} | ${stats.records} records`;
-            el.style.color = '#00e5c0';
-        } else {
-            el.textContent = '🧠 ML: Learning...';
-            el.style.color = '#ff922b';
+        if (el) {
+            if (STATE.ml.isActive) {
+                const stats = ML.getStats();
+                el.innerHTML = `🧠 ML: ${stats.winRate} | ${stats.records} records`;
+                el.style.color = '#00e5c0';
+            } else {
+                el.textContent = '🧠 ML: Learning...';
+                el.style.color = '#ff922b';
+            }
         }
     }
 
@@ -1285,15 +1112,16 @@
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
-        var status = STATE.isRecoveryMode ? '🔄 PAROLI + ML' : '⚡ NORMAL';
+        var status = STATE.isRecoveryMode ? '🔄 PAROLI 50%' : '⚡ NORMAL';
         var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
         var raffleTickets = STATE.raffle.userTickets;
         var wageredUSD = STATE.raffle.wageredFromBot;
+        var exitStrategy = '🎯 50% Recovery';
         
         const mlStats = ML.getStats();
         
-        var message = '💰 CHEAPCHEATX v2.0 ML\n' +
+        var message = '💰 CHEAPCHEATX v2.0 + ML\n' +
                       '"Smart Recovery with Machine Learning"\n' +
                       'User: ' + STATE.stakeUser + '\n' +
                       'Time: ' + runTime + '\n' +
@@ -1307,7 +1135,7 @@
                       'Wagered: ' + STATE.wagered.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
                       'Paroli Level: ' + STATE.paroli.level + '\n' +
-                      '🎯 Recovery: 50% target\n' +
+                      'Exit Strategy: ' + exitStrategy + '\n' +
                       '🧠 ML Stats: ' + mlStats.winRate + ' | ' + mlStats.records + ' records\n' +
                       '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
                       'Status: ' + status + '\n' +
@@ -1413,7 +1241,7 @@
         <div id="BotConsole">
             <div class="bot-header" id="botHeader">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <span class="title">🧠 CHEAPCHEATX v2.0 ML</span>
+                    <span class="title">🎲 CHEAPCHEATX v2.0 + ML</span>
                     <span class="time-running" id="st-running-time">0s</span>
                     <span class="ml-badge">ML ACTIVE</span>
                 </div>
@@ -1451,13 +1279,13 @@
                     <div class="status-inline">
                         <span class="dot" id="statusDot" style="background:#FF4757;"></span>
                         <span id="botStatus">STOP</span>
-                        <span id="st-ml-status" style="color:#ff922b;font-size:9px;">🧠 ML: Learning...</span>
+                        <span id="st-ml-status" style="color:#ff922b;font-size:9px;margin-left:6px;">🧠 ML: Learning...</span>
                     </div>
                     <div id="raffle-container" style="background:var(--bg-block);border-radius:12px;padding:8px 10px;margin-bottom:6px;border:1px solid var(--border);">
                         <div id="st-raffle">Loading raffle progress...</div>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:4px 8px;background:var(--bg-block);border-radius:8px;border:1px solid var(--border);font-size:10px;">
-                        <span style="color:var(--text-light);">🎯 STRATEGY:</span>
+                        <span style="color:var(--text-light);">🎯 EXIT STRATEGY:</span>
                         <span id="st-exit-strategy" style="font-weight:bold;color:#00e5c0;">🎯 50% Recovery + ML</span>
                     </div>
                     <div class="stats-block">
@@ -1475,6 +1303,7 @@
                         <div class="line"><span class="label">Max Drawdown</span><span class="value" id="st-maxdd">0</span></div>
                         <div class="line"><span class="label">Max Bet</span><span class="value" id="st-maxbet">0</span></div>
                         <div class="line"><span class="label">Drawdown Now</span><span class="value" id="st-ddnow">0</span></div>
+                        <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
                     </div>
                 </div>
                 <div id="tab-cfg" class="tab-content">
@@ -1487,19 +1316,18 @@
                         <div class="minbet-info" id="minbet-info">≈ 0.00000000 crypto (2 IDR)</div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 RECOVERY + ML</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 PAROLI RECOVERY</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.125" step="0.01" min="0.01" max="5"></div>
                             <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-paroli-max" value="4" step="1" min="2" max="6"></div>
                         </div>
                         <div class="grid-2">
-                            <div class="md-field"><label>🎯 RECOVERY TARGET (%)</label><input type="number" id="p-recovery-target" value="50" step="5" min="30" max="70"></div>
                             <div class="md-field"><label>✂️ CUTLOSS STREAK</label><input type="number" id="p-paroli-cutloss" value="5" step="1" min="2" max="10"></div>
                         </div>
                         <div class="divider"></div>
                         <div style="font-weight:bold;margin-bottom:8px;">🎯 CHANCE SETTINGS</div>
                         <div class="grid-2">
-                            <div class="md-field"><label>🎯 BASE CHANCE (%)</label><input type="number" id="p-paroli-base-chance" value="80" step="0.5" min="1" max="99"></div>
+                            <div class="md-field"><label>🎯 CHANCE AWAL (%)</label><input type="number" id="p-paroli-base-chance" value="80" step="0.5" min="1" max="99"></div>
                             <div class="md-field"><label>📈 INCREMENT PER WIN (%)</label><input type="number" id="p-paroli-increment" value="2.0" step="0.5" min="0" max="20"></div>
                         </div>
                         <div class="grid-2">
@@ -1552,7 +1380,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🧠 CHEAPCHEATX v2.0 ML<br>"Smart Recovery with Machine Learning"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli + ML (50% target)<br>🧠 ML: Pattern Recognition & Adaptive Chance<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>🎯 Exit: 50% Recovery (Safe)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v2.0 + ML<br>"Smart Recovery with Machine Learning"<br><br>📊 Normal: Dice (Fire & Forget)<br>🔄 Recovery: Paroli (Level 1-4, Chance Increment)<br>🎯 Exit: 50% Recovery + ML<br>📉 Trigger: Drawdown > 0.125%<br>✂️ Cutloss: 5x Loss Streak<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar<br>🧠 ML: Pattern Recognition & Adaptive Chance</div></div>
                 </div>
             </div>
         </div>`;
@@ -1568,10 +1396,10 @@
         
         // ===== AUTO SAVE ML =====
         setInterval(function() {
-            if (STATE.ml.isActive) {
+            if (STATE.ml.isActive && ML.history.length > 0) {
                 ML.save();
             }
-        }, CONFIG.ml.saveInterval || 60000);
+        }, 60000);
         
         // ===== INIT =====
         var saved = localStorage.getItem('apitoken');
@@ -1634,9 +1462,10 @@
             updateAllUI();
         };
         
-        // ===== RECOVERY TARGET =====
-        document.getElementById('p-recovery-target').onchange = function() {
-            CONFIG.recovery.targetPercent = safeFloat('p-recovery-target', 50);
+        // ===== EXIT STRATEGY =====
+        document.getElementById('p-exit-strategy').onchange = function() {
+            STATE.paroli.exitStrategy = this.value;
+            updateExitStrategyDisplay();
             updateAllUI();
         };
         
@@ -1724,6 +1553,7 @@
                 STATE.paroli.currentChance = STATE.paroli.baseChance;
                 STATE.paroli.incrementPerWin = safeFloat("p-paroli-increment", 2.0);
                 STATE.paroli.maxChance = safeFloat("p-paroli-max-chance", 90);
+                STATE.paroli.exitStrategy = document.getElementById('p-exit-strategy').value || 'safe';
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
                 STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.125);
                 STATE.targetPct = safeFloat("p-target-pct", 5);
@@ -1732,16 +1562,14 @@
                 STATE.delayNormal = safeInt("p-delay-normal", 50);
                 STATE.delayRecovery = safeInt("p-delay-recovery", 200);
                 
-                CONFIG.recovery.targetPercent = safeFloat("p-recovery-target", 50);
-                
                 var targetUSD = safeFloat("p-wager-total-target-usd", 1000);
                 var lossPct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
                 
                 if (STATE.isDemo) {
                     var tokenEl2 = document.getElementById("p-token");
                     if (!tokenEl2 || tokenEl2.value.trim().length < 30) {
-                        sendTelegramMessage('⚠️ DEMO MODE: Token diperlukan!');
-                        alert('⚠️ DEMO MODE: Masukkan API Token!');
+                        sendTelegramMessage('⚠️ DEMO MODE: Token diperlukan untuk API call!');
+                        alert('⚠️ DEMO MODE: Masukkan API Token terlebih dahulu!');
                         return;
                     }
                     accessToken = tokenEl2.value.trim();
@@ -1759,7 +1587,7 @@
                     STATE.minBet = STATE.minBetIdr / 16000;
                     if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
                     await syncUserInfo();
-                    sendTelegramMessage('🎮 FLASH/DEMO MODE ACTIVE\nBalance: ' + balance.toFixed(8) + ' (virtual)');
+                    sendTelegramMessage('🎮 FLASH/DEMO MODE ACTIVE\nBalance: ' + balance.toFixed(8) + ' (virtual)\nAPI: Real with amount 0');
                 } else {
                     await syncUserInfo();
                     await updateMinBet();
@@ -1789,8 +1617,6 @@
                 STATE.paroli.totalLoss = 0;
                 STATE.paroli.lossStreak = 0;
                 STATE.paroli.currentChance = STATE.paroli.baseChance;
-                STATE.paroli.consecutiveWins = 0;
-                STATE.paroli.consecutiveLosses = 0;
                 STATE.raffle.wageredFromBot = 0;
                 STATE.ml.isActive = false;
                 STATE.ml.predictions = 0;
@@ -1813,19 +1639,9 @@
                 toggleStartStop(true);
                 updateAllUI();
                 
-                var modeText = STATE.isDemo ? '🎮 FLASH/DEMO' : '💰 REAL';
-                sendTelegramMessage(
-                    '💰 CHEAPCHEATX v2.0 ML STARTED\n' +
-                    modeText + '\n' +
-                    'Balance: ' + balance.toFixed(8) + '\n' +
-                    'MinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
-                    'Normal: ' + STATE.normalChance + '%\n' +
-                    'Recovery: Paroli + ML (50% target)\n' +
-                    'ML: Pattern Recognition & Adaptive Chance\n' +
-                    'Trigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n' +
-                    '✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x\n' +
-                    '🎟️ Raffle: Tracking progress'
-                );
+                var exitLabel = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Balance >= Start)' : '⚡ Aggressive (Max Level)';
+                var modeText = STATE.isDemo ? '🎮 FLASH/DEMO (API amount: 0)' : '💰 REAL';
+                sendTelegramMessage('💰 CHEAPCHEATX v2.0 + ML STARTED\n' + modeText + '\nBalance: ' + balance.toFixed(8) + '\nMinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\nNormal: ' + STATE.normalChance + '%\nRecovery: Paroli Level 1-' + STATE.paroli.maxLevel + '\nChance: ' + STATE.paroli.baseChance + '% +' + STATE.paroli.incrementPerWin + '%/win (max ' + STATE.paroli.maxChance + '%)\nExit: ' + exitLabel + ' + 50% Target\nTrigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n✂️ Cutloss: ' + STATE.paroli.maxLossStreak + 'x Loss Streak\n🧠 ML: Pattern Recognition\n🎟️ Raffle: Tracking progress');
                 
                 runLoop();
             };
@@ -1868,7 +1684,7 @@
         document.getElementById('ml-reset').onclick = function() {
             if (confirm('Reset ML data? This will clear all learned patterns.')) {
                 ML.history = [];
-                ML.patterns = { winStreak: 0, lossStreak: 0, alternating: 0, volatility: 0.5, winRate: 0.5, avgProfit: 0 };
+                ML.patterns = { winStreak: 0, lossStreak: 0, alternating: 0, volatility: 0.5, winRate: 0.5 };
                 STATE.ml.isActive = false;
                 STATE.ml.predictions = 0;
                 STATE.ml.accuracy = 0;
@@ -1999,8 +1815,8 @@
     }
 })();
 
-console.log('✅ CHEAPCHEATX v2.0 ML LOADED!');
-console.log('🧠 Machine Learning Active');
-console.log('🎯 Recovery Target: 50%');
+console.log('✅ CHEAPCHEATX v2.0 + ML LOADED!');
+console.log('🎯 50% Recovery Target ACTIVE');
+console.log('🧠 ML Pattern Recognition ACTIVE');
 console.log('💾 Wagered: KEEP (TIDAK DI-RESET)');
-console.log('📊 Balance & Profit: SYNC OK');
+console.log('🔗 Sinkronisasi API TETAP ASLI!');
