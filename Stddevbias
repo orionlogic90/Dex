@@ -245,7 +245,7 @@
         } catch(e) {}
     }
 
-    // ==================== 5. FIAT RATE - FULL MAPPING ALL COIN + IDR ====================
+    // ==================== 5. FIAT RATE - FULL MAPPING 80+ COIN + IDR ====================
     function getCoinGeckoId(coin) {
         var map = {
             // Fiat
@@ -628,6 +628,8 @@
                 STATE.stakeUser = json.data.user.name;
                 var bals = json.data.user.balances || [];
                 var sel = document.getElementById("p-currency");
+                
+                // HANYA populate jika masih kosong
                 if (sel && sel.options.length === 0) {
                     var allCoins = [
                         "IDR", "USD", "EUR",
@@ -652,9 +654,21 @@
                         opt2.textContent = allCoins[j];
                         sel.appendChild(opt2);
                     }
-                    sel.value = STATE.selectedCurrency;
+                    
+                    // Hormati pilihan user, jangan auto select
+                    if (STATE.selectedCurrency) {
+                        sel.value = STATE.selectedCurrency.toLowerCase();
+                    } else {
+                        sel.value = 'usdt';
+                    }
                 }
+                
+                // Ambil selected value dari dropdown
                 STATE.selectedCurrency = sel ? sel.value : "usdt";
+                
+                var currency = STATE.selectedCurrency.toUpperCase();
+                STATE.fiatRates.usd = await fetchUSDRate(currency);
+                
                 var active = null;
                 for (var k = 0; k < bals.length; k++) {
                     if (bals[k].available.currency.toLowerCase() === STATE.selectedCurrency.toLowerCase()) {
@@ -666,8 +680,8 @@
                     STATE.balance = parseFloat(active.available.amount);
                     STATE.startBalance = STATE.balance;
                     STATE.peakBalanceEver = STATE.balance;
+                    await updateFiatRates();
                 }
-                await updateFiatRates();
                 return true;
             }
         } catch(e) { return false; }
