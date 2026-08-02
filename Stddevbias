@@ -122,7 +122,6 @@
         sessionStartTime: null,
         stakeUser: "Loading...",
         selectedCurrency: "usdt",
-        availableCurrencies: [],
         
         wagerTotalAccumulated: 0,
         wagerSesiCounter: 0,
@@ -246,11 +245,21 @@
         } catch(e) {}
     }
 
-    // ==================== 5. FIAT RATE ====================
+    // ==================== 5. FIAT RATE - FULL MAPPING ALL COIN + IDR ====================
     function getCoinGeckoId(coin) {
         var map = {
+            // Fiat
+            "IDR": "indonesian-rupiah",
+            "USD": "usd",
+            "EUR": "euro",
+            // Stablecoin
             "USDT": "tether",
             "USDC": "usd-coin",
+            "DAI": "dai",
+            "BUSD": "binance-usd",
+            "TUSD": "true-usd",
+            "USDD": "usdd",
+            // Top 10
             "BTC": "bitcoin",
             "ETH": "ethereum",
             "BNB": "binancecoin",
@@ -260,40 +269,100 @@
             "DOGE": "dogecoin",
             "TRX": "tron",
             "DOT": "polkadot",
+            "MATIC": "polygon",
+            // Top 20
             "LTC": "litecoin",
-            "POL": "polygon"
+            "BCH": "bitcoin-cash",
+            "LINK": "chainlink",
+            "UNI": "uniswap",
+            "ATOM": "cosmos",
+            "ETC": "ethereum-classic",
+            "XLM": "stellar",
+            "FIL": "filecoin",
+            "ICP": "internet-computer",
+            "HBAR": "hedera-hashgraph",
+            // Layer 1
+            "AVAX": "avalanche-2",
+            "NEAR": "near",
+            "FTM": "fantom",
+            "APT": "aptos",
+            "SUI": "sui",
+            "SEI": "sei-network",
+            "INJ": "injective-protocol",
+            "TIA": "celestia",
+            "ARB": "arbitrum",
+            "OP": "optimism",
+            // Layer 2
+            "POL": "polygon",
+            "MNT": "mantle",
+            "IMX": "immutable-x",
+            "STRK": "starknet",
+            "ZK": "zksync",
+            // DeFi
+            "AAVE": "aave",
+            "MKR": "maker",
+            "COMP": "compound-governance-token",
+            "CRV": "curve-dao-token",
+            "LDO": "lido-dao",
+            "RUNE": "thorchain",
+            "EOS": "eos",
+            // Meme
+            "SHIB": "shiba-inu",
+            "PEPE": "pepe",
+            "WIF": "dogwifcoin",
+            "BONK": "bonk",
+            "FLOKI": "floki",
+            // Gaming
+            "SAND": "the-sandbox",
+            "MANA": "decentraland",
+            "AXS": "axie-infinity",
+            "GALA": "gala",
+            "ENJ": "enjincoin",
+            // AI
+            "FET": "fetch-ai",
+            "AGIX": "singularitynet",
+            "OCEAN": "ocean-protocol",
+            // Oracle
+            "PYTH": "pyth-network",
+            "BAND": "band-protocol",
+            // Storage
+            "AR": "arweave",
+            "BLZ": "bluzelle",
+            // Exchange
+            "CRO": "crypto-com-chain",
+            "LEO": "leo-token",
+            "OKB": "okb",
+            // Others
+            "KAS": "kaspa",
+            "XMR": "monero",
+            "ZEC": "zcash",
+            "DASH": "dash",
+            "NEO": "neo",
+            "VET": "vechain",
+            "THETA": "theta-token",
+            "ALGO": "algorand",
+            "GRT": "the-graph",
+            "RNDR": "render-token",
+            "APE": "apecoin",
+            "FLOW": "flow",
+            "QNT": "quant-network",
+            "ENS": "ethereum-name-service",
+            "CHZ": "chiliz",
+            "PAXG": "pax-gold",
+            "XAUT": "tether-gold"
         };
         return map[coin] || coin.toLowerCase();
     }
 
-    async function fetchUSDRate(currency) {
-        try {
-            var res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
-            var data = await res.json();
-            if (data.price) return parseFloat(data.price);
-        } catch(e) {}
+    async function fetchPriceToIDR(coin) {
+        // Kalau IDR, return 1
+        if (coin === 'IDR' || coin === 'idr') {
+            return 1;
+        }
         
         try {
-            var cgId = getCoinGeckoId(currency);
-            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=usd');
-            var data = await res.json();
-            if (data[cgId] && data[cgId].usd) return data[cgId].usd;
-        } catch(e) {}
-        
-        var fallback = {
-            'usdt': 1, 'usdc': 1,
-            'btc': 65000, 'eth': 3500, 'bnb': 580,
-            'sol': 180, 'xrp': 0.48, 'ada': 0.35,
-            'doge': 0.12, 'trx': 0.12, 'dot': 4.5,
-            'ltc': 72, 'pol': 0.38
-        };
-        return fallback[currency.toLowerCase()] || 1;
-    }
-
-    async function fetchMinBetRate(currency) {
-        try {
-            var cgId = getCoinGeckoId(currency);
-            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
+            var cgId = getCoinGeckoId(coin);
+            var res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=idr`);
             var data = await res.json();
             if (data[cgId] && data[cgId].idr) {
                 return data[cgId].idr;
@@ -301,45 +370,156 @@
         } catch(e) {}
         
         try {
-            var coinRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
+            var coinRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}USDT`);
             var coinData = await coinRes.json();
-            var idrRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR');
+            var idrRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR`);
             var idrData = await idrRes.json();
             if (coinData.price && idrData.price) {
                 return parseFloat(coinData.price) * parseFloat(idrData.price);
             }
         } catch(e) {}
-        
-        var fallbackRates = {
-            'usdt': 16000,
-            'usdc': 16000,
-            'btc': 16000 * 65000,
-            'eth': 16000 * 3500,
-            'bnb': 16000 * 580,
-            'sol': 16000 * 180,
-            'xrp': 16000 * 0.48,
-            'ada': 16000 * 0.35,
-            'doge': 16000 * 0.12,
-            'trx': 16000 * 0.12,
-            'dot': 16000 * 4.5,
-            'ltc': 16000 * 72,
-            'pol': 16000 * 0.38
-        };
-        return fallbackRates[currency.toLowerCase()] || 16000;
+        return null;
     }
 
-    async function updateMinBet() {
+    async function updateFiatRates() {
         var currency = STATE.selectedCurrency.toUpperCase();
-        var rate = await fetchMinBetRate(currency);
-        if (rate && rate > 0) {
-            STATE.minBet = 2 / rate;
-            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
+        
+        // Kalau IDR, langsung set
+        if (currency === 'IDR') {
+            STATE.fiatRates.idr = 1;
+            STATE.fiatRateFetched = true;
+            STATE.minBet = STATE.minBetIdr;
+            var el = document.getElementById('minbet-info');
+            if (el) {
+                el.textContent = '≈ 2 IDR';
+            }
+            return true;
+        }
+        
+        var rate = await fetchPriceToIDR(currency);
+        
+        if (rate === null || rate <= 0) {
+            var usdtIdr = 16000;
+            var fallbackRates = {
+                // Fiat
+                "IDR": 1,
+                "USD": usdtIdr,
+                "EUR": usdtIdr * 1.08,
+                // Stablecoin
+                "USDT": usdtIdr,
+                "USDC": usdtIdr,
+                "DAI": usdtIdr,
+                "BUSD": usdtIdr,
+                "TUSD": usdtIdr,
+                "USDD": usdtIdr,
+                // Top 10
+                "BTC": usdtIdr * 65000,
+                "ETH": usdtIdr * 3500,
+                "BNB": usdtIdr * 580,
+                "SOL": usdtIdr * 180,
+                "XRP": usdtIdr * 0.48,
+                "ADA": usdtIdr * 0.35,
+                "DOGE": usdtIdr * 0.12,
+                "TRX": usdtIdr * 0.12,
+                "DOT": usdtIdr * 4.5,
+                "MATIC": usdtIdr * 0.38,
+                // Top 20
+                "LTC": usdtIdr * 72,
+                "BCH": usdtIdr * 380,
+                "LINK": usdtIdr * 14,
+                "UNI": usdtIdr * 7.5,
+                "ATOM": usdtIdr * 6.8,
+                "ETC": usdtIdr * 22,
+                "XLM": usdtIdr * 0.095,
+                "FIL": usdtIdr * 4.2,
+                "ICP": usdtIdr * 8.5,
+                "HBAR": usdtIdr * 0.065,
+                // Layer 1
+                "AVAX": usdtIdr * 28,
+                "NEAR": usdtIdr * 5.2,
+                "FTM": usdtIdr * 0.65,
+                "APT": usdtIdr * 6.2,
+                "SUI": usdtIdr * 0.85,
+                "SEI": usdtIdr * 0.35,
+                "INJ": usdtIdr * 24,
+                "TIA": usdtIdr * 6.8,
+                "ARB": usdtIdr * 0.85,
+                "OP": usdtIdr * 1.8,
+                // Layer 2
+                "POL": usdtIdr * 0.38,
+                "MNT": usdtIdr * 0.82,
+                "IMX": usdtIdr * 1.4,
+                "STRK": usdtIdr * 0.55,
+                "ZK": usdtIdr * 0.18,
+                // DeFi
+                "AAVE": usdtIdr * 98,
+                "MKR": usdtIdr * 1450,
+                "COMP": usdtIdr * 48,
+                "CRV": usdtIdr * 0.28,
+                "LDO": usdtIdr * 1.8,
+                "RUNE": usdtIdr * 4.5,
+                "EOS": usdtIdr * 0.55,
+                // Meme
+                "SHIB": usdtIdr * 0.000015,
+                "PEPE": usdtIdr * 0.000008,
+                "WIF": usdtIdr * 1.8,
+                "BONK": usdtIdr * 0.000025,
+                "FLOKI": usdtIdr * 0.00018,
+                // Gaming
+                "SAND": usdtIdr * 0.32,
+                "MANA": usdtIdr * 0.32,
+                "AXS": usdtIdr * 5.8,
+                "GALA": usdtIdr * 0.028,
+                "ENJ": usdtIdr * 0.28,
+                // AI
+                "FET": usdtIdr * 1.2,
+                "AGIX": usdtIdr * 0.65,
+                "OCEAN": usdtIdr * 0.55,
+                // Oracle
+                "PYTH": usdtIdr * 0.35,
+                "BAND": usdtIdr * 1.2,
+                // Storage
+                "AR": usdtIdr * 22,
+                "BLZ": usdtIdr * 0.12,
+                // Exchange
+                "CRO": usdtIdr * 0.085,
+                "LEO": usdtIdr * 5.2,
+                "OKB": usdtIdr * 42,
+                // Others
+                "KAS": usdtIdr * 0.18,
+                "XMR": usdtIdr * 180,
+                "ZEC": usdtIdr * 32,
+                "DASH": usdtIdr * 28,
+                "NEO": usdtIdr * 10,
+                "VET": usdtIdr * 0.025,
+                "THETA": usdtIdr * 1.2,
+                "ALGO": usdtIdr * 0.12,
+                "GRT": usdtIdr * 0.18,
+                "RNDR": usdtIdr * 6.8,
+                "APE": usdtIdr * 0.85,
+                "FLOW": usdtIdr * 0.55,
+                "QNT": usdtIdr * 72,
+                "ENS": usdtIdr * 18,
+                "CHZ": usdtIdr * 0.065,
+                "PAXG": usdtIdr * 2400,
+                "XAUT": usdtIdr * 2400
+            };
+            rate = fallbackRates[currency] || usdtIdr;
+        }
+        
+        if (rate !== null && rate > 0) {
             STATE.fiatRates.idr = rate;
             STATE.fiatRateFetched = true;
+            STATE.minBet = STATE.minBetIdr / rate;
+            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
             
             var el = document.getElementById('minbet-info');
             if (el) {
-                el.textContent = '≈ ' + STATE.minBet.toFixed(8) + ' ' + currency + ' (2 IDR)';
+                if (currency === 'IDR') {
+                    el.textContent = '≈ 2 IDR';
+                } else {
+                    el.textContent = '≈ ' + STATE.minBet.toFixed(8) + ' ' + currency + ' (2 IDR)';
+                }
             }
             return true;
         }
@@ -447,60 +627,34 @@
             if (json && json.data && json.data.user) {
                 STATE.stakeUser = json.data.user.name;
                 var bals = json.data.user.balances || [];
-                STATE.availableCurrencies = [];
-                
                 var sel = document.getElementById("p-currency");
-                if (sel) {
-                    // Clear existing options
-                    sel.innerHTML = '';
-                    
-                    // Populate from balance
-                    var hasBalance = false;
-                    for (var k = 0; k < bals.length; k++) {
-                        var bal = parseFloat(bals[k].available.amount);
-                        if (bal > 0) {
-                            var opt = document.createElement("option");
-                            opt.value = bals[k].available.currency.toLowerCase();
-                            opt.textContent = bals[k].available.currency.toUpperCase() + ' (' + bal.toFixed(4) + ')';
-                            sel.appendChild(opt);
-                            STATE.availableCurrencies.push(bals[k].available.currency.toLowerCase());
-                            hasBalance = true;
-                        }
+                if (sel && sel.options.length === 0) {
+                    var allCoins = [
+                        "IDR", "USD", "EUR",
+                        "USDT", "USDC", "DAI", "BUSD", "TUSD", "USDD",
+                        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT", "MATIC",
+                        "LTC", "BCH", "LINK", "UNI", "ATOM", "ETC", "XLM", "FIL", "ICP", "HBAR",
+                        "AVAX", "NEAR", "FTM", "APT", "SUI", "SEI", "INJ", "TIA", "ARB", "OP",
+                        "POL", "MNT", "IMX", "STRK", "ZK",
+                        "AAVE", "MKR", "COMP", "CRV", "LDO", "RUNE", "EOS",
+                        "SHIB", "PEPE", "WIF", "BONK", "FLOKI",
+                        "SAND", "MANA", "AXS", "GALA", "ENJ",
+                        "FET", "AGIX", "OCEAN", "PYTH", "BAND",
+                        "AR", "BLZ", "CRO", "LEO", "OKB",
+                        "KAS", "XMR", "ZEC", "DASH", "NEO",
+                        "VET", "THETA", "ALGO", "GRT", "RNDR",
+                        "APE", "FLOW", "QNT", "ENS", "CHZ",
+                        "PAXG", "XAUT"
+                    ];
+                    for (var j = 0; j < allCoins.length; j++) {
+                        var opt2 = document.createElement("option");
+                        opt2.value = allCoins[j].toLowerCase();
+                        opt2.textContent = allCoins[j];
+                        sel.appendChild(opt2);
                     }
-                    
-                    // Fallback if no balance
-                    if (!hasBalance) {
-                        var fallback = ["USDT", "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT", "LTC", "POL"];
-                        for (var j = 0; j < fallback.length; j++) {
-                            var opt2 = document.createElement("option");
-                            opt2.value = fallback[j].toLowerCase();
-                            opt2.textContent = fallback[j];
-                            sel.appendChild(opt2);
-                        }
-                    }
-                    
-                    // Auto select currency with highest balance
-                    var maxBal = 0;
-                    var maxCurrency = 'usdt';
-                    for (var k = 0; k < bals.length; k++) {
-                        var bal = parseFloat(bals[k].available.amount);
-                        if (bal > maxBal) {
-                            maxBal = bal;
-                            maxCurrency = bals[k].available.currency.toLowerCase();
-                        }
-                    }
-                    if (maxBal > 0) {
-                        sel.value = maxCurrency;
-                        STATE.selectedCurrency = maxCurrency;
-                    } else {
-                        sel.value = 'usdt';
-                        STATE.selectedCurrency = 'usdt';
-                    }
+                    sel.value = STATE.selectedCurrency;
                 }
-                
-                var currency = STATE.selectedCurrency.toUpperCase();
-                STATE.fiatRates.usd = await fetchUSDRate(currency);
-                
+                STATE.selectedCurrency = sel ? sel.value : "usdt";
                 var active = null;
                 for (var k = 0; k < bals.length; k++) {
                     if (bals[k].available.currency.toLowerCase() === STATE.selectedCurrency.toLowerCase()) {
@@ -512,8 +666,8 @@
                     STATE.balance = parseFloat(active.available.amount);
                     STATE.startBalance = STATE.balance;
                     STATE.peakBalanceEver = STATE.balance;
-                    await updateMinBet();
                 }
+                await updateFiatRates();
                 return true;
             }
         } catch(e) { return false; }
@@ -2252,7 +2406,7 @@
                 if (success) {
                     document.getElementById("p-start").disabled = false;
                     await fetchRaffleProgress();
-                    await updateMinBet();
+                    await updateFiatRates();
                     updateAllUI();
                     sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
                 }
@@ -2265,7 +2419,7 @@
                 if (!accessToken) return;
                 await syncUserInfo();
                 await fetchRaffleProgress();
-                await updateMinBet();
+                await updateFiatRates();
                 updateAllUI();
             };
         }
@@ -2274,12 +2428,9 @@
         if (currencyEl) {
             currencyEl.onchange = function() {
                 STATE.selectedCurrency = this.value;
-                var currency = STATE.selectedCurrency.toUpperCase();
-                fetchUSDRate(currency).then(function(rate) {
-                    STATE.fiatRates.usd = rate;
-                    updateMinBet();
-                    updateAllUI();
-                });
+                STATE.fiatRateFetched = false;
+                updateFiatRates();
+                updateAllUI();
             };
         }
         
@@ -2348,7 +2499,7 @@
                 localStorage.setItem('apitoken', accessToken);
                 
                 await syncUserInfo();
-                await updateMinBet();
+                await updateFiatRates();
                 var balance = STATE.balance;
                 
                 if (!balance || balance === 0) {
@@ -2546,7 +2697,7 @@
             if (tokenInput) tokenInput.value = saved;
             syncUserInfo().then(function() {
                 fetchRaffleProgress();
-                updateMinBet();
+                updateFiatRates();
                 updateAllUI();
             });
         }
