@@ -3,17 +3,12 @@
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dynamic Pattern - Limbo 1.001x, Dice 99%, Baccarat 2 Sisi)
 // RECOVERY MODE: DUAL (ML Dribble 125% + Blackjack Flat Bet)
+// TARGET RECOVERY: 125% dari loss (minus 1 koin → target 1.25 koin)
 // TRIGGER: Drawdown > 0.5%
 // CUTLOSS: Loss Streak >= 4x
-// EXIT STRATEGY: Safe (Balance >= Start Balance) / Aggressive (Max Level)
+// EXIT STRATEGY: Safe (Target 125% tercapai) / Aggressive (Max Level)
 // RAFFLE: Progress Bar + Next Ticket (di atas stats) - WAGER BOT USD
 // SUPPORTED CURRENCIES: USDT, BTC, ETH, BNB, SOL, XRP, IDR, dan semua crypto di Stake
-// FIXED: Balance fetch (syncUserInfo persis seperti v2.0 yang work)
-// FIXED: IDR MinBet = 2 IDR
-// FIXED: Dice profit = (99/chance - 1) * amount
-// FIXED: Baccarat 2 Sisi profit = 0 (Player Win), -totalBet*0.05 (Banker Win), -totalBet (Tie)
-// FIXED: Log bet warna: Hijau (profit > 0), Merah (profit < 0), Kuning (profit = 0)
-// FIXED: Recovery target = 125% dari loss (75% balik loss + 25% profit)
 // ========================================================================
 
 (function () {
@@ -192,8 +187,8 @@
             }
         },
         
-        recovery75: {
-            targetPct: 125,  // 125% = balik 100% loss + profit 25%
+        recoveryTarget: {
+            targetPct: 125,  // 125% = minus 1 → target 1.25
             baseChance: 78,
             minChance: 75,
             maxChance: 78,
@@ -514,7 +509,7 @@
         `;
     }
 
-    // ==================== 7. SYNC USER INFO - PERSIS SEPERTI SCRIPT LAMA YANG WORK ====================
+    // ==================== 7. SYNC USER INFO ====================
     async function syncUserInfo() {
         if (!accessToken || accessToken.length < 30) return false;
         var query = 'query{user{name balances{available{amount currency}}}}';
@@ -1203,8 +1198,7 @@
         startRecovery(totalLoss, initialBalance, minBet, maxBet) {
             this.isActive = true;
             this.totalLoss = totalLoss;
-            // ===== TARGET 125% DARI LOSS =====
-            this.targetRecovery = totalLoss * 1.25; // 125% (100% balik loss + 25% profit)
+            this.targetRecovery = totalLoss * 1.25; // 125% = minus 1 → target 1.25
             this.recoveredAmount = 0;
             this.recoveryProfit = 0;
             this.recoverySessionActive = true;
@@ -1717,7 +1711,7 @@
         
         try {
             var totalLoss = STATE.startBalance - STATE.balance;
-            var targetRecovery = totalLoss * 1.25; // 125%
+            var targetRecovery = totalLoss * 1.25;
             var bjBet = Math.min(
                 Math.max(STATE.minBet * 10, targetRecovery / 50),
                 STATE.balance * 0.02
@@ -1791,26 +1785,16 @@
                     return;
                 }
                 
-                if (STATE.paroli.exitStrategy === 'safe' && STATE.balance >= STATE.startBalance) {
-                    STATE.isRecoveryMode = false;
-                    p.level = 0;
-                    var profit2 = STATE.balance - STATE.startBalance;
-                    resetProfitOnNormalReturn();
-                    sendTelegramMessage('🛡️ SAFE EXIT (BJ)!\nProfit: ' + profit2.toFixed(8) + '\nBack to Normal');
-                    updateAllUI();
-                    p.isProcessing = false;
-                    setTimeout(sendFireAndForgetBet, 0);
-                    return;
-                }
-                
+                // ===== SAFE EXIT: TARGET 125% =====
                 var recovered = STATE.startBalance - STATE.balance;
                 if (recovered >= totalLoss * 1.25) {
                     STATE.isRecoveryMode = false;
                     p.level = 0;
                     resetProfitOnNormalReturn();
+                    var profitAmount = STATE.balance - STATE.startBalance;
                     sendTelegramMessage('✅ BJ RECOVERY 125% SUCCESS!\n' +
                         'Recovered: ' + recovered.toFixed(8) + ' / ' + (totalLoss * 1.25).toFixed(8) + '\n' +
-                        'Profit: ' + (recovered - totalLoss).toFixed(8) + '\n' +
+                        'Profit: ' + profitAmount.toFixed(8) + '\n' +
                         'BJ Stats: Win ' + STATE.dualRecovery.bjWin + ' | Loss ' + STATE.dualRecovery.bjLoss + ' | Push ' + STATE.dualRecovery.bjPush);
                     updateAllUI();
                     p.isProcessing = false;
@@ -1988,38 +1972,36 @@
                     return;
                 }
                 
-                if (STATE.paroli.exitStrategy === 'safe' && STATE.balance >= STATE.startBalance) {
+                // ===== SAFE EXIT: Target 125% tercapai =====
+                if (STATE.paroli.exitStrategy === 'safe') {
+                    if (STATE.mlSystem && STATE.mlSystem.isActive) {
+                        var status = STATE.mlSystem.getStatus();
+                        if (status.recoveredAmount >= status.targetRecovery) {
+                            STATE.isRecoveryMode = false;
+                            STATE.paroli.level = 0;
+                            STATE.paroli.mlActive = false;
+                            STATE.dualRecovery.mlCount = 0;
+                            var profit2 = STATE.balance - STATE.startBalance;
+                            resetProfitOnNormalReturn();
+                            sendTelegramMessage('🛡️ SAFE EXIT (TARGET 125%)!\nProfit: ' + profit2.toFixed(8) + '\nBack to Normal');
+                            updateAllUI();
+                            setTimeout(sendFireAndForgetBet, 0);
+                            return;
+                        }
+                    }
+                }
+                
+                // ===== AGGRESSIVE EXIT =====
+                if (STATE.paroli.exitStrategy === 'aggressive' && STATE.paroli.level > STATE.paroli.maxLevel) {
                     STATE.isRecoveryMode = false;
                     STATE.paroli.level = 0;
                     STATE.paroli.mlActive = false;
                     STATE.dualRecovery.mlCount = 0;
-                    var profit2 = STATE.balance - STATE.startBalance;
                     resetProfitOnNormalReturn();
-                    sendTelegramMessage('🛡️ SAFE EXIT!\nProfit: ' + profit2.toFixed(8) + '\nBack to Normal');
+                    sendTelegramMessage('⚡ AGGRESSIVE EXIT!\nMax Level: ' + STATE.paroli.maxLevel + '\nBack to Normal');
                     updateAllUI();
                     setTimeout(sendFireAndForgetBet, 0);
                     return;
-                }
-                
-                if (STATE.mlSystem && STATE.mlSystem.isActive) {
-                    var status = STATE.mlSystem.getStatus();
-                    if (status.recoveredAmount >= status.targetRecovery) {
-                        STATE.isRecoveryMode = false;
-                        STATE.paroli.level = 0;
-                        STATE.paroli.mlActive = false;
-                        STATE.dualRecovery.mlCount = 0;
-                        resetProfitOnNormalReturn();
-                        var profitAmount = status.recoveredAmount - status.totalLoss;
-                        sendTelegramMessage('✅ ML RECOVERY 125% SUCCESS (DRIBBLE)!\n' +
-                            'Recovered: ' + status.recoveredAmount.toFixed(8) + ' / ' + status.targetRecovery.toFixed(8) + '\n' +
-                            'Profit: ' + profitAmount.toFixed(8) + '\n' +
-                            'Wins: ' + status.dribbleWins + ' | Losses: ' + status.dribbleLosses + '\n' +
-                            'Win Rate: ' + status.dribbleWinRate.toFixed(1) + '%\n' +
-                            'New Balance: ' + STATE.balance.toFixed(8));
-                        updateAllUI();
-                        setTimeout(sendFireAndForgetBet, 0);
-                        return;
-                    }
                 }
                 
                 if (result.win) {
@@ -2458,7 +2440,7 @@
     function updateExitStrategyDisplay() {
         var el = document.getElementById('st-exit-strategy');
         if (el) {
-            var text = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe' : '⚡ Aggressive';
+            var text = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Target 125%)' : '⚡ Aggressive (Max Level)';
             el.textContent = text;
             el.style.color = STATE.paroli.exitStrategy === 'safe' ? '#00e5c0' : '#ff922b';
         }
@@ -2493,7 +2475,7 @@
         var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
         var raffleTickets = STATE.raffle.userTickets;
         var wageredUSD = STATE.raffle.wageredFromBot;
-        var exitStrategy = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe' : '⚡ Aggressive';
+        var exitStrategy = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Target 125%)' : '⚡ Aggressive (Max Level)';
         
         var dr = STATE.dualRecovery;
         var dualInfo = '\n🔄 DUAL RECOVERY STATS\n' +
@@ -2543,7 +2525,7 @@
                       mlInfo +
                       '\n🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
                       'Status: ' + status +
-                      '\n📊 Target: 125% dari loss (100% balik + 25% profit)';
+                      '\n📊 Target: 125% dari loss (minus 1 → target 1.25)';
         await sendTelegramMessage(message);
     }
 
@@ -2684,7 +2666,7 @@
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:4px 8px;background:var(--bg-block);border-radius:8px;border:1px solid var(--border);font-size:10px;">
                         <span style="color:var(--text-light);">🎯 EXIT STRATEGY:</span>
                         <select id="p-exit-strategy" style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:10px;color:var(--text);">
-                            <option value="safe">🛡️ Safe (Balance >= Start)</option>
+                            <option value="safe">🛡️ Safe (Target 125%)</option>
                             <option value="aggressive">⚡ Aggressive (Max Level)</option>
                         </select>
                         <span id="st-exit-strategy" style="font-weight:bold;margin-left:auto;">🛡️ Safe</span>
@@ -2747,7 +2729,7 @@
                     </div>
                     <div class="stats-block">
                         <div style="font-weight:bold;margin-bottom:8px;">🔄 DUAL RECOVERY (ML 125% + BJ Flat)</div>
-                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Target: 125% dari loss (100% balik + 25% profit)</div>
+                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Target: 125% dari loss (minus 1 → target 1.25)</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.5" step="0.01" min="0.01" max="5"></div>
                             <div class="md-field"><label>📈 MAX LEVEL</label><input type="number" id="p-paroli-max" value="4" step="1" min="2" max="6"></div>
@@ -2825,12 +2807,12 @@
                         </div>
                         <div class="divider"></div>
                         <div style="font-size:8px;color:var(--text-light);padding:4px 0;">
-                            📊 ML learns from each recovery session. Target: 125% recovery (100% balik loss + 25% profit)
+                            📊 Target: 125% dari loss (minus 1 koin → target 1.25 koin)
                         </div>
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dynamic Pattern (Limbo 1.001x / Baccarat 2 Sisi / Dice 99.98% / Dice 99%)<br>🔄 Recovery: DUAL 125% (ML Dribble 125% + Blackjack Flat Bet)<br>📉 Trigger: Drawdown > 0.5%<br>✂️ Cutloss: 4x Loss Streak<br>🛡️ Exit: Safe / Aggressive<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dynamic Pattern (Limbo 1.001x / Baccarat 2 Sisi / Dice 99.98% / Dice 99%)<br>🔄 Recovery: DUAL 125% (ML Dribble 125% + Blackjack Flat Bet)<br>📉 Trigger: Drawdown > 0.5%<br>✂️ Cutloss: 4x Loss Streak<br>🛡️ Exit: Safe (Target 125%) / Aggressive (Max Level)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -3087,13 +3069,13 @@
                 toggleStartStop(true);
                 updateAllUI();
                 
-                var exitLabel = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Balance >= Start)' : '⚡ Aggressive (Max Level)';
+                var exitLabel = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Target 125%)' : '⚡ Aggressive (Max Level)';
                 var modeLabel = STATE.baccaratMode === 'both' ? '2 Sisi' : STATE.baccaratMode === 'player' ? 'Player Only' : 'Banker Only';
                 sendTelegramMessage('💰 CHEAPCHEATX v3.0 STARTED (DUAL 125% RECOVERY)\n' +
                     'Mode: Dynamic Pattern (Limbo 1.001x, Baccarat ' + modeLabel + ', Dice 99.98%, Dice 99%)\n' +
                     'Baccarat Bet Size: ' + STATE.baccaratBetMultiplier + 'x\n' +
                     'Recovery: DUAL (ML Dribble 125% + Blackjack Flat Bet)\n' +
-                    'Target: 125% dari loss (100% balik + 25% profit)\n' +
+                    'Target: 125% dari loss (minus 1 → target 1.25)\n' +
                     'Balance: ' + balance.toFixed(8) + '\n' +
                     'MinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                     'Exit: ' + exitLabel + '\n' +
