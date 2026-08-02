@@ -7,7 +7,7 @@
 // CUTLOSS: Loss Streak >= 4x
 // EXIT STRATEGY: Safe (Balance >= Start Balance) / Aggressive (Max Level)
 // RAFFLE: Progress Bar + Next Ticket (di atas stats) - WAGER BOT USD
-// FIXED: Profit synchronization issue
+// FIXED: Profit calculation for Dice (99/chance) and Baccarat 2 Sisi
 // ========================================================================
 
 (function () {
@@ -37,7 +37,6 @@
         darkMode: false,
         minimized: false,
         
-        // ===== PAROLI =====
         paroli: {
             level: 0,
             maxLevel: 4,
@@ -68,7 +67,6 @@
             dribbleCurrentStreak: 0
         },
         
-        // ===== BALANCE =====
         balance: 0,
         startBalance: 0,
         peakBalanceEver: 0,
@@ -84,13 +82,11 @@
         maxBet: 0,
         highestProfit: 0,
         
-        // ===== MINBET & FIAT =====
         minBet: 0.0014,
         minBetIdr: 2,
         fiatRates: { usdt: 0, idr: 0, usd: 0 },
         fiatRateFetched: false,
         
-        // ===== RAFFLE =====
         raffle: {
             id: '299d4c87-d395-4386-8022-4a3072ad09a7',
             name: 'Undian Mingguan $75k',
@@ -102,7 +98,6 @@
             nextTicketRemaining: 1000
         },
         
-        // ===== NORMAL =====
         normalChance: 99.98,
         dice99Chance: 99,
         baccaratMode: 'both',
@@ -114,11 +109,9 @@
         maxDrawdownPct: 5,
         triggerDrawdownPct: 0.5,
         
-        // ===== DELAY =====
         delayNormal: 0,
         delayRecovery: 0,
         
-        // ===== OTHER =====
         sessionNumber: 1,
         sessionsCompleted: 0,
         sessionStartTime: null,
@@ -145,10 +138,8 @@
             maxBet: 0, maxDrawdownPct: 0, peakBalance: 0
         },
         
-        // ===== ML SYSTEM =====
         mlSystem: null,
         
-        // ===== DYNAMIC PATTERN =====
         dynamic: {
             cycleBets: 0,
             cycleLength: 0,
@@ -162,7 +153,6 @@
             }
         },
         
-        // ===== RECOVERY 75% =====
         recovery75: {
             targetPct: 75,
             baseChance: 78,
@@ -484,7 +474,7 @@
         return false;
     }
 
-    // ==================== 8. PLACE DICE BET ====================
+    // ==================== 8. PLACE DICE BET (FIXED: 99/chance) ====================
     async function placeDiceBet(amount, chance, condition) {
         var target = condition === 'above' ? (100 - chance) : chance;
         var apiAmount = parseFloat(amount.toFixed(8));
@@ -515,15 +505,17 @@
             }
             
             var d = data.diceRoll;
-            var win = false;
-            var payoutMultiplier = parseFloat(d.payoutMultiplier) || 0;
+            
+            // ===== PAYOUT MULTIPLIER = 99 / CHANCE =====
+            var expectedPayoutMultiplier = 99 / chance;
+            var actualPayoutMultiplier = parseFloat(d.payoutMultiplier) || expectedPayoutMultiplier;
             var payout = parseFloat(d.payout) || 0;
             var winAmount = parseFloat(d.amount) || apiAmount;
             
+            // ===== CEK WIN =====
+            var win = false;
             if (d.win !== undefined) {
                 win = d.win;
-            } else if (payoutMultiplier > 1) {
-                win = true;
             } else {
                 var state = d.state;
                 if (state && state.result !== undefined && state.target !== undefined) {
@@ -531,11 +523,21 @@
                 }
             }
             
+            // ===== HITUNG PROFIT =====
+            var profitAmount = 0;
+            if (win) {
+                // Profit = (99/chance - 1) * amount
+                var profitMultiplier = (99 / chance) - 1;
+                profitAmount = profitMultiplier * winAmount;
+            } else {
+                profitAmount = -winAmount;
+            }
+            
+            // ===== UPDATE BALANCE =====
             if (d.user && d.user.wallets && d.user.wallets[0]) {
                 STATE.balance = parseFloat(d.user.wallets[0].balance);
             } else {
-                var pnl = win ? (payout - winAmount) : -winAmount;
-                STATE.balance += pnl;
+                STATE.balance += profitAmount;
                 if (STATE.balance < 0) STATE.balance = 0;
             }
             
@@ -544,17 +546,21 @@
             STATE.stats.profit = STATE.profit;
             STATE.stats.currentBal = STATE.balance;
             
+            console.log(`[DICE] ${win ? 'WIN' : 'LOSS'} | Chance: ${chance}% | Multiplier: ${(99/chance).toFixed(4)}x | Profit: ${profitAmount.toFixed(8)}`);
+            
             updateAllUI();
             
             return {
                 win: win,
                 payout: payout,
-                payoutMultiplier: payoutMultiplier,
+                payoutMultiplier: actualPayoutMultiplier,
                 amount: winAmount,
                 state: d.state,
                 result: win ? 'win' : 'loss',
                 game: 'dice',
-                chance: chance
+                chance: chance,
+                profit: profitAmount,
+                expectedMultiplier: 99 / chance
             };
             
         } catch (error) {
@@ -563,7 +569,7 @@
         }
     }
 
-    // ==================== 9. PLACE BACCARAT BET ====================
+    // ==================== 9. PLACE BACCARAT BET (FIXED: 2 Sisi) ====================
     async function placeBaccaratBet(amount) {
         var mode = STATE.baccaratMode || 'both';
         var multiplier = STATE.baccaratBetMultiplier || 1;
@@ -615,38 +621,58 @@
             var result = d.state?.result || 'tie';
             var isWin = false;
             var profit = 0;
+            var payoutMultiplier = 0;
             
-            if (result === 'player') {
-                if (mode === 'both' || mode === 'player') {
+            // ===== PERHITUNGAN PROFIT BACCARAT =====
+            if (mode === 'both') {
+                // Bet 2 sisi: Player 0.5, Banker 0.5
+                if (result === 'player') {
+                    // Player win: player bet 0.5 * 1 = 0.5 (balik modal)
+                    // Banker bet 0.5 loss
+                    // Total: 0.5 - 0.5 = 0
                     isWin = true;
-                    profit = mode === 'both' ? halfBet * 1.0 : betAmount * 1.0;
-                } else {
-                    isWin = false;
                     profit = 0;
+                    payoutMultiplier = 1;
+                } else if (result === 'banker') {
+                    // Banker win: banker bet 0.5 * 0.95 = 0.475
+                    // Player bet 0.5 loss
+                    // Total: 0.475 - 0.5 = -0.025 (minus 2.5%)
+                    isWin = false;
+                    profit = -betAmount * 0.025;
+                    payoutMultiplier = 0.95;
+                } else {
+                    // Tie: semua loss
+                    isWin = false;
+                    profit = -betAmount;
+                    payoutMultiplier = 0;
                 }
-            } else if (result === 'banker') {
-                if (mode === 'both' || mode === 'banker') {
+            } else if (mode === 'player') {
+                if (result === 'player') {
                     isWin = true;
-                    profit = mode === 'both' ? halfBet * 0.975 : betAmount * 0.975;
+                    profit = betAmount * 1.0;
+                    payoutMultiplier = 1.0;
                 } else {
                     isWin = false;
-                    profit = 0;
+                    profit = -betAmount;
+                    payoutMultiplier = 0;
                 }
-            } else {
-                if (mode === 'both') {
-                    isWin = false;
-                    profit = 0;
+            } else if (mode === 'banker') {
+                if (result === 'banker') {
+                    isWin = true;
+                    profit = betAmount * 0.95;
+                    payoutMultiplier = 0.95;
                 } else {
                     isWin = false;
-                    profit = 0;
+                    profit = -betAmount;
+                    payoutMultiplier = 0;
                 }
             }
             
+            // ===== UPDATE BALANCE =====
             if (d.user && d.user.wallets && d.user.wallets[0]) {
                 STATE.balance = parseFloat(d.user.wallets[0].balance);
             } else {
-                var pnl = isWin ? profit : -betAmount;
-                STATE.balance += pnl;
+                STATE.balance += profit;
                 if (STATE.balance < 0) STATE.balance = 0;
             }
             
@@ -654,6 +680,10 @@
             STATE.profit = STATE.balance - STATE.startBalance;
             STATE.stats.profit = STATE.profit;
             STATE.stats.currentBal = STATE.balance;
+            
+            var winStatus = isWin ? 'WIN' : 'LOSS';
+            var resultLabel = result === 'player' ? 'Player' : result === 'banker' ? 'Banker' : 'Tie';
+            console.log(`[BACCARAT] ${winStatus} | Result: ${resultLabel} | Bet: ${betAmount} | Profit: ${profit.toFixed(8)}`);
             
             updateAllUI();
             
@@ -663,8 +693,9 @@
                 profit: profit,
                 amount: betAmount,
                 game: 'baccarat',
-                payoutMultiplier: result === 'banker' ? 0.975 : 1.0,
-                mode: mode
+                payoutMultiplier: payoutMultiplier,
+                mode: mode,
+                profitPct: betAmount > 0 ? (profit / betAmount * 100) : 0
             };
             
         } catch (error) {
@@ -830,8 +861,8 @@
             this.dribbleCurrentStreak = 0;
             
             const defaultChance = 78;
-            const payoutMultiplier = 100 / (100 - defaultChance);
-            const profitPerUnit = payoutMultiplier - 1;
+            const payoutMultiplier = 99 / defaultChance; // = 99/78 = 1.2692
+            const profitPerUnit = payoutMultiplier - 1; // = 0.2692
             this.baseBet = this.targetRecovery / profitPerUnit;
             
             this.maxBet = this.targetRecovery * 0.8;
@@ -913,7 +944,7 @@
             
             chance = Math.max(70, Math.min(80, chance));
             
-            const payoutMultiplier = 100 / (100 - chance);
+            const payoutMultiplier = 99 / chance;
             const profitPerUnit = payoutMultiplier - 1;
             const baseBetFromChance = this.targetRecovery / profitPerUnit;
             
@@ -943,7 +974,7 @@
                 let tempChance = chance;
                 while (tempChance < 98 && finalBet < this.minBet) {
                     tempChance += 1;
-                    const tempPayout = 100 / (100 - tempChance);
+                    const tempPayout = 99 / tempChance;
                     const tempProfit = tempPayout - 1;
                     const tempBet = this.targetRecovery / tempProfit * betMultiplier;
                     if (tempBet > finalBet) {
@@ -966,7 +997,7 @@
             };
 
             console.log(`[ML] Action calculated (75% recovery):`);
-            console.log(`  - Chance: ${chance.toFixed(1)}% (multiplier: ${payoutMultiplier.toFixed(2)}x)`);
+            console.log(`  - Chance: ${chance.toFixed(1)}% (multiplier: ${(99/chance).toFixed(4)}x)`);
             console.log(`  - Final Bet: ${finalBet.toFixed(8)}`);
             console.log(`  - Progress: ${(recoveryProgress*100).toFixed(1)}%`);
 
@@ -1237,7 +1268,7 @@
             const result = await placeDiceBet(betAmount, chance, condition);
             
             if (result) {
-                const profit = result.win ? betAmount : -betAmount;
+                const profit = result.profit || 0;
                 
                 if (STATE.mlSystem && STATE.mlSystem.isActive) {
                     STATE.mlSystem.updateWithResult(result.win, profit, betAmount, chance);
@@ -1274,7 +1305,6 @@
                     STATE.lossStreak++;
                 }
                 
-                // ===== UPDATE PROFIT DARI BALANCE TERKINI =====
                 STATE.profit = STATE.balance - STATE.startBalance;
                 STATE.drawdown = STATE.startBalance - STATE.balance;
                 if (STATE.drawdown > STATE.maxDrawdown) STATE.maxDrawdown = STATE.drawdown;
@@ -1291,7 +1321,7 @@
                 STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
                 if (STATE.raffle.nextTicketRemaining <= 0) STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
                 
-                logBet(STATE.bets, betAmount, chance, result.win ? betAmount : -betAmount);
+                logBet(STATE.bets, betAmount, chance, profit);
                 
                 if (result.win) {
                     STATE.paroli.lossStreak = 0;
@@ -1496,7 +1526,6 @@
             return;
         }
         
-        // Get dynamic mode
         const mode = getNextMode();
         const baseBet = STATE.balance * (STATE.baseBetPercent / 100);
         let finalBet = getRandomBet(baseBet);
@@ -1507,7 +1536,6 @@
         
         console.log('[F&F] Mode:', mode, 'Bet:', finalBet);
         
-        // Place bet based on mode
         let resultPromise;
         switch(mode) {
             case 'dice_9998':
@@ -1532,7 +1560,6 @@
             }
         }).catch(function(e) { console.error('[F&F] Error:', e); });
         
-        // Fire & forget - langsung lanjut tanpa delay
         setTimeout(sendFireAndForgetBet, 0);
     }
 
@@ -1541,8 +1568,8 @@
         if (!result) return;
         
         var isWin = result.win;
-        var profit = isWin ? betAmount : -betAmount;
         var chance = result.chance || STATE.normalChance;
+        var profit = result.profit || (isWin ? betAmount : -betAmount);
         
         STATE.bets++;
         STATE.wagered += betAmount;
@@ -1557,7 +1584,6 @@
             STATE.lossStreak++;
         }
         
-        // ===== UPDATE PROFIT DARI BALANCE TERKINI =====
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.drawdown = STATE.startBalance - STATE.balance;
         
@@ -1611,11 +1637,14 @@
         var profitColor = profit >= 0 ? '#00e5c0' : '#ff6b81';
         var profitSign = profit >= 0 ? '+' : '';
         var chanceDisplay = chance.toFixed(1) + '%';
+        var profitPct = amount > 0 ? (profit / amount * 100) : 0;
+        var profitPctDisplay = profitPct >= 0 ? '+' + profitPct.toFixed(1) + '%' : profitPct.toFixed(1) + '%';
+        
         entry.innerHTML = `
             <span style="color:#606060;min-width:35px;font-size:9px;">#${betNumber}</span>
             <span style="color:#9ec07c;min-width:55px;font-size:9px;">${chanceDisplay}</span>
             <span style="color:#a0a0a0;min-width:85px;font-size:9px;">${amount.toFixed(8)}</span>
-            <span style="color:${profitColor};font-weight:bold;min-width:85px;font-size:9px;text-align:right;">${profitSign}${profit.toFixed(8)}</span>
+            <span style="color:${profitColor};font-weight:bold;min-width:85px;font-size:9px;text-align:right;">${profitSign}${profit.toFixed(8)} (${profitPctDisplay})</span>
         `;
         logBox.insertBefore(entry, logBox.firstChild);
         while (logBox.children.length > STATE.maxLogs) {
@@ -1779,7 +1808,6 @@
     }
 
     function updateStatsDisplay() {
-        // ===== REKALKULASI PROFIT DARI BALANCE =====
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.stats.profit = STATE.profit;
         STATE.stats.currentBal = STATE.balance;
@@ -1848,7 +1876,6 @@
     }
 
     function updateAllUI() {
-        // ===== UPDATE PROFIT TERLEBIH DAHULU =====
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.stats.profit = STATE.profit;
         STATE.stats.currentBal = STATE.balance;
