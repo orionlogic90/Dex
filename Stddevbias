@@ -104,6 +104,7 @@
         // ===== NORMAL =====
         normalChance: 99.98,
         dice99Chance: 99,
+        baccaratMode: 'both',
         baccaratBetMultiplier: 1,
         baseBetPercent: 0.125,
         maxBetCap: 0,
@@ -245,21 +246,11 @@
         } catch(e) {}
     }
 
-    // ==================== 5. FIAT RATE - FULL MAPPING 80+ COIN + IDR ====================
+    // ==================== 5. FIAT RATE ====================
     function getCoinGeckoId(coin) {
         var map = {
-            // Fiat
-            "IDR": "indonesian-rupiah",
-            "USD": "usd",
-            "EUR": "euro",
-            // Stablecoin
             "USDT": "tether",
             "USDC": "usd-coin",
-            "DAI": "dai",
-            "BUSD": "binance-usd",
-            "TUSD": "true-usd",
-            "USDD": "usdd",
-            // Top 10
             "BTC": "bitcoin",
             "ETH": "ethereum",
             "BNB": "binancecoin",
@@ -269,100 +260,40 @@
             "DOGE": "dogecoin",
             "TRX": "tron",
             "DOT": "polkadot",
-            "MATIC": "polygon",
-            // Top 20
             "LTC": "litecoin",
-            "BCH": "bitcoin-cash",
-            "LINK": "chainlink",
-            "UNI": "uniswap",
-            "ATOM": "cosmos",
-            "ETC": "ethereum-classic",
-            "XLM": "stellar",
-            "FIL": "filecoin",
-            "ICP": "internet-computer",
-            "HBAR": "hedera-hashgraph",
-            // Layer 1
-            "AVAX": "avalanche-2",
-            "NEAR": "near",
-            "FTM": "fantom",
-            "APT": "aptos",
-            "SUI": "sui",
-            "SEI": "sei-network",
-            "INJ": "injective-protocol",
-            "TIA": "celestia",
-            "ARB": "arbitrum",
-            "OP": "optimism",
-            // Layer 2
-            "POL": "polygon",
-            "MNT": "mantle",
-            "IMX": "immutable-x",
-            "STRK": "starknet",
-            "ZK": "zksync",
-            // DeFi
-            "AAVE": "aave",
-            "MKR": "maker",
-            "COMP": "compound-governance-token",
-            "CRV": "curve-dao-token",
-            "LDO": "lido-dao",
-            "RUNE": "thorchain",
-            "EOS": "eos",
-            // Meme
-            "SHIB": "shiba-inu",
-            "PEPE": "pepe",
-            "WIF": "dogwifcoin",
-            "BONK": "bonk",
-            "FLOKI": "floki",
-            // Gaming
-            "SAND": "the-sandbox",
-            "MANA": "decentraland",
-            "AXS": "axie-infinity",
-            "GALA": "gala",
-            "ENJ": "enjincoin",
-            // AI
-            "FET": "fetch-ai",
-            "AGIX": "singularitynet",
-            "OCEAN": "ocean-protocol",
-            // Oracle
-            "PYTH": "pyth-network",
-            "BAND": "band-protocol",
-            // Storage
-            "AR": "arweave",
-            "BLZ": "bluzelle",
-            // Exchange
-            "CRO": "crypto-com-chain",
-            "LEO": "leo-token",
-            "OKB": "okb",
-            // Others
-            "KAS": "kaspa",
-            "XMR": "monero",
-            "ZEC": "zcash",
-            "DASH": "dash",
-            "NEO": "neo",
-            "VET": "vechain",
-            "THETA": "theta-token",
-            "ALGO": "algorand",
-            "GRT": "the-graph",
-            "RNDR": "render-token",
-            "APE": "apecoin",
-            "FLOW": "flow",
-            "QNT": "quant-network",
-            "ENS": "ethereum-name-service",
-            "CHZ": "chiliz",
-            "PAXG": "pax-gold",
-            "XAUT": "tether-gold"
+            "POL": "polygon"
         };
         return map[coin] || coin.toLowerCase();
     }
 
-    async function fetchPriceToIDR(coin) {
-        // Kalau IDR, return 1
-        if (coin === 'IDR' || coin === 'idr') {
-            return 1;
-        }
+    async function fetchUSDRate(currency) {
+        try {
+            var res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
+            var data = await res.json();
+            if (data.price) return parseFloat(data.price);
+        } catch(e) {}
         
         try {
-            var cgId = getCoinGeckoId(coin);
-            var res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=idr`);
+            var cgId = getCoinGeckoId(currency);
+            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=usd');
+            var data = await res.json();
+            if (data[cgId] && data[cgId].usd) return data[cgId].usd;
+        } catch(e) {}
+        
+        var fallback = {
+            'usdt': 1, 'usdc': 1,
+            'btc': 65000, 'eth': 3500, 'bnb': 580,
+            'sol': 180, 'xrp': 0.48, 'ada': 0.35,
+            'doge': 0.12, 'trx': 0.12, 'dot': 4.5,
+            'ltc': 72, 'pol': 0.38
+        };
+        return fallback[currency.toLowerCase()] || 1;
+    }
+
+    async function fetchMinBetRate(currency) {
+        try {
+            var cgId = getCoinGeckoId(currency);
+            var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
             var data = await res.json();
             if (data[cgId] && data[cgId].idr) {
                 return data[cgId].idr;
@@ -370,156 +301,45 @@
         } catch(e) {}
         
         try {
-            var coinRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}USDT`);
+            var coinRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=' + currency + 'USDT');
             var coinData = await coinRes.json();
-            var idrRes = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR`);
+            var idrRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=USDTIDR');
             var idrData = await idrRes.json();
             if (coinData.price && idrData.price) {
                 return parseFloat(coinData.price) * parseFloat(idrData.price);
             }
         } catch(e) {}
-        return null;
+        
+        var fallbackRates = {
+            'usdt': 16000,
+            'usdc': 16000,
+            'btc': 16000 * 65000,
+            'eth': 16000 * 3500,
+            'bnb': 16000 * 580,
+            'sol': 16000 * 180,
+            'xrp': 16000 * 0.48,
+            'ada': 16000 * 0.35,
+            'doge': 16000 * 0.12,
+            'trx': 16000 * 0.12,
+            'dot': 16000 * 4.5,
+            'ltc': 16000 * 72,
+            'pol': 16000 * 0.38
+        };
+        return fallbackRates[currency.toLowerCase()] || 16000;
     }
 
-    async function updateFiatRates() {
+    async function updateMinBet() {
         var currency = STATE.selectedCurrency.toUpperCase();
-        
-        // Kalau IDR, langsung set
-        if (currency === 'IDR') {
-            STATE.fiatRates.idr = 1;
-            STATE.fiatRateFetched = true;
-            STATE.minBet = STATE.minBetIdr;
-            var el = document.getElementById('minbet-info');
-            if (el) {
-                el.textContent = '≈ 2 IDR';
-            }
-            return true;
-        }
-        
-        var rate = await fetchPriceToIDR(currency);
-        
-        if (rate === null || rate <= 0) {
-            var usdtIdr = 16000;
-            var fallbackRates = {
-                // Fiat
-                "IDR": 1,
-                "USD": usdtIdr,
-                "EUR": usdtIdr * 1.08,
-                // Stablecoin
-                "USDT": usdtIdr,
-                "USDC": usdtIdr,
-                "DAI": usdtIdr,
-                "BUSD": usdtIdr,
-                "TUSD": usdtIdr,
-                "USDD": usdtIdr,
-                // Top 10
-                "BTC": usdtIdr * 65000,
-                "ETH": usdtIdr * 3500,
-                "BNB": usdtIdr * 580,
-                "SOL": usdtIdr * 180,
-                "XRP": usdtIdr * 0.48,
-                "ADA": usdtIdr * 0.35,
-                "DOGE": usdtIdr * 0.12,
-                "TRX": usdtIdr * 0.12,
-                "DOT": usdtIdr * 4.5,
-                "MATIC": usdtIdr * 0.38,
-                // Top 20
-                "LTC": usdtIdr * 72,
-                "BCH": usdtIdr * 380,
-                "LINK": usdtIdr * 14,
-                "UNI": usdtIdr * 7.5,
-                "ATOM": usdtIdr * 6.8,
-                "ETC": usdtIdr * 22,
-                "XLM": usdtIdr * 0.095,
-                "FIL": usdtIdr * 4.2,
-                "ICP": usdtIdr * 8.5,
-                "HBAR": usdtIdr * 0.065,
-                // Layer 1
-                "AVAX": usdtIdr * 28,
-                "NEAR": usdtIdr * 5.2,
-                "FTM": usdtIdr * 0.65,
-                "APT": usdtIdr * 6.2,
-                "SUI": usdtIdr * 0.85,
-                "SEI": usdtIdr * 0.35,
-                "INJ": usdtIdr * 24,
-                "TIA": usdtIdr * 6.8,
-                "ARB": usdtIdr * 0.85,
-                "OP": usdtIdr * 1.8,
-                // Layer 2
-                "POL": usdtIdr * 0.38,
-                "MNT": usdtIdr * 0.82,
-                "IMX": usdtIdr * 1.4,
-                "STRK": usdtIdr * 0.55,
-                "ZK": usdtIdr * 0.18,
-                // DeFi
-                "AAVE": usdtIdr * 98,
-                "MKR": usdtIdr * 1450,
-                "COMP": usdtIdr * 48,
-                "CRV": usdtIdr * 0.28,
-                "LDO": usdtIdr * 1.8,
-                "RUNE": usdtIdr * 4.5,
-                "EOS": usdtIdr * 0.55,
-                // Meme
-                "SHIB": usdtIdr * 0.000015,
-                "PEPE": usdtIdr * 0.000008,
-                "WIF": usdtIdr * 1.8,
-                "BONK": usdtIdr * 0.000025,
-                "FLOKI": usdtIdr * 0.00018,
-                // Gaming
-                "SAND": usdtIdr * 0.32,
-                "MANA": usdtIdr * 0.32,
-                "AXS": usdtIdr * 5.8,
-                "GALA": usdtIdr * 0.028,
-                "ENJ": usdtIdr * 0.28,
-                // AI
-                "FET": usdtIdr * 1.2,
-                "AGIX": usdtIdr * 0.65,
-                "OCEAN": usdtIdr * 0.55,
-                // Oracle
-                "PYTH": usdtIdr * 0.35,
-                "BAND": usdtIdr * 1.2,
-                // Storage
-                "AR": usdtIdr * 22,
-                "BLZ": usdtIdr * 0.12,
-                // Exchange
-                "CRO": usdtIdr * 0.085,
-                "LEO": usdtIdr * 5.2,
-                "OKB": usdtIdr * 42,
-                // Others
-                "KAS": usdtIdr * 0.18,
-                "XMR": usdtIdr * 180,
-                "ZEC": usdtIdr * 32,
-                "DASH": usdtIdr * 28,
-                "NEO": usdtIdr * 10,
-                "VET": usdtIdr * 0.025,
-                "THETA": usdtIdr * 1.2,
-                "ALGO": usdtIdr * 0.12,
-                "GRT": usdtIdr * 0.18,
-                "RNDR": usdtIdr * 6.8,
-                "APE": usdtIdr * 0.85,
-                "FLOW": usdtIdr * 0.55,
-                "QNT": usdtIdr * 72,
-                "ENS": usdtIdr * 18,
-                "CHZ": usdtIdr * 0.065,
-                "PAXG": usdtIdr * 2400,
-                "XAUT": usdtIdr * 2400
-            };
-            rate = fallbackRates[currency] || usdtIdr;
-        }
-        
-        if (rate !== null && rate > 0) {
+        var rate = await fetchMinBetRate(currency);
+        if (rate && rate > 0) {
+            STATE.minBet = 2 / rate;
+            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
             STATE.fiatRates.idr = rate;
             STATE.fiatRateFetched = true;
-            STATE.minBet = STATE.minBetIdr / rate;
-            if (STATE.minBet < 0.00000001) STATE.minBet = 0.00000001;
             
             var el = document.getElementById('minbet-info');
             if (el) {
-                if (currency === 'IDR') {
-                    el.textContent = '≈ 2 IDR';
-                } else {
-                    el.textContent = '≈ ' + STATE.minBet.toFixed(8) + ' ' + currency + ' (2 IDR)';
-                }
+                el.textContent = '≈ ' + STATE.minBet.toFixed(8) + ' ' + currency + ' (2 IDR)';
             }
             return true;
         }
@@ -628,42 +448,16 @@
                 STATE.stakeUser = json.data.user.name;
                 var bals = json.data.user.balances || [];
                 var sel = document.getElementById("p-currency");
-                
-                // HANYA populate jika masih kosong
                 if (sel && sel.options.length === 0) {
-                    var allCoins = [
-                        "IDR", "USD", "EUR",
-                        "USDT", "USDC", "DAI", "BUSD", "TUSD", "USDD",
-                        "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT", "MATIC",
-                        "LTC", "BCH", "LINK", "UNI", "ATOM", "ETC", "XLM", "FIL", "ICP", "HBAR",
-                        "AVAX", "NEAR", "FTM", "APT", "SUI", "SEI", "INJ", "TIA", "ARB", "OP",
-                        "POL", "MNT", "IMX", "STRK", "ZK",
-                        "AAVE", "MKR", "COMP", "CRV", "LDO", "RUNE", "EOS",
-                        "SHIB", "PEPE", "WIF", "BONK", "FLOKI",
-                        "SAND", "MANA", "AXS", "GALA", "ENJ",
-                        "FET", "AGIX", "OCEAN", "PYTH", "BAND",
-                        "AR", "BLZ", "CRO", "LEO", "OKB",
-                        "KAS", "XMR", "ZEC", "DASH", "NEO",
-                        "VET", "THETA", "ALGO", "GRT", "RNDR",
-                        "APE", "FLOW", "QNT", "ENS", "CHZ",
-                        "PAXG", "XAUT"
-                    ];
-                    for (var j = 0; j < allCoins.length; j++) {
+                    var fallback = ["USDT", "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "DOT", "LTC", "POL"];
+                    for (var j = 0; j < fallback.length; j++) {
                         var opt2 = document.createElement("option");
-                        opt2.value = allCoins[j].toLowerCase();
-                        opt2.textContent = allCoins[j];
+                        opt2.value = fallback[j].toLowerCase();
+                        opt2.textContent = fallback[j];
                         sel.appendChild(opt2);
                     }
-                    
-                    // Hormati pilihan user, jangan auto select
-                    if (STATE.selectedCurrency) {
-                        sel.value = STATE.selectedCurrency.toLowerCase();
-                    } else {
-                        sel.value = 'usdt';
-                    }
+                    sel.value = STATE.selectedCurrency;
                 }
-                
-                // Ambil selected value dari dropdown
                 STATE.selectedCurrency = sel ? sel.value : "usdt";
                 
                 var currency = STATE.selectedCurrency.toUpperCase();
@@ -680,7 +474,7 @@
                     STATE.balance = parseFloat(active.available.amount);
                     STATE.startBalance = STATE.balance;
                     STATE.peakBalanceEver = STATE.balance;
-                    await updateFiatRates();
+                    await updateMinBet();
                 }
                 return true;
             }
@@ -764,6 +558,7 @@
 
     // ==================== 9. PLACE BACCARAT BET ====================
     async function placeBaccaratBet(amount) {
+        var mode = STATE.baccaratMode || 'both';
         var multiplier = STATE.baccaratBetMultiplier || 1;
         var betAmount = amount * multiplier;
         var halfBet = betAmount / 2;
@@ -773,9 +568,25 @@
                 currency: STATE.selectedCurrency,
                 identifier: generateId(),
                 tie: 0,
-                player: parseFloat(halfBet.toFixed(8)),
-                banker: parseFloat(halfBet.toFixed(8))
+                player: 0,
+                banker: 0
             };
+            
+            switch(mode) {
+                case 'both':
+                    payload.player = parseFloat(halfBet.toFixed(8));
+                    payload.banker = parseFloat(halfBet.toFixed(8));
+                    break;
+                case 'player':
+                    payload.player = parseFloat(betAmount.toFixed(8));
+                    break;
+                case 'banker':
+                    payload.banker = parseFloat(betAmount.toFixed(8));
+                    break;
+                default:
+                    payload.player = parseFloat(halfBet.toFixed(8));
+                    payload.banker = parseFloat(halfBet.toFixed(8));
+            }
             
             var res = await fetch(CONFIG.apiUrl + '/casino/baccarat/bet', {
                 method: 'POST',
@@ -799,20 +610,36 @@
             var profit = 0;
             
             if (result === 'player') {
-                isWin = false;
-                profit = -halfBet;
+                if (mode === 'both' || mode === 'player') {
+                    isWin = true;
+                    profit = mode === 'both' ? halfBet * 1.0 : betAmount * 1.0;
+                } else {
+                    isWin = false;
+                    profit = 0;
+                }
             } else if (result === 'banker') {
-                isWin = false;
-                profit = -(halfBet * 0.975);
+                if (mode === 'both' || mode === 'banker') {
+                    isWin = true;
+                    profit = mode === 'both' ? halfBet * 0.975 : betAmount * 0.975;
+                } else {
+                    isWin = false;
+                    profit = 0;
+                }
             } else {
-                isWin = false;
-                profit = 0;
+                if (mode === 'both') {
+                    isWin = false;
+                    profit = 0;
+                } else {
+                    isWin = false;
+                    profit = 0;
+                }
             }
             
             if (d.user && d.user.wallets && d.user.wallets[0]) {
                 STATE.balance = parseFloat(d.user.wallets[0].balance);
             } else {
-                STATE.balance += profit;
+                var pnl = isWin ? profit : -betAmount;
+                STATE.balance += pnl;
                 if (STATE.balance < 0) STATE.balance = 0;
             }
             
@@ -824,7 +651,8 @@
                 profit: profit,
                 amount: betAmount,
                 game: 'baccarat',
-                payoutMultiplier: result === 'banker' ? 0.975 : 1.0
+                payoutMultiplier: result === 'banker' ? 0.975 : 1.0,
+                mode: mode
             };
             
         } catch (error) {
@@ -2239,9 +2067,12 @@
                             <div class="md-field"><label>🎯 DICE 99% CHANCE</label><input type="number" id="p-dice-99-chance" value="99" step="0.5" min="90" max="99.98"></div>
                         </div>
                         <div class="grid-2">
-                            <div class="md-field">
-                                <label>♠️ BACCARAT MODE</label>
-                                <input type="text" value="2 Sisi (Player + Banker)" disabled style="opacity:0.6;">
+                            <div class="md-field"><label>♠️ BACCARAT MODE</label>
+                                <select id="p-baccarat-mode">
+                                    <option value="both">2 Sisi (Player + Banker)</option>
+                                    <option value="player">Player Only</option>
+                                    <option value="banker">Banker Only</option>
+                                </select>
                             </div>
                             <div class="md-field"><label>📊 BACCARAT BET SIZE</label>
                                 <select id="p-baccarat-bet-size">
@@ -2420,7 +2251,7 @@
                 if (success) {
                     document.getElementById("p-start").disabled = false;
                     await fetchRaffleProgress();
-                    await updateFiatRates();
+                    await updateMinBet();
                     updateAllUI();
                     sendTelegramMessage('✅ LOGIN SUCCESS\nUser: ' + STATE.stakeUser);
                 }
@@ -2433,7 +2264,7 @@
                 if (!accessToken) return;
                 await syncUserInfo();
                 await fetchRaffleProgress();
-                await updateFiatRates();
+                await updateMinBet();
                 updateAllUI();
             };
         }
@@ -2442,13 +2273,24 @@
         if (currencyEl) {
             currencyEl.onchange = function() {
                 STATE.selectedCurrency = this.value;
-                STATE.fiatRateFetched = false;
-                updateFiatRates();
-                updateAllUI();
+                var currency = STATE.selectedCurrency.toUpperCase();
+                fetchUSDRate(currency).then(function(rate) {
+                    STATE.fiatRates.usd = rate;
+                    updateMinBet();
+                    updateAllUI();
+                });
             };
         }
         
         // ===== BACCARAT SETTINGS =====
+        var baccaratModeEl = document.getElementById('p-baccarat-mode');
+        if (baccaratModeEl) {
+            baccaratModeEl.onchange = function() {
+                STATE.baccaratMode = this.value;
+                updateAllUI();
+            };
+        }
+        
         var baccaratBetSizeEl = document.getElementById('p-baccarat-bet-size');
         if (baccaratBetSizeEl) {
             baccaratBetSizeEl.onchange = function() {
@@ -2481,6 +2323,7 @@
                 
                 STATE.normalChance = 99.98;
                 STATE.dice99Chance = safeFloat('p-dice-99-chance', 99);
+                STATE.baccaratMode = document.getElementById('p-baccarat-mode')?.value || 'both';
                 STATE.baccaratBetMultiplier = parseFloat(document.getElementById('p-baccarat-bet-size')?.value || '1');
                 STATE.baseBetPercent = safeFloat("p-basebet-normal", 0.125);
                 STATE.paroli.maxLevel = safeInt("p-paroli-max", 4);
@@ -2513,7 +2356,7 @@
                 localStorage.setItem('apitoken', accessToken);
                 
                 await syncUserInfo();
-                await updateFiatRates();
+                await updateMinBet();
                 var balance = STATE.balance;
                 
                 if (!balance || balance === 0) {
@@ -2573,8 +2416,9 @@
                 updateAllUI();
                 
                 var exitLabel = STATE.paroli.exitStrategy === 'safe' ? '🛡️ Safe (Balance >= Start)' : '⚡ Aggressive (Max Level)';
+                var modeLabel = STATE.baccaratMode === 'both' ? '2 Sisi' : STATE.baccaratMode === 'player' ? 'Player Only' : 'Banker Only';
                 sendTelegramMessage('💰 CHEAPCHEATX v3.0 STARTED\n' +
-                    'Mode: Dynamic Pattern (Dice 99.98%, Dice 99%, Baccarat 2 Sisi)\n' +
+                    'Mode: Dynamic Pattern (Dice 99.98%, Dice 99%, Baccarat ' + modeLabel + ')\n' +
                     'Baccarat Bet Size: ' + STATE.baccaratBetMultiplier + 'x\n' +
                     'Recovery: ML Dribble 75% (Chance 75-78%)\n' +
                     'Balance: ' + balance.toFixed(8) + '\n' +
@@ -2711,7 +2555,7 @@
             if (tokenInput) tokenInput.value = saved;
             syncUserInfo().then(function() {
                 fetchRaffleProgress();
-                updateFiatRates();
+                updateMinBet();
                 updateAllUI();
             });
         }
