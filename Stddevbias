@@ -1,8 +1,8 @@
 // ========================================================================
-// CHEAPCHEATX v3.0 - BACCARAT + DICE + BLACKJACK RECOVERY 125%
+// CHEAPCHEATX v3.0 - BACCARAT + DICE + BACCARAT PLAYER RECOVERY 125%
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dynamic Pattern - Baccarat 2 Sisi, Dice 99.98%, Dice 99%)
-// RECOVERY MODE: BLACKJACK PERFECT STRATEGY (Flat Bet)
+// RECOVERY MODE: BACCARAT PLAYER ONLY (Flat Bet 1:1)
 // TARGET: 125% dari loss (balik modal + profit 25%)
 // TRIGGER: Drawdown > 0.5%
 // EXIT: HANYA ketika target 125% tercapai (TANPA CUTLOSS)
@@ -43,21 +43,9 @@
             targetRecovery: 0,
             recoveredAmount: 0,
             flatBet: 0,
-            bjWin: 0,
-            bjLoss: 0,
-            bjPush: 0,
-            bjTotalBets: 0,
-            isBJActive: false,
-            bjIdentifier: null,
-            bjBetId: null,
-            bjAmount: 0,
-            bjPlayerValue: 0,
-            bjDealerValue: 0,
-            bjActions: [],
-            bjHandIndex: 0,
-            bjIsSplit: false,
-            bjSplitHands: [],
-            currentDeck: 0
+            win: 0,
+            loss: 0,
+            totalBets: 0
         },
         
         // ===== BALANCE =====
@@ -602,7 +590,7 @@
         }
     }
 
-    // ==================== 9. PLACE BACCARAT BET ====================
+    // ==================== 9. PLACE BACCARAT BET (Normal 2 Sisi) ====================
     async function placeBaccaratBet(amount) {
         var mode = STATE.baccaratMode || 'both';
         var multiplier = STATE.baccaratBetMultiplier || 1;
@@ -722,21 +710,20 @@
         }
     }
 
-    // ==================== 10. BLACKJACK BET ====================
-    async function placeBlackjackBet(amount) {
+    // ==================== 10. PLACE BACCARAT PLAYER BET (Recovery) ====================
+    async function placeBaccaratPlayerBet(amount) {
         var apiAmount = parseFloat(amount.toFixed(8));
-        var identifier = generateId();
         
         try {
             var payload = {
-                amount: apiAmount,
                 currency: STATE.selectedCurrency,
-                identifier: identifier
+                identifier: generateId(),
+                tie: 0,
+                player: apiAmount,
+                banker: 0
             };
             
-            console.log('[BJ] Bet:', apiAmount);
-            
-            var res = await fetch(CONFIG.apiUrl + '/casino/blackjack/bet', {
+            var res = await fetch(CONFIG.apiUrl + '/casino/baccarat/bet', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -748,330 +735,61 @@
             
             var data = await res.json();
             
-            if (data.error || !data.blackjackBet) {
-                console.error('[BJ] Error:', data);
+            if (data.error || !data.baccaratBet) {
                 return null;
             }
             
-            var d = data.blackjackBet;
+            var d = data.baccaratBet;
+            var result = d.state?.result || 'tie';
+            var totalBet = parseFloat(d.amount) || apiAmount;
+            var payout = parseFloat(d.payout) || 0;
             
-            STATE.recovery.bjIdentifier = identifier;
-            STATE.recovery.bjBetId = d.id;
-            STATE.recovery.bjAmount = parseFloat(d.amount) || apiAmount;
-            STATE.recovery.isBJActive = d.active;
-            STATE.recovery.currentDeck = 0;
+            var isWin = false;
+            var profit = 0;
             
-            if (d.state && d.state.player && d.state.player.length > 0) {
-                STATE.recovery.bjPlayerValue = d.state.player[0].value || 0;
-                STATE.recovery.bjActions = d.state.player[0].actions || [];
-            }
-            if (d.state && d.state.dealer && d.state.dealer.length > 0) {
-                STATE.recovery.bjDealerValue = d.state.dealer[0].value || 0;
-            }
-            
-            console.log('[BJ] Player:', STATE.recovery.bjPlayerValue, 'Dealer:', STATE.recovery.bjDealerValue);
-            
-            if (!d.active) {
-                return processBlackjackResult(d);
-            }
-            
-            return await blackjackStrategy();
-            
-        } catch (error) {
-            console.error('[BJ] Exception:', error);
-            return null;
-        }
-    }
-
-    // ==================== 11. BLACKJACK PERFECT STRATEGY ====================
-    // Hard Table (index = playerValue - 8, 0-9)
-    var hardTable = [
-        ['H','H','H','H','H','H','H','H','H','H'], // 8
-        ['H','D','D','D','D','H','H','H','H','H'], // 9
-        ['D','D','D','D','D','D','D','D','H','H'], // 10
-        ['D','D','D','D','D','D','D','D','D','H'], // 11
-        ['H','H','S','S','S','H','H','H','H','H'], // 12
-        ['S','S','S','S','S','H','H','H','H','H'], // 13
-        ['S','S','S','S','S','H','H','H','H','H'], // 14
-        ['S','S','S','S','S','H','H','H','H','H'], // 15
-        ['S','S','S','S','S','H','H','H','H','H'], // 16
-        ['S','S','S','S','S','S','S','S','S','S']  // 17+
-    ];
-
-    // Soft Table (index = softValue - 3, 0-7)
-    var softTable = [
-        ['H','H','H','H','D','H','H','H','H','H'], // A-2 (13)
-        ['H','H','H','D','D','H','H','H','H','H'], // A-3 (14)
-        ['H','H','H','D','D','H','H','H','H','H'], // A-4 (15)
-        ['H','H','D','D','D','H','H','H','H','H'], // A-5 (16)
-        ['H','D','D','D','D','H','H','H','H','H'], // A-6 (17)
-        ['S','Ds','Ds','Ds','Ds','S','S','H','H','H'], // A-7 (18)
-        ['S','S','S','S','S','S','S','S','S','S'], // A-8 (19)
-        ['S','S','S','S','S','S','S','S','S','S']  // A-9 (20)
-    ];
-
-    // Pairs Table (index = cardValue - 2, 0-9)
-    var pairsTable = [
-        [1,1,1,1,1,1,0,0,0,0], // 2-2
-        [1,1,1,1,1,1,0,0,0,0], // 3-3
-        [0,0,0,1,1,0,0,0,0,0], // 4-4
-        [2,2,2,2,2,2,2,2,0,0], // 5-5
-        [1,1,1,1,1,0,0,0,0,0], // 6-6
-        [1,1,1,1,1,1,0,0,0,0], // 7-7
-        [1,1,1,1,1,1,1,1,1,1], // 8-8
-        [1,1,1,1,1,0,1,1,0,0], // 9-9
-        [0,0,0,0,0,0,0,0,0,0], // 10-10
-        [1,1,1,1,1,1,1,1,1,1]  // A-A
-    ];
-
-    function getCardValue(rank) {
-        if (rank === 'J' || rank === 'Q' || rank === 'K') return 10;
-        if (rank === 'A') return 11;
-        return Number(rank);
-    }
-
-    function getSoftValue(cards) {
-        var softValue = 0;
-        for (var i = 0; i < cards.length; i++) {
-            if (cards[i].rank === 'A') softValue += 1;
-            else softValue += getCardValue(cards[i].rank);
-        }
-        return softValue;
-    }
-
-    function isSoft(cards) {
-        for (var i = 0; i < cards.length; i++) {
-            if (cards[i].rank === 'A') return true;
-        }
-        return false;
-    }
-
-    async function blackjackStrategy() {
-        var playerValue = STATE.recovery.bjPlayerValue;
-        var dealerValue = STATE.recovery.bjDealerValue;
-        var actions = STATE.recovery.bjActions || [];
-        var currentDeck = STATE.recovery.currentDeck || 0;
-        var currentBet = STATE.recovery._currentBet || null;
-        
-        var action = 'stand';
-        
-        // Cek Insurance
-        var isAskingInsurance = actions.includes('insurance') && !actions.includes('noInsurance');
-        if (isAskingInsurance) {
-            console.log('[BJ] No Insurance');
-            return await blackjackNext('noInsurance');
-        }
-        
-        // Cek Split
-        var isSplittable = false;
-        if (currentBet && currentBet.state && currentBet.state.player && currentBet.state.player.length === 1) {
-            var cards = currentBet.state.player[0].cards || [];
-            if (cards.length === 2) {
-                var val1 = getCardValue(cards[0].rank);
-                var val2 = getCardValue(cards[1].rank);
-                if (val1 === val2 && actions.includes('split')) {
-                    isSplittable = true;
-                }
-            }
-        }
-        
-        if (isSplittable) {
-            var cardVal = getCardValue(currentBet.state.player[0].cards[0].rank);
-            var idx = Math.min(cardVal - 2, 9);
-            var dealerIdx = Math.min(dealerValue - 2, 9);
-            var splitDecision = pairsTable[idx][dealerIdx];
-            
-            if (splitDecision === 1) {
-                action = 'split';
-                console.log('[BJ] Split');
-                return await blackjackNext('split');
-            } else if (splitDecision === 2) {
-                if (actions.includes('double')) {
-                    action = 'double';
-                    console.log('[BJ] Double (from split table)');
-                    return await blackjackNext('double');
-                }
-            }
-        }
-        
-        // Cek Soft / Hard
-        if (currentBet && currentBet.state && currentBet.state.player) {
-            var playerCards = currentBet.state.player[currentDeck]?.cards || [];
-            var isSoftHand = isSoft(playerCards);
-            var softValue = getSoftValue(playerCards);
-            
-            if (isSoftHand && softValue >= 3 && softValue <= 10) {
-                var softIdx = softValue - 3;
-                var dealerIdx = Math.min(dealerValue - 2, 9);
-                var decision = softTable[softIdx][dealerIdx];
-                
-                if (decision === 'D') {
-                    if (playerCards.length === 2 && actions.includes('double')) {
-                        action = 'double';
-                    } else {
-                        action = 'hit';
-                    }
-                } else if (decision === 'Ds') {
-                    if (playerCards.length === 2 && actions.includes('double')) {
-                        action = 'double';
-                    } else {
-                        action = 'stand';
-                    }
-                } else if (decision === 'H') {
-                    action = 'hit';
-                } else if (decision === 'S') {
-                    action = 'stand';
-                }
-                
-                console.log('[BJ] Soft ' + softValue + ' vs ' + dealerValue + ' -> ' + decision);
-                
-                if (action === 'double') {
-                    console.log('[BJ] Double');
-                    return await blackjackNext('double');
-                }
-                if (action === 'hit') {
-                    console.log('[BJ] Hit');
-                    return await blackjackNext('hit');
-                }
-                console.log('[BJ] Stand');
-                return await blackjackNext('stand');
-            }
-        }
-        
-        // Hard Total
-        var hardValue = playerValue;
-        if (hardValue < 8) hardValue = 8;
-        if (hardValue > 17) hardValue = 17;
-        
-        var hardIdx = hardValue - 8;
-        var dealerIdx = Math.min(dealerValue - 2, 9);
-        var decision = hardTable[hardIdx][dealerIdx];
-        
-        if (decision === 'D') {
-            if (actions.includes('double')) {
-                action = 'double';
+            if (result === 'player') {
+                isWin = true;
+                profit = totalBet;
+            } else if (result === 'banker') {
+                isWin = false;
+                profit = -totalBet;
             } else {
-                action = 'hit';
+                isWin = false;
+                profit = -totalBet;
             }
-        } else if (decision === 'H') {
-            action = 'hit';
-        } else if (decision === 'S') {
-            action = 'stand';
-        }
-        
-        console.log('[BJ] Hard ' + hardValue + ' vs ' + dealerValue + ' -> ' + decision);
-        
-        if (action === 'double') {
-            console.log('[BJ] Double');
-            return await blackjackNext('double');
-        }
-        if (action === 'hit') {
-            console.log('[BJ] Hit');
-            return await blackjackNext('hit');
-        }
-        console.log('[BJ] Stand');
-        return await blackjackNext('stand');
-    }
-
-    async function blackjackNext(action) {
-        try {
-            var payload = {
-                action: action,
-                identifier: STATE.recovery.bjIdentifier
+            
+            if (d.user && d.user.wallets && d.user.wallets[0]) {
+                STATE.balance = parseFloat(d.user.wallets[0].balance);
+            } else {
+                STATE.balance += profit;
+                if (STATE.balance < 0) STATE.balance = 0;
+            }
+            
+            STATE.profit = STATE.balance - STATE.startBalance;
+            STATE.stats.profit = STATE.profit;
+            STATE.stats.currentBal = STATE.balance;
+            
+            console.log('[BACCARAT RECOVERY] ' + (isWin ? 'WIN' : 'LOSS') + ' | Result: ' + result + ' | Profit: ' + profit.toFixed(8));
+            
+            updateAllUI();
+            
+            return {
+                win: isWin,
+                result: result,
+                profit: profit,
+                amount: totalBet,
+                payout: payout,
+                game: 'baccarat',
+                mode: 'player'
             };
             
-            var res = await fetch(CONFIG.apiUrl + '/casino/blackjack/next', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': accessToken,
-                    'x-lockdown-token': CONFIG.lockdownToken
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            var data = await res.json();
-            
-            if (data.error || !data.blackjackNext) {
-                console.error('[BJ] Next Error:', data);
-                return null;
-            }
-            
-            var d = data.blackjackNext;
-            
-            STATE.recovery.isBJActive = d.active;
-            STATE.recovery.bjAmount = parseFloat(d.amount) || STATE.recovery.bjAmount;
-            
-            if (d.state && d.state.player && d.state.player.length > 0) {
-                STATE.recovery.bjPlayerValue = d.state.player[0].value || 0;
-                STATE.recovery.bjActions = d.state.player[0].actions || [];
-            }
-            if (d.state && d.state.dealer && d.state.dealer.length > 0) {
-                STATE.recovery.bjDealerValue = d.state.dealer[0].value || 0;
-            }
-            
-            if (!d.active) {
-                return processBlackjackResult(d);
-            }
-            
-            STATE.recovery._currentBet = d;
-            return await blackjackStrategy();
-            
         } catch (error) {
-            console.error('[BJ] Next Exception:', error);
+            console.error('[BACCARAT] Exception:', error);
             return null;
         }
     }
 
-    function processBlackjackResult(d) {
-        var amountBet = parseFloat(d.amount) || 0;
-        var payout = parseFloat(d.payout) || 0;
-        var payoutMultiplier = parseFloat(d.payoutMultiplier) || 0;
-        var profit = payout - amountBet;
-        var isWin = profit > 0;
-        var isPush = profit === 0 && payout > 0;
-        
-        if (d.user && d.user.wallets && d.user.wallets[0]) {
-            STATE.balance = parseFloat(d.user.wallets[0].balance);
-        } else {
-            STATE.balance += profit;
-            if (STATE.balance < 0) STATE.balance = 0;
-        }
-        
-        STATE.profit = STATE.balance - STATE.startBalance;
-        STATE.stats.profit = STATE.profit;
-        STATE.stats.currentBal = STATE.balance;
-        
-        STATE.recovery.bjTotalBets++;
-        if (isWin) {
-            STATE.recovery.bjWin++;
-            STATE.recovery.recoveredAmount += profit;
-        } else if (isPush) {
-            STATE.recovery.bjPush++;
-        } else {
-            STATE.recovery.bjLoss++;
-        }
-        
-        var resultLabel = isWin ? 'WIN' : (isPush ? 'PUSH' : 'LOSS');
-        console.log('[BJ] ' + resultLabel + ' | Player: ' + STATE.recovery.bjPlayerValue + ' | Dealer: ' + STATE.recovery.bjDealerValue + ' | Profit: ' + profit.toFixed(8));
-        
-        updateAllUI();
-        
-        return {
-            win: isWin,
-            push: isPush,
-            profit: profit,
-            amount: amountBet,
-            payout: payout,
-            payoutMultiplier: payoutMultiplier,
-            game: 'blackjack',
-            playerValue: STATE.recovery.bjPlayerValue,
-            dealerValue: STATE.recovery.bjDealerValue,
-            state: d.state
-        };
-    }
-
-    // ==================== 12. DYNAMIC PATTERN (Tanpa Limbo) ====================
+    // ==================== 11. DYNAMIC PATTERN ====================
     function generateRandomDistribution(total) {
         var baccarat = randomFloat(0.30, 0.50);
         var d9998 = randomFloat(0.20, 0.40);
@@ -1154,15 +872,9 @@
         return parseFloat(Math.max(bet, STATE.minBet).toFixed(8));
     }
 
-    // ==================== 13. RECOVERY RUN ====================
+    // ==================== 12. RECOVERY RUN ====================
     async function runRecovery() {
         if (!STATE.isRunning || STATE.isPaused) return;
-        
-        var r = STATE.recovery;
-        if (r.isBJActive) {
-            setTimeout(runRecovery, 100);
-            return;
-        }
         
         if (STATE.wagerTotalAccumulated >= STATE.wagerTotalTarget) {
             STATE.isRunning = false;
@@ -1172,29 +884,29 @@
             return;
         }
         
-        // Cek apakah target 125% tercapai
+        var r = STATE.recovery;
         var totalLoss = STATE.startBalance - STATE.balance;
         var target = totalLoss * 1.25;
-        var recovered = r.recoveredAmount;
         
-        console.log('[RECOVERY] Loss: ' + totalLoss + ' | Target: ' + target + ' | Recovered: ' + recovered);
+        console.log('[RECOVERY] Loss: ' + totalLoss + ' | Target: ' + target + ' | Recovered: ' + r.recoveredAmount);
         
-        if (recovered >= target && target > 0) {
+        // Cek target
+        if (r.recoveredAmount >= target && target > 0) {
             STATE.isRecoveryMode = false;
             var profit = STATE.balance - STATE.startBalance;
             resetRecoveryState();
-            sendTelegramMessage('✅ RECOVERY 125% SUCCESS!\n' +
+            sendTelegramMessage('✅ BACCARAT RECOVERY 125% SUCCESS!\n' +
                 'Loss: ' + totalLoss.toFixed(8) + '\n' +
                 'Target: ' + target.toFixed(8) + '\n' +
                 'Profit: ' + profit.toFixed(8) + '\n' +
-                'BJ Stats: Win ' + r.bjWin + ' | Loss ' + r.bjLoss + ' | Push ' + r.bjPush + '\n' +
+                'BJ Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
                 'Balance: ' + STATE.balance.toFixed(8));
             updateAllUI();
             setTimeout(sendFireAndForgetBet, 0);
             return;
         }
         
-        // Hitung flat bet
+        // Hitung flat bet (0.5% dari balance, min 0.01)
         var flatBet = STATE.balance * 0.005;
         flatBet = Math.max(flatBet, STATE.minBet);
         flatBet = Math.min(flatBet, STATE.balance * 0.02);
@@ -1203,8 +915,8 @@
         
         console.log('[RECOVERY] Flat Bet:', flatBet);
         
-        // Place Blackjack bet
-        var result = await placeBlackjackBet(flatBet);
+        // Place Baccarat Player bet
+        var result = await placeBaccaratPlayerBet(flatBet);
         
         if (result) {
             // Update stats
@@ -1216,11 +928,12 @@
             if (result.win) {
                 STATE.wins++;
                 STATE.lossStreak = 0;
-            } else if (result.push) {
-                STATE.pushes++;
+                r.win++;
+                r.recoveredAmount += result.profit;
             } else {
                 STATE.losses++;
                 STATE.lossStreak++;
+                r.loss++;
             }
             
             STATE.profit = STATE.balance - STATE.startBalance;
@@ -1239,22 +952,22 @@
             STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
             if (STATE.raffle.nextTicketRemaining <= 0) STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
             
-            logBet(STATE.bets, flatBet, 'BJ', result.profit);
+            var chanceDisplay = 'Player ' + (result.win ? 'WIN' : 'LOSS');
+            logBet(STATE.bets, flatBet, chanceDisplay, result.profit);
             
-            // Cek target lagi setelah bet
+            // Cek target lagi
             var newTotalLoss = STATE.startBalance - STATE.balance;
             var newTarget = newTotalLoss * 1.25;
-            var newRecovered = r.recoveredAmount;
             
-            if (newRecovered >= newTarget && newTarget > 0) {
+            if (r.recoveredAmount >= newTarget && newTarget > 0) {
                 STATE.isRecoveryMode = false;
                 var profit2 = STATE.balance - STATE.startBalance;
                 resetRecoveryState();
-                sendTelegramMessage('✅ RECOVERY 125% SUCCESS!\n' +
+                sendTelegramMessage('✅ BACCARAT RECOVERY 125% SUCCESS!\n' +
                     'Loss: ' + newTotalLoss.toFixed(8) + '\n' +
                     'Target: ' + newTarget.toFixed(8) + '\n' +
                     'Profit: ' + profit2.toFixed(8) + '\n' +
-                    'BJ Stats: Win ' + r.bjWin + ' | Loss ' + r.bjLoss + ' | Push ' + r.bjPush + '\n' +
+                    'Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
                     'Balance: ' + STATE.balance.toFixed(8));
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 0);
@@ -1276,18 +989,13 @@
         STATE.recovery.targetRecovery = 0;
         STATE.recovery.recoveredAmount = 0;
         STATE.recovery.flatBet = 0;
-        STATE.recovery.bjWin = 0;
-        STATE.recovery.bjLoss = 0;
-        STATE.recovery.bjPush = 0;
-        STATE.recovery.bjTotalBets = 0;
-        STATE.recovery.isBJActive = false;
-        STATE.recovery.bjIdentifier = null;
-        STATE.recovery.bjBetId = null;
-        STATE.recovery.currentDeck = 0;
+        STATE.recovery.win = 0;
+        STATE.recovery.loss = 0;
+        STATE.recovery.totalBets = 0;
         STATE.isRecoveryMode = false;
     }
 
-    // ==================== 14. START RECOVERY ====================
+    // ==================== 13. START RECOVERY ====================
     function startRecovery() {
         console.log('[RECOVERY] Starting...');
         
@@ -1309,24 +1017,23 @@
         STATE.recovery.totalLoss = totalLoss;
         STATE.recovery.targetRecovery = totalLoss * 1.25;
         STATE.recovery.recoveredAmount = 0;
-        STATE.recovery.bjWin = 0;
-        STATE.recovery.bjLoss = 0;
-        STATE.recovery.bjPush = 0;
-        STATE.recovery.bjTotalBets = 0;
+        STATE.recovery.win = 0;
+        STATE.recovery.loss = 0;
+        STATE.recovery.totalBets = 0;
         STATE.isRecoveryMode = true;
         
-        sendTelegramMessage('🔄 RECOVERY STARTED (125%)\n' +
+        sendTelegramMessage('🔄 BACCARAT RECOVERY STARTED (125%)\n' +
             'Total Loss: ' + totalLoss.toFixed(8) + '\n' +
             'Target: ' + (totalLoss * 1.25).toFixed(8) + '\n' +
             'Flat Bet: ' + (STATE.balance * 0.005).toFixed(8) + '\n' +
-            '♠️ Blackjack Perfect Strategy\n' +
+            '♠️ Baccarat Player Only (1:1)\n' +
             '🎯 Target = 125% (profit 25%)');
         
         updateAllUI();
         setTimeout(runRecovery, 100);
     }
 
-    // ==================== 15. FIRE & FORGET ====================
+    // ==================== 14. FIRE & FORGET ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode) {
             console.log('[F&F] Recovery active, skipping...');
@@ -1387,7 +1094,7 @@
         setTimeout(sendFireAndForgetBet, 0);
     }
 
-    // ==================== 16. PROCESS BET RESULT ====================
+    // ==================== 15. PROCESS BET RESULT ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
@@ -1432,7 +1139,12 @@
             STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
         }
         
-        logBet(STATE.bets, betAmount, chance, profit);
+        var chanceDisplay = chance.toFixed(1) + '%';
+        if (result.game === 'baccarat') {
+            chanceDisplay = result.result === 'player' ? 'Player' : result.result === 'banker' ? 'Banker' : 'Tie';
+            if (result.mode === 'both') chanceDisplay = '2S ' + chanceDisplay;
+        }
+        logBet(STATE.bets, betAmount, chanceDisplay, profit);
         
         var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
         if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode) {
@@ -1448,7 +1160,7 @@
         updateAllUI();
     }
 
-    // ==================== 17. LOGGING ====================
+    // ==================== 16. LOGGING ====================
     function logBet(betNumber, amount, chance, profit) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -1483,7 +1195,7 @@
         }
     }
 
-    // ==================== 18. RESET FUNCTIONS ====================
+    // ==================== 17. RESET FUNCTIONS ====================
     function resetWagerSesi() {
         STATE.wagerTotalAccumulated += STATE.wagerSesiCounter;
         STATE.wagerSesiCounter = 0;
@@ -1499,11 +1211,9 @@
         STATE.isRecoveryMode = false;
         STATE.isResting = false;
         STATE.recovery.isActive = false;
-        STATE.recovery.bjWin = 0;
-        STATE.recovery.bjLoss = 0;
-        STATE.recovery.bjPush = 0;
-        STATE.recovery.bjTotalBets = 0;
-        STATE.recovery.isBJActive = false;
+        STATE.recovery.win = 0;
+        STATE.recovery.loss = 0;
+        STATE.recovery.totalBets = 0;
         STATE.recovery.recoveredAmount = 0;
         STATE.recovery.targetRecovery = 0;
         STATE.recovery.totalLoss = 0;
@@ -1534,7 +1244,7 @@
         updateAllUI();
     }
 
-    // ==================== 19. UI UPDATES ====================
+    // ==================== 18. UI UPDATES ====================
     function updateStatsDisplay() {
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.stats.profit = STATE.profit;
@@ -1552,7 +1262,7 @@
         var status;
         if (STATE.isRecoveryMode) {
             var progress = STATE.recovery.targetRecovery > 0 ? (STATE.recovery.recoveredAmount / STATE.recovery.targetRecovery * 100) : 0;
-            status = '🔄 BJ RECOVERY ' + progress.toFixed(0) + '%';
+            status = '🔄 BACCARAT RECOVERY ' + progress.toFixed(0) + '%';
         } else {
             status = '⚡ NORMAL 🎲';
         }
@@ -1610,14 +1320,14 @@
         }
     }
 
-    // ==================== 20. SESSION REPORT ====================
+    // ==================== 19. SESSION REPORT ====================
     async function sendSessionReport() {
         STATE.profit = STATE.balance - STATE.startBalance;
         
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
-        var status = STATE.isRecoveryMode ? '🔄 BJ RECOVERY' : '⚡ NORMAL';
+        var status = STATE.isRecoveryMode ? '🔄 BACCARAT RECOVERY' : '⚡ NORMAL';
         var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
         var raffleTickets = STATE.raffle.userTickets;
@@ -1626,11 +1336,11 @@
         var r = STATE.recovery;
         var recoveryInfo = '';
         if (STATE.isRecoveryMode) {
-            recoveryInfo = '\n🔄 RECOVERY 125%\n' +
+            recoveryInfo = '\n🔄 BACCARAT RECOVERY 125%\n' +
                            '  Target: ' + r.targetRecovery.toFixed(8) + '\n' +
                            '  Recovered: ' + r.recoveredAmount.toFixed(8) + '\n' +
                            '  Progress: ' + (r.targetRecovery > 0 ? (r.recoveredAmount / r.targetRecovery * 100).toFixed(1) : 0) + '%\n' +
-                           '  BJ Win: ' + r.bjWin + ' | Loss: ' + r.bjLoss + ' | Push: ' + r.bjPush;
+                           '  Win: ' + r.win + ' | Loss: ' + r.loss;
         }
         
         var modeStats = STATE.dynamic.modeStats;
@@ -1643,7 +1353,7 @@
                          '  Dice 99%: ' + modeStats.dice_99.count + ' (' + (modeStats.dice_99.count/totalMode*100).toFixed(1) + '%)';
         }
         
-        var message = '💰 CHEAPCHEATX v3.0 (BJ RECOVERY 125%)\n' +
+        var message = '💰 CHEAPCHEATX v3.0 (BACCARAT RECOVERY 125%)\n' +
                       'User: ' + STATE.stakeUser + '\n' +
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
@@ -1660,7 +1370,7 @@
         await sendTelegramMessage(message);
     }
 
-    // ==================== 21. RUN LOOP ====================
+    // ==================== 20. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1671,7 +1381,7 @@
         }
     }
 
-    // ==================== 22. UI CONTROLS ====================
+    // ==================== 21. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1693,7 +1403,7 @@
         }
     }
 
-    // ==================== 23. CREATE UI ====================
+    // ==================== 22. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1841,14 +1551,14 @@
                         </div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 RECOVERY (Blackjack 125%)</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 BACCARAT RECOVERY (125%)</div>
                         <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Target: 125% dari loss (balik modal + profit 25%)</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.5" step="0.01" min="0.01" max="5"></div>
                             <div class="md-field"><label>🎯 RECOVERY TARGET (%)</label><input type="number" id="p-recovery-target" value="125" step="5" min="100" max="200"></div>
                         </div>
                         <div style="font-size:8px;color:var(--text-light);margin-top:4px;">
-                            ♠️ Blackjack Perfect Strategy | Flat Bet (0.5% dari balance)
+                            ♠️ Baccarat Player Only (1:1) | Flat Bet (0.5% dari balance) | NO CUTLOSS
                         </div>
                     </div>
                     <div class="stats-block">
@@ -1881,7 +1591,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dynamic Pattern (Baccarat 2 Sisi / Dice 99.98% / Dice 99%)<br>🔄 Recovery: Blackjack Perfect Strategy (125%)<br>📉 Trigger: Drawdown > 0.5%<br>🎯 Target: 125% dari loss (balik modal + profit 25%)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dynamic Pattern (Baccarat 2 Sisi / Dice 99.98% / Dice 99%)<br>🔄 Recovery: Baccarat Player Only (1:1) | Target 125%<br>📉 Trigger: Drawdown > 0.5%<br>🎯 Target: 125% dari loss (balik modal + profit 25%)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -2017,9 +1727,7 @@
                 STATE.delayNormal = safeInt("p-delay-normal", 0);
                 STATE.delayRecovery = safeInt("p-delay-recovery", 0);
                 
-                // Recovery target dari UI (default 125%)
                 var recoveryTargetPct = safeFloat("p-recovery-target", 125);
-                STATE.recovery.targetPct = recoveryTargetPct;
                 
                 var targetUSD = safeFloat("p-wager-total-target-usd", 1000);
                 var lossPct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -2063,11 +1771,9 @@
                 STATE.recovery.totalLoss = 0;
                 STATE.recovery.targetRecovery = 0;
                 STATE.recovery.recoveredAmount = 0;
-                STATE.recovery.bjWin = 0;
-                STATE.recovery.bjLoss = 0;
-                STATE.recovery.bjPush = 0;
-                STATE.recovery.bjTotalBets = 0;
-                STATE.recovery.isBJActive = false;
+                STATE.recovery.win = 0;
+                STATE.recovery.loss = 0;
+                STATE.recovery.totalBets = 0;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -2099,7 +1805,7 @@
                 
                 sendTelegramMessage('💰 CHEAPCHEATX v3.0 STARTED\n' +
                     'Mode: Dynamic Pattern (Baccarat 2 Sisi, Dice 99.98%, Dice 99%)\n' +
-                    'Recovery: Blackjack Perfect Strategy\n' +
+                    'Recovery: Baccarat Player Only (1:1)\n' +
                     'Target: ' + recoveryTargetPct + '% dari loss\n' +
                     'Balance: ' + balance.toFixed(8) + '\n' +
                     'MinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
@@ -2163,7 +1869,6 @@
         if (recoveryTargetEl) {
             recoveryTargetEl.onchange = function() {
                 var val = safeFloat("p-recovery-target", 125);
-                STATE.recovery.targetPct = val;
                 var el = document.getElementById("recovery-target-display");
                 if (el) el.textContent = 'Target: ' + val + '% (balik modal + profit ' + (val - 100) + '%)';
             };
@@ -2242,7 +1947,7 @@
         }, 60000);
     }
 
-    // ==================== 24. START ====================
+    // ==================== 23. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
