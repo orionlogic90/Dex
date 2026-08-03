@@ -1,11 +1,10 @@
 // ========================================================================
-// CHEAPCHEATX v3.0 - BACCARAT + DICE + ADAPTIVE BACCARAT RECOVERY 125%
+// CHEAPCHEATX v3.0 - BACCARAT + DICE + DUAL MODE RECOVERY (PROFIT + WAGER)
 // ========================================================================
 // NORMAL MODE: FIRE & FORGET (Dynamic Pattern - Baccarat 2 Sisi, Dice 99.98%, Dice 99%)
-// RECOVERY MODE: BACCARAT PLAYER ONLY + ADAPTIVE BET (Martingale Tipis + Paroli)
-// - Base Bet: 0.5% dari balance
-// - Loss Streak: 1x, 2x, 4x, 8x (cap 5% balance)
-// - Win Streak: 1x, 1.5x, 2x, 3x (cap 5% balance)
+// RECOVERY MODE: DUAL (PROFIT MODE + WAGER MODE dari script Anda)
+//   - PROFIT MODE: Dice 11-20% (Payout 5-9x) - cari profit cepat
+//   - WAGER MODE: Dice 98% - farming sambil recovery
 // TARGET: 125% dari loss (balik modal + profit 25%)
 // TRIGGER: Drawdown > 0.5%
 // EXIT: HANYA ketika target 125% tercapai (TANPA CUTLOSS)
@@ -39,20 +38,32 @@
         darkMode: false,
         minimized: false,
         
-        // ===== RECOVERY =====
+        // ===== RECOVERY (dari script Anda) =====
         recovery: {
             isActive: false,
             totalLoss: 0,
             targetRecovery: 0,
             recoveredAmount: 0,
-            baseBet: 0,
+            
+            // Profit Mode
+            onprofit: true,
+            bbprofit: 0,
+            profitc: 0,
+            pfreset: 0,
+            pfpump: 0,
+            pfdump: 0,
+            chance: 15,
             currentBet: 0,
-            winStreak: 0,
-            lossStreak: 0,
+            
+            // Stats
             win: 0,
             loss: 0,
             totalBets: 0,
-            maxBet: 0
+            maxBet: 0,
+            winStreak: 0,
+            lossStreak: 0,
+            balhigh: 0,
+            baldrop: 0
         },
         
         // ===== BALANCE =====
@@ -717,86 +728,7 @@
         }
     }
 
-    // ==================== 10. PLACE BACCARAT PLAYER BET (Recovery) ====================
-    async function placeBaccaratPlayerBet(amount) {
-        var apiAmount = parseFloat(amount.toFixed(8));
-        
-        try {
-            var payload = {
-                currency: STATE.selectedCurrency,
-                identifier: generateId(),
-                tie: 0,
-                player: apiAmount,
-                banker: 0
-            };
-            
-            var res = await fetch(CONFIG.apiUrl + '/casino/baccarat/bet', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': accessToken,
-                    'x-lockdown-token': CONFIG.lockdownToken
-                },
-                body: JSON.stringify(payload)
-            });
-            
-            var data = await res.json();
-            
-            if (data.error || !data.baccaratBet) {
-                return null;
-            }
-            
-            var d = data.baccaratBet;
-            var result = d.state?.result || 'tie';
-            var totalBet = parseFloat(d.amount) || apiAmount;
-            var payout = parseFloat(d.payout) || 0;
-            
-            var isWin = false;
-            var profit = 0;
-            
-            if (result === 'player') {
-                isWin = true;
-                profit = totalBet;
-            } else if (result === 'banker') {
-                isWin = false;
-                profit = -totalBet;
-            } else {
-                isWin = false;
-                profit = -totalBet;
-            }
-            
-            if (d.user && d.user.wallets && d.user.wallets[0]) {
-                STATE.balance = parseFloat(d.user.wallets[0].balance);
-            } else {
-                STATE.balance += profit;
-                if (STATE.balance < 0) STATE.balance = 0;
-            }
-            
-            STATE.profit = STATE.balance - STATE.startBalance;
-            STATE.stats.profit = STATE.profit;
-            STATE.stats.currentBal = STATE.balance;
-            
-            console.log('[BACCARAT RECOVERY] ' + (isWin ? 'WIN' : 'LOSS') + ' | Result: ' + result + ' | Profit: ' + profit.toFixed(8));
-            
-            updateAllUI();
-            
-            return {
-                win: isWin,
-                result: result,
-                profit: profit,
-                amount: totalBet,
-                payout: payout,
-                game: 'baccarat',
-                mode: 'player'
-            };
-            
-        } catch (error) {
-            console.error('[BACCARAT] Exception:', error);
-            return null;
-        }
-    }
-
-    // ==================== 11. DYNAMIC PATTERN ====================
+    // ==================== 10. DYNAMIC PATTERN ====================
     function generateRandomDistribution(total) {
         var baccarat = randomFloat(0.30, 0.50);
         var d9998 = randomFloat(0.20, 0.40);
@@ -879,72 +811,100 @@
         return parseFloat(Math.max(bet, STATE.minBet).toFixed(8));
     }
 
-    // ==================== 12. ADAPTIVE BET CALCULATOR ====================
-    function calculateAdaptiveBet() {
+    // ==================== 11. RECOVERY - PROFIT MODE (dari script Anda) ====================
+    function calculateProfitModeBet() {
         var r = STATE.recovery;
         var balance = STATE.balance;
-        var baseBet = balance * 0.005; // 0.5% dari balance
-        baseBet = Math.max(baseBet, STATE.minBet);
         
-        var multiplier = 1;
-        var label = 'Flat';
+        // Base bet = 0.003% dari balance
+        var bbprofit = balance * 3e-5;
+        bbprofit = Math.max(bbprofit, STATE.minBet);
+        r.bbprofit = bbprofit;
         
-        // ===== LOSS STREAK =====
-        if (r.lossStreak >= 4) {
-            multiplier = 8;
-            label = '8x (Max Loss)';
-        } else if (r.lossStreak === 3) {
-            multiplier = 4;
-            label = '4x (Loss x3)';
-        } else if (r.lossStreak === 2) {
-            multiplier = 2;
-            label = '2x (Loss x2)';
-        } else if (r.lossStreak === 1) {
-            multiplier = 1;
-            label = '1x (Loss x1)';
+        // Chance random 11-20%
+        var chance = (Math.floor(Math.random() * (200 - 110 + 1)) + 110) / 10;
+        r.chance = chance;
+        
+        // pfreset = akumulasi profit recovery
+        r.pfreset = r.pfreset || 0;
+        r.pfreset = r.pfreset + (STATE.balance - STATE.startBalance) - r.recoveredAmount;
+        
+        // pfpump = 1.5% balance, pfdump = 1% balance
+        r.pfpump = balance * 0.015;
+        r.pfdump = balance * 0.01;
+        
+        var nextbet = 0;
+        
+        if (r.onprofit) {
+            // Profit Mode
+            r.profitc = r.profitc || 0;
+            
+            // Cek apakah ada win/loss terakhir
+            if (r.lastWin === true) {
+                // WIN: bet turun 60%
+                nextbet = r.currentBet * 0.6;
+                if (r.profitc > 0) {
+                    r.profitc = 0;
+                    r.chance = (Math.floor(Math.random() * (200 - 110 + 1)) + 110) / 10;
+                    nextbet = bbprofit;
+                }
+            } else if (r.lastWin === false) {
+                // LOSS: bet naik
+                var payout = 99 / r.chance;
+                nextbet = r.currentBet * (1 + (r.chance * 0.02));
+                
+                // Jika loss streak panjang
+                var streak = r.lossStreak;
+                if (streak > Math.ceil(payout * 3)) {
+                    var profitcAbs = Math.abs(r.profitc || 0);
+                    nextbet = profitcAbs / (payout - 1) * 1.02;
+                }
+            } else {
+                // First bet
+                nextbet = bbprofit;
+            }
+            
+            // Cek switch ke Wager Mode
+            if (r.pfreset > r.pfpump) {
+                r.onprofit = false;
+                r.chance = 98;
+                nextbet = balance / 300;
+                console.log('[RECOVERY] Switch to WAGER MODE');
+            }
+            
+        } else {
+            // Wager Mode
+            nextbet = balance / 300;
+            nextbet = Math.max(nextbet, STATE.minBet);
+            
+            // Cek switch ke Profit Mode
+            if (r.pfreset < -r.pfdump) {
+                r.onprofit = true;
+                r.chance = 33;
+                nextbet = bbprofit;
+                r.profitc = 0;
+                console.log('[RECOVERY] Switch to PROFIT MODE');
+            }
         }
         
-        // ===== WIN STREAK (PAROLI) - override loss streak jika win streak lebih tinggi =====
-        if (r.winStreak >= 4) {
-            multiplier = Math.max(multiplier, 3);
-            label = '3x (Win x4+)';
-        } else if (r.winStreak === 3) {
-            multiplier = Math.max(multiplier, 2);
-            label = '2x (Win x3)';
-        } else if (r.winStreak === 2) {
-            multiplier = Math.max(multiplier, 1.5);
-            label = '1.5x (Win x2)';
-        } else if (r.winStreak === 1) {
-            multiplier = Math.max(multiplier, 1);
-            label = '1x (Win x1)';
-        }
+        // Clamp bet
+        nextbet = Math.max(nextbet, STATE.minBet);
+        nextbet = Math.min(nextbet, balance * 0.05);
+        nextbet = parseFloat(nextbet.toFixed(8));
         
-        // ===== CAP =====
-        var maxBet = balance * 0.05; // Maksimal 5% dari balance
-        var finalBet = baseBet * multiplier;
+        r.currentBet = nextbet;
+        r.bbprofit = bbprofit;
         
-        // Pastikan tidak melebihi maxBet
-        if (finalBet > maxBet) {
-            finalBet = maxBet;
-            label += ' (capped)';
-        }
+        console.log('[RECOVERY] ' + (r.onprofit ? 'PROFIT' : 'WAGER') + ' | Chance: ' + r.chance + '% | Bet: ' + nextbet + ' | pfreset: ' + r.pfreset);
         
-        // Pastikan minimal minBet
-        finalBet = Math.max(finalBet, STATE.minBet);
-        
-        // Round ke 8 desimal
-        finalBet = parseFloat(finalBet.toFixed(8));
-        
-        r.baseBet = baseBet;
-        r.currentBet = finalBet;
-        
-        console.log('[ADAPTIVE] Base: ' + baseBet + ' | Multiplier: ' + multiplier + 'x | Final: ' + finalBet + ' | ' + label);
-        console.log('[ADAPTIVE] Win Streak: ' + r.winStreak + ' | Loss Streak: ' + r.lossStreak);
-        
-        return finalBet;
+        return {
+            bet: nextbet,
+            chance: r.chance,
+            condition: 'above'
+        };
     }
 
-    // ==================== 13. RECOVERY RUN ====================
+    // ==================== 12. RECOVERY RUN ====================
     async function runRecovery() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -960,14 +920,18 @@
         var totalLoss = STATE.startBalance - STATE.balance;
         var target = totalLoss * 1.25;
         
+        // Update recovered amount
+        r.recoveredAmount = STATE.balance - STATE.startBalance + totalLoss;
+        if (r.recoveredAmount < 0) r.recoveredAmount = 0;
+        
         console.log('[RECOVERY] Loss: ' + totalLoss + ' | Target: ' + target + ' | Recovered: ' + r.recoveredAmount);
         
-        // Cek target
+        // Cek target 125%
         if (r.recoveredAmount >= target && target > 0) {
             STATE.isRecoveryMode = false;
             var profit = STATE.balance - STATE.startBalance;
             resetRecoveryState();
-            sendTelegramMessage('✅ ADAPTIVE RECOVERY 125% SUCCESS!\n' +
+            sendTelegramMessage('✅ DUAL RECOVERY 125% SUCCESS!\n' +
                 'Loss: ' + totalLoss.toFixed(8) + '\n' +
                 'Target: ' + target.toFixed(8) + '\n' +
                 'Profit: ' + profit.toFixed(8) + '\n' +
@@ -979,64 +943,84 @@
             return;
         }
         
-        // Hitung adaptive bet
-        var flatBet = calculateAdaptiveBet();
+        // Hitung bet dari Profit/Wager Mode
+        var action = calculateProfitModeBet();
+        var betAmount = action.bet;
+        var chance = action.chance;
+        var condition = action.condition;
         
-        // Place Baccarat Player bet
-        var result = await placeBaccaratPlayerBet(flatBet);
+        console.log('[RECOVERY] Bet: ' + betAmount + ' | Chance: ' + chance + '%');
+        
+        // Place Dice bet
+        var result = await placeDiceBet(betAmount, chance, condition);
         
         if (result) {
-            // Update stats
-            STATE.bets++;
-            STATE.wagered += flatBet;
-            STATE.betTimestamps.push(Date.now());
-            if (STATE.betTimestamps.length > 100) STATE.betTimestamps.shift();
+            var profit = result.profit || 0;
+            var isWin = result.win;
             
-            if (result.win) {
-                STATE.wins++;
-                STATE.lossStreak = 0;
+            // Update recovery state
+            r.totalBets++;
+            r.lastWin = isWin;
+            
+            if (isWin) {
                 r.win++;
                 r.winStreak++;
                 r.lossStreak = 0;
-                r.recoveredAmount += result.profit;
-                
-                if (flatBet > r.maxBet) r.maxBet = flatBet;
+                r.recoveredAmount += profit;
+                r.profitc = (r.profitc || 0) + profit;
+                if (r.profitc > 0) r.profitc = 0;
             } else {
-                STATE.losses++;
-                STATE.lossStreak++;
                 r.loss++;
                 r.lossStreak++;
                 r.winStreak = 0;
+                r.profitc = (r.profitc || 0) + profit;
+            }
+            
+            if (betAmount > r.maxBet) r.maxBet = betAmount;
+            
+            // Update stats
+            STATE.bets++;
+            STATE.wagered += betAmount;
+            STATE.betTimestamps.push(Date.now());
+            if (STATE.betTimestamps.length > 100) STATE.betTimestamps.shift();
+            
+            if (isWin) {
+                STATE.wins++;
+                STATE.lossStreak = 0;
+            } else {
+                STATE.losses++;
+                STATE.lossStreak++;
             }
             
             STATE.profit = STATE.balance - STATE.startBalance;
             STATE.drawdown = STATE.startBalance - STATE.balance;
             if (STATE.drawdown > STATE.maxDrawdown) STATE.maxDrawdown = STATE.drawdown;
-            if (flatBet > STATE.maxBet) STATE.maxBet = flatBet;
+            if (betAmount > STATE.maxBet) STATE.maxBet = betAmount;
             
-            STATE.wagerSesiCounter += flatBet;
+            STATE.wagerSesiCounter += betAmount;
             STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
             if (STATE.profit > STATE.highestProfit) STATE.highestProfit = STATE.profit;
             
-            var wageredUSD = flatBet * STATE.fiatRates.usd;
+            var wageredUSD = betAmount * STATE.fiatRates.usd;
             STATE.raffle.wageredFromBot += wageredUSD;
             var wageredFromStake = STATE.raffle.progress * STATE.raffle.ticketValue;
             var totalWagered = wageredFromStake + STATE.raffle.wageredFromBot;
             STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue - (totalWagered % STATE.raffle.ticketValue);
             if (STATE.raffle.nextTicketRemaining <= 0) STATE.raffle.nextTicketRemaining = STATE.raffle.ticketValue;
             
-            var chanceDisplay = 'Player ' + (result.win ? 'WIN' : 'LOSS') + ' [S:' + r.winStreak + '/' + r.lossStreak + ']';
-            logBet(STATE.bets, flatBet, chanceDisplay, result.profit);
+            var modeLabel = r.onprofit ? 'PROFIT' : 'WAGER';
+            logBet(STATE.bets, betAmount, chance + '% ' + modeLabel, profit);
             
             // Cek target lagi
             var newTotalLoss = STATE.startBalance - STATE.balance;
             var newTarget = newTotalLoss * 1.25;
+            var newRecovered = r.recoveredAmount;
             
-            if (r.recoveredAmount >= newTarget && newTarget > 0) {
+            if (newRecovered >= newTarget && newTarget > 0) {
                 STATE.isRecoveryMode = false;
                 var profit2 = STATE.balance - STATE.startBalance;
                 resetRecoveryState();
-                sendTelegramMessage('✅ ADAPTIVE RECOVERY 125% SUCCESS!\n' +
+                sendTelegramMessage('✅ DUAL RECOVERY 125% SUCCESS!\n' +
                     'Loss: ' + newTotalLoss.toFixed(8) + '\n' +
                     'Target: ' + newTarget.toFixed(8) + '\n' +
                     'Profit: ' + profit2.toFixed(8) + '\n' +
@@ -1062,20 +1046,27 @@
         STATE.recovery.totalLoss = 0;
         STATE.recovery.targetRecovery = 0;
         STATE.recovery.recoveredAmount = 0;
-        STATE.recovery.baseBet = 0;
+        STATE.recovery.onprofit = true;
+        STATE.recovery.bbprofit = 0;
+        STATE.recovery.profitc = 0;
+        STATE.recovery.pfreset = 0;
+        STATE.recovery.pfpump = 0;
+        STATE.recovery.pfdump = 0;
+        STATE.recovery.chance = 15;
         STATE.recovery.currentBet = 0;
-        STATE.recovery.winStreak = 0;
-        STATE.recovery.lossStreak = 0;
         STATE.recovery.win = 0;
         STATE.recovery.loss = 0;
         STATE.recovery.totalBets = 0;
         STATE.recovery.maxBet = 0;
+        STATE.recovery.winStreak = 0;
+        STATE.recovery.lossStreak = 0;
+        STATE.recovery.lastWin = null;
         STATE.isRecoveryMode = false;
     }
 
-    // ==================== 14. START RECOVERY ====================
+    // ==================== 13. START RECOVERY ====================
     function startRecovery() {
-        console.log('[RECOVERY] Starting adaptive recovery...');
+        console.log('[RECOVERY] Starting DUAL recovery...');
         
         if (STATE.balance <= STATE.minBet * 2) {
             STATE.isRecoveryMode = false;
@@ -1095,31 +1086,38 @@
         STATE.recovery.totalLoss = totalLoss;
         STATE.recovery.targetRecovery = totalLoss * 1.25;
         STATE.recovery.recoveredAmount = 0;
-        STATE.recovery.winStreak = 0;
-        STATE.recovery.lossStreak = 0;
+        STATE.recovery.onprofit = true;
+        STATE.recovery.profitc = 0;
+        STATE.recovery.pfreset = 0;
         STATE.recovery.win = 0;
         STATE.recovery.loss = 0;
         STATE.recovery.totalBets = 0;
         STATE.recovery.maxBet = 0;
+        STATE.recovery.winStreak = 0;
+        STATE.recovery.lossStreak = 0;
+        STATE.recovery.lastWin = null;
+        STATE.recovery.pfpump = STATE.balance * 0.015;
+        STATE.recovery.pfdump = STATE.balance * 0.01;
         STATE.isRecoveryMode = true;
         
-        var baseBet = STATE.balance * 0.005;
-        baseBet = Math.max(baseBet, STATE.minBet);
+        var bbprofit = STATE.balance * 3e-5;
+        bbprofit = Math.max(bbprofit, STATE.minBet);
+        STATE.recovery.bbprofit = bbprofit;
         
-        sendTelegramMessage('🔄 ADAPTIVE RECOVERY STARTED (125%)\n' +
+        sendTelegramMessage('🔄 DUAL RECOVERY STARTED (125%)\n' +
             'Total Loss: ' + totalLoss.toFixed(8) + '\n' +
             'Target: ' + (totalLoss * 1.25).toFixed(8) + '\n' +
-            'Base Bet: ' + baseBet.toFixed(8) + ' (0.5% balance)\n' +
-            'Max Bet: ' + (STATE.balance * 0.05).toFixed(8) + ' (5% balance)\n' +
-            '♠️ Baccarat Player Only (1:1)\n' +
-            '📊 Adaptive: Martingale tipis + Paroli\n' +
+            'Base Bet: ' + bbprofit.toFixed(8) + '\n' +
+            '🎯 PROFIT MODE: Dice 11-20% (Payout 5-9x)\n' +
+            '📊 WAGER MODE: Dice 98%\n' +
+            '🔄 Auto switch berdasarkan pfreset\n' +
             '🎯 Target = 125% (profit 25%)');
         
         updateAllUI();
         setTimeout(runRecovery, 100);
     }
 
-    // ==================== 15. FIRE & FORGET ====================
+    // ==================== 14. FIRE & FORGET ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode) {
             console.log('[F&F] Recovery active, skipping...');
@@ -1180,7 +1178,7 @@
         setTimeout(sendFireAndForgetBet, 0);
     }
 
-    // ==================== 16. PROCESS BET RESULT ====================
+    // ==================== 15. PROCESS BET RESULT ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
@@ -1244,7 +1242,7 @@
         updateAllUI();
     }
 
-    // ==================== 17. LOGGING ====================
+    // ==================== 16. LOGGING ====================
     function logBet(betNumber, amount, chance, profit) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -1279,7 +1277,7 @@
         }
     }
 
-    // ==================== 18. RESET FUNCTIONS ====================
+    // ==================== 17. RESET FUNCTIONS ====================
     function resetWagerSesi() {
         STATE.wagerTotalAccumulated += STATE.wagerSesiCounter;
         STATE.wagerSesiCounter = 0;
@@ -1304,6 +1302,10 @@
         STATE.recovery.targetRecovery = 0;
         STATE.recovery.totalLoss = 0;
         STATE.recovery.maxBet = 0;
+        STATE.recovery.onprofit = true;
+        STATE.recovery.profitc = 0;
+        STATE.recovery.pfreset = 0;
+        STATE.recovery.lastWin = null;
         STATE.wagerTotalAccumulated = 0;
         STATE.wagerSesiCounter = 0;
         STATE.wagerStop = false;
@@ -1331,7 +1333,7 @@
         updateAllUI();
     }
 
-    // ==================== 19. UI UPDATES ====================
+    // ==================== 18. UI UPDATES ====================
     function updateStatsDisplay() {
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.stats.profit = STATE.profit;
@@ -1349,7 +1351,8 @@
         var status;
         if (STATE.isRecoveryMode) {
             var progress = STATE.recovery.targetRecovery > 0 ? (STATE.recovery.recoveredAmount / STATE.recovery.targetRecovery * 100) : 0;
-            status = '🔄 ADAPTIVE RECOVERY ' + progress.toFixed(0) + '%';
+            var mode = STATE.recovery.onprofit ? 'PROFIT' : 'WAGER';
+            status = '🔄 ' + mode + ' RECOVERY ' + progress.toFixed(0) + '%';
         } else {
             status = '⚡ NORMAL 🎲';
         }
@@ -1407,14 +1410,14 @@
         }
     }
 
-    // ==================== 20. SESSION REPORT ====================
+    // ==================== 19. SESSION REPORT ====================
     async function sendSessionReport() {
         STATE.profit = STATE.balance - STATE.startBalance;
         
         var profitPct = STATE.startBalance > 0 ? (STATE.profit / STATE.startBalance * 100) : 0;
         var winRate = STATE.bets > 0 ? (STATE.wins / STATE.bets * 100) : 0;
         var runTime = getDuration();
-        var status = STATE.isRecoveryMode ? '🔄 ADAPTIVE RECOVERY' : '⚡ NORMAL';
+        var status = STATE.isRecoveryMode ? '🔄 DUAL RECOVERY' : '⚡ NORMAL';
         var drawdownPct = STATE.startBalance > 0 ? ((STATE.startBalance - STATE.balance) / STATE.startBalance * 100) : 0;
         var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
         var raffleTickets = STATE.raffle.userTickets;
@@ -1423,7 +1426,9 @@
         var r = STATE.recovery;
         var recoveryInfo = '';
         if (STATE.isRecoveryMode) {
-            recoveryInfo = '\n🔄 ADAPTIVE RECOVERY 125%\n' +
+            var mode = r.onprofit ? 'PROFIT' : 'WAGER';
+            recoveryInfo = '\n🔄 DUAL RECOVERY 125%\n' +
+                           '  Mode: ' + mode + '\n' +
                            '  Target: ' + r.targetRecovery.toFixed(8) + '\n' +
                            '  Recovered: ' + r.recoveredAmount.toFixed(8) + '\n' +
                            '  Progress: ' + (r.targetRecovery > 0 ? (r.recoveredAmount / r.targetRecovery * 100).toFixed(1) : 0) + '%\n' +
@@ -1442,7 +1447,7 @@
                          '  Dice 99%: ' + modeStats.dice_99.count + ' (' + (modeStats.dice_99.count/totalMode*100).toFixed(1) + '%)';
         }
         
-        var message = '💰 CHEAPCHEATX v3.0 (ADAPTIVE RECOVERY 125%)\n' +
+        var message = '💰 CHEAPCHEATX v3.0 (DUAL RECOVERY 125%)\n' +
                       'User: ' + STATE.stakeUser + '\n' +
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
@@ -1459,7 +1464,7 @@
         await sendTelegramMessage(message);
     }
 
-    // ==================== 21. RUN LOOP ====================
+    // ==================== 20. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1470,7 +1475,7 @@
         }
     }
 
-    // ==================== 22. UI CONTROLS ====================
+    // ==================== 21. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1492,7 +1497,7 @@
         }
     }
 
-    // ==================== 23. CREATE UI ====================
+    // ==================== 22. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1640,14 +1645,14 @@
                         </div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 ADAPTIVE BACCARAT RECOVERY (125%)</div>
-                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Baccarat Player Only | Martingale Tipis + Paroli | Max Bet 5%</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 DUAL RECOVERY (PROFIT + WAGER)</div>
+                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">PROFIT MODE: Dice 11-20% | WAGER MODE: Dice 98%</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.5" step="0.01" min="0.01" max="5"></div>
                             <div class="md-field"><label>🎯 RECOVERY TARGET (%)</label><input type="number" id="p-recovery-target" value="125" step="5" min="100" max="200"></div>
                         </div>
                         <div style="font-size:8px;color:var(--text-light);margin-top:4px;">
-                            ♠️ Player Only (1:1) | Base 0.5% | Martingale: 1x→2x→4x→8x | Paroli: 1x→1.5x→2x→3x | NO CUTLOSS
+                            🔄 Auto switch antara PROFIT MODE (Dice 11-20%) dan WAGER MODE (Dice 98%)
                         </div>
                     </div>
                     <div class="stats-block">
@@ -1680,7 +1685,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dynamic Pattern (Baccarat 2 Sisi / Dice 99.98% / Dice 99%)<br>🔄 Recovery: Adaptive Baccarat Player Only<br>📈 Martingale Tipis (1x→2x→4x→8x) + Paroli (1x→1.5x→2x→3x)<br>🎯 Target: 125% dari loss (balik modal + profit 25%)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dynamic Pattern (Baccarat 2 Sisi / Dice 99.98% / Dice 99%)<br>🔄 Recovery: DUAL (PROFIT + WAGER)<br>🎯 PROFIT MODE: Dice 11-20% (Payout 5-9x)<br>📊 WAGER MODE: Dice 98%<br>🔄 Auto switch berdasarkan pfreset<br>🎯 Target: 125% dari loss (balik modal + profit 25%)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -1860,12 +1865,16 @@
                 STATE.recovery.totalLoss = 0;
                 STATE.recovery.targetRecovery = 0;
                 STATE.recovery.recoveredAmount = 0;
+                STATE.recovery.onprofit = true;
+                STATE.recovery.profitc = 0;
+                STATE.recovery.pfreset = 0;
                 STATE.recovery.win = 0;
                 STATE.recovery.loss = 0;
                 STATE.recovery.totalBets = 0;
+                STATE.recovery.maxBet = 0;
                 STATE.recovery.winStreak = 0;
                 STATE.recovery.lossStreak = 0;
-                STATE.recovery.maxBet = 0;
+                STATE.recovery.lastWin = null;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1897,7 +1906,7 @@
                 
                 sendTelegramMessage('💰 CHEAPCHEATX v3.0 STARTED\n' +
                     'Mode: Dynamic Pattern (Baccarat 2 Sisi, Dice 99.98%, Dice 99%)\n' +
-                    'Recovery: Adaptive Baccarat Player Only\n' +
+                    'Recovery: DUAL (PROFIT + WAGER)\n' +
                     'Target: ' + recoveryTargetPct + '% dari loss\n' +
                     'Balance: ' + balance.toFixed(8) + '\n' +
                     'MinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
@@ -2037,7 +2046,7 @@
         }, 60000);
     }
 
-    // ==================== 24. START ====================
+    // ==================== 23. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
