@@ -1,24 +1,24 @@
 // ========================================================================
-// CHEAPCHEATX v3.0 - BOT STAKE (DICE ONLY + RECEIVE ML COMMAND)
+// CHEAPCHEATX v3.0 - BOT STAKE (DICE ONLY + ML RECEIVER)
 // ========================================================================
 // NORMAL MODE: Dice 99.98% (Fire & Forget) - Wagering farming
 // RECOVERY MODE: Dice dengan Martingale 1.5x
 // EXIT: BEP (balance >= startBalance)
-// COMMAND: Receive dari ML Server via Telegram
+// ML: Receive command dari Python ML Server via Telegram
+// SUPPORTED CURRENCIES: USDT, BTC, ETH, BNB, SOL, XRP, IDR, dan semua crypto di Stake
 // ========================================================================
 
 (function () {
     // ==================== 1. CONFIG ====================
     const CONFIG = {
         apiUrl: window.location.origin + '/_api',
-        version: "CheapCheatX v3.0 ML",
+        version: "CheapCheatX v3.0",
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
         maxHistory: 50,
         maxLogs: 50,
-        lockdownToken: "s5MNWtjTM5TvCMkAzxov",
-        mlEnabled: true  // Enable ML command receive
+        lockdownToken: "s5MNWtjTM5TvCMkAzxov"
     };
 
     let accessToken = "";
@@ -189,11 +189,10 @@
 
     // ==================== 5. SEND DATA TO ML ====================
     function sendDataToML() {
-        if (!CONFIG.mlEnabled) return;
         if (!CONFIG.tgBotToken || !CONFIG.tgChatId) return;
         
         var now = Date.now();
-        if (now - STATE.lastMLSend < 5000) return; // Max 5 detik
+        if (now - STATE.lastMLSend < 5000) return;
         STATE.lastMLSend = now;
         
         var data = {
@@ -220,7 +219,6 @@
     var lastUpdateId = 0;
 
     async function getTelegramCommands() {
-        if (!CONFIG.mlEnabled) return;
         if (!CONFIG.tgBotToken) return;
         
         try {
@@ -358,7 +356,6 @@
                 break;
                 
             default:
-                // Unknown command
                 break;
         }
     }
@@ -983,7 +980,6 @@
         placeDiceBet(betAmount, STATE.normalChance, 'above').then(function(result) {
             if (result) {
                 processBetResult(result, betAmount, 'normal', true);
-                // Kirim data ke ML setelah bet normal
                 sendDataToML();
             }
         }).catch(function(e) { console.error('[F&F] Dice error:', e); });
@@ -1224,7 +1220,7 @@
                       'Drawdown: ' + drawdownPct.toFixed(2) + '%\n' +
                       '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
                       'Status: ' + status +
-                      '\n🤖 ML Server Connected';
+                      '\n🤖 ML Server: Connected (XGBoost + LSTM)';
         await sendTelegramMessage(message);
     }
 
@@ -1261,11 +1257,9 @@
         }
     }
 
-    // ==================== 22. LISTEN TELEGRAM COMMANDS (LOOP) ====================
+    // ==================== 22. LISTEN TELEGRAM COMMANDS ====================
     setInterval(function() {
-        if (CONFIG.mlEnabled) {
-            getTelegramCommands();
-        }
+        getTelegramCommands();
     }, 5000);
 
     // ==================== 23. CREATE UI ====================
@@ -1425,7 +1419,6 @@
                                     <option value="false">❌ Disabled</option>
                                 </select>
                             </div>
-                            <div class="md-field"><label>📊 SEND DATA INTERVAL (detik)</label><input type="number" id="p-ml-interval" value="5" step="1" min="1" max="60"></div>
                         </div>
                         <div style="font-size:8px;color:var(--text-light);margin-top:4px;">
                             Bot akan mengirim data ke ML Server via Telegram. ML Server akan mengirim command balik.
@@ -1461,7 +1454,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0 ML<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Martingale (Dice)<br>📈 Double bet setiap loss | Max LS: reset ke base<br>🎯 Exit: balance >= startBalance (BEP)<br>🤖 ML Server: Connected via Telegram<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0 ML<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Martingale (Dice)<br>📈 Double setiap loss | Max LS: reset ke base<br>🎯 Exit: balance >= startBalance (BEP)<br>🤖 ML Server: Connected via Telegram<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
