@@ -1,11 +1,12 @@
 // ========================================================================
-// CHEAPCHEATX v3.0 - BOT STAKE + MINI ML + AUTO STRATEGY
+// CHEAPCHEATX v3.0 - BOT STAKE + MINI ML + AUTO STRATEGY (FIXED)
 // ========================================================================
 // NORMAL MODE: Dice 99.98% (Fire & Forget)
 // RECOVERY MODE: Dice 49.5% Martingale 1.5x
 // EXIT: BEP (balance >= startBalance)
 // MINI ML: Neural Network di browser (auto-learn dari data)
 // AUTO STRATEGY: 3 fase (Data Collection → ML Active → Full ML)
+// FIXED: Recovery trigger, drawdown tracking, basebet adjustment
 // ========================================================================
 
 (function () {
@@ -26,7 +27,6 @@
     // ==================== 2. MINI ML ====================
     class MiniML {
         constructor() {
-            // Neural Network: 6 input, 2 hidden layer, 2 output
             this.w1 = Array.from({length: 6}, () => Math.random() * 2 - 1);
             this.w2 = Array.from({length: 6}, () => Math.random() * 2 - 1);
             this.b1 = Math.random() * 2 - 1;
@@ -38,8 +38,6 @@
             this.trainingCount = 0;
             this.batchSize = 100;
             this.totalTrained = 0;
-            
-            // Load saved model
             this.loadModel();
             console.log('[MiniML] Initialized');
         }
@@ -136,12 +134,10 @@
             var balance = data.balance || 0;
             var startBalance = data.startBalance || balance;
             
-            // Profit probability based
             if (pred.profitProb < 0.3 && lossStreak > 2 && isRecovery === 1) {
                 commands.push('/stoprecovery');
             }
             
-            // Optimal chance
             if (isRecovery === 1) {
                 var newChance = Math.round(pred.optimalChance);
                 if (Math.abs(newChance - data.chance) > 2) {
@@ -149,7 +145,6 @@
                 }
             }
             
-            // Loss streak handling
             if (lossStreak >= 3 && isRecovery === 1) {
                 commands.push('/resetrecovery');
                 if (lossStreak >= 5) {
@@ -158,22 +153,18 @@
                 }
             }
             
-            // BEP
             if (profit >= 0 && isRecovery === 1) {
                 commands.push('/stoprecovery');
             }
             
-            // Draw down
             if (balance < startBalance * 0.99 && isRecovery === 0) {
                 commands.push('/startrecovery');
             }
             
-            // Stop loss
             if (profit < -startBalance * 0.05) {
                 commands.push('/stop');
             }
             
-            // Take profit
             if (profit > startBalance * 0.02) {
                 commands.push('/stop');
             }
@@ -265,6 +256,7 @@
         betTimestamps: [],
         lossStreak: 0,
         drawdown: 0,
+        drawdownPct: 0,
         maxDrawdown: 0,
         maxBet: 0,
         highestProfit: 0,
@@ -331,7 +323,7 @@
         miniML: null,
         trainingHistory: [],
         mlEnabled: true,
-        mlPhase: 1, // 1=Data Collection, 2=ML Active, 3=Full ML
+        mlPhase: 1,
         mlPhaseDataCount: 0,
         lastAutoAdjust: 0
     };
@@ -339,60 +331,92 @@
     // ==================== 4. AUTO STRATEGY ====================
     function autoAdjustStrategy() {
         var dataCount = STATE.trainingHistory ? STATE.trainingHistory.length : 0;
+        var balance = STATE.balance;
         var now = Date.now();
-        if (now - STATE.lastAutoAdjust < 60000) return; // Cek setiap 1 menit
+        if (now - STATE.lastAutoAdjust < 60000) return;
         STATE.lastAutoAdjust = now;
         
-        // ===== PHASE 1: DATA COLLECTION (0-10.000 data) =====
+        // ===== ADJUST BASED ON BALANCE =====
+        var baseBet = 0.125;
+        var recoveryBase = 0.5;
+        var maxBet = 5;
+        var trigger = 0.5;
+        var maxLs = 7;
+        var chance = 49.5;
+        
+        if (balance < 10) {
+            baseBet = 0.02;
+            recoveryBase = 0.02;
+            maxBet = 0.5;
+            trigger = 5;
+            maxLs = 3;
+            chance = 60;
+        } else if (balance < 25) {
+            baseBet = 0.05;
+            recoveryBase = 0.05;
+            maxBet = 1;
+            trigger = 3;
+            maxLs = 4;
+            chance = 58;
+        } else if (balance < 50) {
+            baseBet = 0.08;
+            recoveryBase = 0.08;
+            maxBet = 2;
+            trigger = 1.5;
+            maxLs = 5;
+            chance = 55;
+        } else if (balance < 100) {
+            baseBet = 0.10;
+            recoveryBase = 0.20;
+            maxBet = 3;
+            trigger = 1;
+            maxLs = 6;
+            chance = 52;
+        } else if (balance < 250) {
+            baseBet = 0.125;
+            recoveryBase = 0.35;
+            maxBet = 4;
+            trigger = 0.75;
+            maxLs = 7;
+            chance = 50;
+        } else if (balance < 500) {
+            baseBet = 0.125;
+            recoveryBase = 0.50;
+            maxBet = 5;
+            trigger = 0.5;
+            maxLs = 7;
+            chance = 49.5;
+        } else {
+            baseBet = 0.15;
+            recoveryBase = 0.75;
+            maxBet = 6;
+            trigger = 0.5;
+            maxLs = 8;
+            chance = 49;
+        }
+        
+        STATE.baseBetPercent = baseBet;
+        STATE.recoveryBaseBetPct = recoveryBase;
+        STATE.recoveryMaxBetPct = maxBet;
+        STATE.triggerDrawdownPct = trigger;
+        STATE.recoveryMaxLossStreak = maxLs;
+        STATE.recoveryChance = chance;
+        
+        // ===== PHASE BASED ON DATA =====
         if (dataCount < 10000) {
             STATE.mlPhase = 1;
-            STATE.recoveryMaxLossStreak = 99; // Recovery gak aktif
-            STATE.triggerDrawdownPct = 5; // Trigger tinggi
-            STATE.recoveryBaseBetPct = 0.125;
-            STATE.baseBetPercent = 0.125;
-            STATE.recoveryChance = 99;
-            STATE.recovery.isActive = false;
-            STATE.isRecoveryMode = false;
-            
-            if (dataCount % 1000 === 0 && dataCount > 0) {
-                console.log('[STRATEGY] Phase 1: Data Collection (' + dataCount + ' data)');
-                sendTelegramMessage('📊 Phase 1: Data Collection\nData: ' + dataCount + '/10.000\n🔒 Recovery: OFF\n📈 Target: Kumpulin data');
-            }
-        }
-        
-        // ===== PHASE 2: ML ACTIVE (10.000-50.000 data) =====
-        else if (dataCount < 50000) {
+        } else if (dataCount < 50000) {
             STATE.mlPhase = 2;
-            STATE.triggerDrawdownPct = 1;
-            STATE.recoveryBaseBetPct = 0.25;
-            STATE.baseBetPercent = 0.15;
-            STATE.recoveryChance = 49.5;
-            STATE.recoveryMaxLossStreak = 7;
-            
-            if (dataCount % 5000 === 0) {
-                var acc = STATE.miniML ? (STATE.miniML.accuracy * 100).toFixed(1) : '0';
-                console.log('[STRATEGY] Phase 2: ML Active (' + dataCount + ' data | Acc: ' + acc + '%)');
-                sendTelegramMessage('📊 Phase 2: ML Active\nData: ' + dataCount + '/50.000\n🧠 ML Acc: ' + acc + '%\n🔄 Recovery: ON (konservatif)');
-            }
-        }
-        
-        // ===== PHASE 3: FULL ML (50.000+ data) =====
-        else {
+        } else {
             STATE.mlPhase = 3;
-            STATE.triggerDrawdownPct = 0.5;
-            STATE.recoveryBaseBetPct = 0.5;
-            STATE.baseBetPercent = 0.2;
-            STATE.recoveryChance = 49.5;
-            STATE.recoveryMaxLossStreak = 7;
-            
-            if (dataCount % 10000 === 0) {
-                var acc = STATE.miniML ? (STATE.miniML.accuracy * 100).toFixed(1) : '0';
-                console.log('[STRATEGY] Phase 3: Full ML (' + dataCount + ' data | Acc: ' + acc + '%)');
-                sendTelegramMessage('📊 Phase 3: FULL ML\nData: ' + dataCount + '+\n🧠 ML Acc: ' + acc + '%\n🚀 Target: MAX PROFIT!');
-            }
         }
         
         STATE.mlPhaseDataCount = dataCount;
+    }
+
+    function updateDrawdown() {
+        STATE.drawdown = STATE.startBalance - STATE.balance;
+        STATE.drawdownPct = STATE.startBalance > 0 ? (STATE.drawdown / STATE.startBalance * 100) : 0;
     }
 
     // ==================== 5. MINI ML INTEGRATION ====================
@@ -423,23 +447,16 @@
             STATE.trainingHistory = STATE.trainingHistory.slice(-5000);
         }
         
-        // Train ML setiap 100 data baru
         if (STATE.trainingHistory.length % 100 === 0 && STATE.trainingHistory.length > 50) {
             STATE.miniML.trainFromHistory(STATE.trainingHistory);
             autoAdjustStrategy();
         }
         
-        // Auto strategy adjust (data collection phase)
-        if (STATE.mlPhase === 1) {
-            return; // Jangan kasih command di phase 1
-        }
+        if (STATE.mlPhase === 1) return;
         
-        // Dapatkan rekomendasi (hanya untuk phase 2 & 3)
         var rec = STATE.miniML.getRecommendation(data);
         if (rec.commands.length > 0 && STATE.mlPhase > 1) {
-            // Cek akurasi: kalau < 60%, jangan terlalu agresif
             if (rec.accuracy < 0.6 && STATE.mlPhase === 2) {
-                // Filter command yang terlalu agresif
                 var safeCommands = [];
                 for (var i = 0; i < rec.commands.length; i++) {
                     var cmd = rec.commands[i];
@@ -646,8 +663,8 @@
                     'Phase: ' + phase + '\n' +
                     'Accuracy: ' + acc + '%\n' +
                     'Enabled: ' + (STATE.mlEnabled ? '✅' : '❌') + '\n' +
-                    'Strategy: ' + (STATE.mlPhase === 1 ? '🔒 Konservatif' : 
-                                   STATE.mlPhase === 2 ? '⚖️ Seimbang' : '🚀 Agresif');
+                    'Drawdown: ' + STATE.drawdownPct.toFixed(2) + '%\n' +
+                    'Trigger: ' + STATE.triggerDrawdownPct + '%';
                 sendTelegramMessage(status);
                 break;
                 
@@ -664,7 +681,7 @@
             case '/phase':
                 var phaseDesc = STATE.mlPhase === 1 ? '📊 Data Collection (0-10.000 data)' : 
                                STATE.mlPhase === 2 ? '🧠 ML Active (10.000-50.000 data)' : '🚀 Full ML (50.000+ data)';
-                sendTelegramMessage('📊 Phase: ' + phaseDesc);
+                sendTelegramMessage('📊 Phase: ' + phaseDesc + '\nBalance: ' + STATE.balance.toFixed(2));
                 break;
                 
             case '/status':
@@ -674,6 +691,8 @@
                     'Balance: ' + STATE.balance.toFixed(8) + '\n' +
                     'Profit: ' + STATE.profit.toFixed(8) + '\n' +
                     'Mode: ' + (STATE.isRecoveryMode ? 'RECOVERY' : 'NORMAL') + '\n' +
+                    'Drawdown: ' + STATE.drawdownPct.toFixed(2) + '%\n' +
+                    'Trigger: ' + STATE.triggerDrawdownPct + '%\n' +
                     'Loss Streak: ' + STATE.recovery.lossStreak + '\n' +
                     'Bets: ' + STATE.bets + ' | WR: ' + (STATE.bets > 0 ? (STATE.wins/STATE.bets*100).toFixed(1) : 0) + '%\n' +
                     'ML: ' + (STATE.mlEnabled ? '✅' : '❌') + ' | Acc: ' + acc2 + '%\n' +
@@ -996,6 +1015,8 @@
             STATE.stats.profit = STATE.profit;
             STATE.stats.currentBal = STATE.balance;
             
+            updateDrawdown();
+            
             console.log('[DICE] ' + (win ? 'WIN' : 'LOSS') + ' | Chance: ' + chance + '% | Multiplier: ' + (99/chance).toFixed(4) + 'x | Profit: ' + profitAmount.toFixed(8));
             
             updateAllUI();
@@ -1061,7 +1082,9 @@
         var r = STATE.recovery;
         var profit = STATE.balance - STATE.startBalance;
         
-        console.log('[RECOVERY] Profit: ' + profit + ' | Loss Streak: ' + r.lossStreak);
+        updateDrawdown();
+        
+        console.log('[RECOVERY] Profit: ' + profit + ' | Loss Streak: ' + r.lossStreak + ' | Drawdown: ' + STATE.drawdownPct.toFixed(2) + '%');
         
         if (profit >= 0) {
             STATE.isRecoveryMode = false;
@@ -1160,6 +1183,8 @@
             // ===== AUTO STRATEGY =====
             autoAdjustStrategy();
             
+            updateDrawdown();
+            
             var newProfit = STATE.balance - STATE.startBalance;
             if (newProfit >= 0) {
                 STATE.isRecoveryMode = false;
@@ -1203,6 +1228,7 @@
         STATE.isRecoveryMode = false;
         
         STATE.drawdown = 0;
+        STATE.drawdownPct = 0;
         STATE.maxDrawdown = 0;
         STATE.lossStreak = 0;
     }
@@ -1261,12 +1287,12 @@
         
         if (!STATE.isRunning || STATE.isPaused) return;
         
-        STATE.lossStreak = 0;
-        
-        // Auto adjust strategy (data collection phase)
         autoAdjustStrategy();
+        updateDrawdown();
         
-        var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
+        var drawdownPct = STATE.drawdownPct;
+        console.log('[F&F] Drawdown: ' + drawdownPct.toFixed(2) + '% | Trigger: ' + STATE.triggerDrawdownPct + '%');
+        
         if (drawdownPct >= STATE.triggerDrawdownPct && STATE.mlPhase > 1) {
             console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
             startRecovery();
@@ -1292,11 +1318,11 @@
         placeDiceBet(betAmount, STATE.normalChance, 'above').then(function(result) {
             if (result) {
                 processBetResult(result, betAmount, 'normal', true);
-                // ===== MINI ML TRAINING =====
                 if (STATE.mlEnabled && STATE.miniML) {
                     collectTrainingData();
                 }
                 autoAdjustStrategy();
+                updateDrawdown();
             }
         }).catch(function(e) { console.error('[F&F] Dice error:', e); });
         
@@ -1326,6 +1352,7 @@
         
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.drawdown = STATE.startBalance - STATE.balance;
+        updateDrawdown();
         
         if (STATE.drawdown > STATE.maxDrawdown) STATE.maxDrawdown = STATE.drawdown;
         if (betAmount > STATE.maxBet) STATE.maxBet = betAmount;
@@ -1343,7 +1370,7 @@
         
         logBet(STATE.bets, betAmount, chance.toFixed(1) + '%', profit);
         
-        var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
+        var drawdownPct = STATE.drawdownPct;
         if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode && STATE.mlPhase > 1) {
             console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
             startRecovery();
@@ -1420,6 +1447,7 @@
         STATE.highestProfit = 0;
         STATE.lossStreak = 0;
         STATE.drawdown = 0;
+        STATE.drawdownPct = 0;
         STATE.maxDrawdown = 0;
         STATE.maxBet = 0;
         STATE.raffle.wageredFromBot = 0;
@@ -1441,6 +1469,8 @@
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.stats.profit = STATE.profit;
         STATE.stats.currentBal = STATE.balance;
+        
+        updateDrawdown();
         
         var currentBalance = STATE.balance || 0;
         var profit = STATE.profit;
@@ -1504,6 +1534,7 @@
         STATE.stats.profit = STATE.profit;
         STATE.stats.currentBal = STATE.balance;
         
+        updateDrawdown();
         updateStatsDisplay();
         updateRaffleDisplay();
         
@@ -1955,7 +1986,6 @@
                 
                 fullReset();
                 
-                // Init MiniML
                 if (STATE.mlEnabled) {
                     initMiniML();
                     sendTelegramMessage('🤖 MiniML Engine initialized!');
@@ -2015,6 +2045,7 @@
                 STATE.wagerWaitingForTrigger = false;
                 STATE.lossStreak = 0;
                 STATE.drawdown = 0;
+                STATE.drawdownPct = 0;
                 STATE.maxDrawdown = 0;
                 STATE.maxBet = 0;
                 STATE.isRecoveryMode = false;
@@ -2203,6 +2234,15 @@
                 phaseEl.style.color = STATE.mlPhase === 1 ? 'black' : 'white';
             }
         }, 5000);
+        
+        // ===== UPDATE DRAWDOWN UI =====
+        setInterval(function() {
+            updateDrawdown();
+            var ddEl = document.getElementById("st-ddnow");
+            if (ddEl) {
+                ddEl.textContent = STATE.drawdown.toFixed(8) + ' (' + STATE.drawdownPct.toFixed(2) + '%)';
+            }
+        }, 2000);
     }
 
     // ==================== 25. START ====================
