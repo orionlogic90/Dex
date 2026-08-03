@@ -1,11 +1,11 @@
 // ========================================================================
-// CHEAPCHEATX v3.0 - BOT STAKE (DICE ONLY + ML RECEIVER)
+// CHEAPCHEATX v3.0 - BOT STAKE + MINI ML + AUTO STRATEGY
 // ========================================================================
-// NORMAL MODE: Dice 99.98% (Fire & Forget) - Wagering farming
-// RECOVERY MODE: Dice dengan Martingale 1.5x
+// NORMAL MODE: Dice 99.98% (Fire & Forget)
+// RECOVERY MODE: Dice 49.5% Martingale 1.5x
 // EXIT: BEP (balance >= startBalance)
-// ML: Receive command dari Python ML Server via Telegram
-// SUPPORTED CURRENCIES: USDT, BTC, ETH, BNB, SOL, XRP, IDR, dan semua crypto di Stake
+// MINI ML: Neural Network di browser (auto-learn dari data)
+// AUTO STRATEGY: 3 fase (Data Collection → ML Active → Full ML)
 // ========================================================================
 
 (function () {
@@ -23,7 +23,216 @@
 
     let accessToken = "";
 
-    // ==================== 2. STATE ====================
+    // ==================== 2. MINI ML ====================
+    class MiniML {
+        constructor() {
+            // Neural Network: 6 input, 2 hidden layer, 2 output
+            this.w1 = Array.from({length: 6}, () => Math.random() * 2 - 1);
+            this.w2 = Array.from({length: 6}, () => Math.random() * 2 - 1);
+            this.b1 = Math.random() * 2 - 1;
+            this.b2 = Math.random() * 2 - 1;
+            this.lr = 0.01;
+            this.history = [];
+            this.maxHistory = 5000;
+            this.accuracy = 0;
+            this.trainingCount = 0;
+            this.batchSize = 100;
+            this.totalTrained = 0;
+            
+            // Load saved model
+            this.loadModel();
+            console.log('[MiniML] Initialized');
+        }
+        
+        sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+        sigmoidDerivative(x) { return x * (1 - x); }
+        
+        predict(features) {
+            var h1 = 0;
+            for (var i = 0; i < features.length; i++) h1 += features[i] * this.w1[i];
+            h1 += this.b1;
+            h1 = this.sigmoid(h1);
+            
+            var h2 = 0;
+            for (var i = 0; i < features.length; i++) h2 += features[i] * this.w2[i];
+            h2 += this.b2;
+            h2 = this.sigmoid(h2);
+            
+            return { profitProb: h1, optimalChance: 30 + h2 * 40 };
+        }
+        
+        train(features, targetProfit, targetChance) {
+            var h1 = 0;
+            for (var i = 0; i < features.length; i++) h1 += features[i] * this.w1[i];
+            h1 += this.b1;
+            h1 = this.sigmoid(h1);
+            
+            var h2 = 0;
+            for (var i = 0; i < features.length; i++) h2 += features[i] * this.w2[i];
+            h2 += this.b2;
+            h2 = this.sigmoid(h2);
+            
+            var target1 = targetProfit > 0 ? 1 : 0;
+            var target2 = (targetChance - 30) / 40;
+            
+            var error1 = target1 - h1;
+            var error2 = target2 - h2;
+            
+            var d1 = error1 * this.sigmoidDerivative(h1);
+            var d2 = error2 * this.sigmoidDerivative(h2);
+            
+            for (var i = 0; i < features.length; i++) {
+                this.w1[i] += this.lr * d1 * features[i];
+                this.w2[i] += this.lr * d2 * features[i];
+            }
+            this.b1 += this.lr * d1;
+            this.b2 += this.lr * d2;
+            
+            this.history.push({ features, targetProfit, targetChance, prediction: { profitProb: h1, optimalChance: 30 + h2 * 40 } });
+            if (this.history.length > this.maxHistory) this.history.shift();
+        }
+        
+        updateAccuracy() {
+            if (this.history.length < 10) return;
+            var correct = 0;
+            var total = Math.min(this.history.length, 500);
+            var start = this.history.length - total;
+            for (var i = start; i < this.history.length; i++) {
+                var pred = this.history[i].prediction.profitProb > 0.5 ? 1 : 0;
+                var actual = this.history[i].targetProfit > 0 ? 1 : 0;
+                if (pred === actual) correct++;
+            }
+            this.accuracy = correct / total;
+        }
+        
+        trainFromHistory(history) {
+            if (!history || history.length === 0) return;
+            
+            var totalBatches = Math.ceil(history.length / this.batchSize);
+            for (var batch = 0; batch < totalBatches; batch++) {
+                var start = batch * this.batchSize;
+                var end = Math.min(start + this.batchSize, history.length);
+                for (var i = start; i < end; i++) {
+                    var h = history[i];
+                    var features = this.extractFeatures(h);
+                    this.train(features, h.profit || 0, h.chance || 49.5);
+                    this.totalTrained++;
+                }
+            }
+            
+            this.updateAccuracy();
+            this.saveModel();
+            console.log('[MiniML] Trained ' + history.length + ' samples. Total: ' + this.totalTrained + ' | Acc: ' + (this.accuracy * 100).toFixed(1) + '%');
+        }
+        
+        getRecommendation(data) {
+            var features = this.extractFeatures(data);
+            var pred = this.predict(features);
+            
+            var commands = [];
+            var profit = data.profit || 0;
+            var lossStreak = data.lossStreak || 0;
+            var isRecovery = data.isRecovery || 0;
+            var balance = data.balance || 0;
+            var startBalance = data.startBalance || balance;
+            
+            // Profit probability based
+            if (pred.profitProb < 0.3 && lossStreak > 2 && isRecovery === 1) {
+                commands.push('/stoprecovery');
+            }
+            
+            // Optimal chance
+            if (isRecovery === 1) {
+                var newChance = Math.round(pred.optimalChance);
+                if (Math.abs(newChance - data.chance) > 2) {
+                    commands.push('/chance ' + newChance);
+                }
+            }
+            
+            // Loss streak handling
+            if (lossStreak >= 3 && isRecovery === 1) {
+                commands.push('/resetrecovery');
+                if (lossStreak >= 5) {
+                    var newBasebet = Math.min(1.0, 0.5 + (lossStreak - 5) * 0.1);
+                    commands.push('/basebet ' + newBasebet.toFixed(1));
+                }
+            }
+            
+            // BEP
+            if (profit >= 0 && isRecovery === 1) {
+                commands.push('/stoprecovery');
+            }
+            
+            // Draw down
+            if (balance < startBalance * 0.99 && isRecovery === 0) {
+                commands.push('/startrecovery');
+            }
+            
+            // Stop loss
+            if (profit < -startBalance * 0.05) {
+                commands.push('/stop');
+            }
+            
+            // Take profit
+            if (profit > startBalance * 0.02) {
+                commands.push('/stop');
+            }
+            
+            return {
+                commands: commands,
+                profitProb: pred.profitProb,
+                optimalChance: pred.optimalChance,
+                accuracy: this.accuracy,
+                dataCount: this.totalTrained
+            };
+        }
+        
+        extractFeatures(data) {
+            var balance = data.balance || 0;
+            var startBalance = data.startBalance || balance;
+            return [
+                data.profit || 0,
+                data.lossStreak || 0,
+                data.isRecovery || 0,
+                data.winRate || 0,
+                balance / (startBalance || 1),
+                data.bets || 0
+            ];
+        }
+        
+        saveModel() {
+            try {
+                var data = {
+                    w1: this.w1,
+                    w2: this.w2,
+                    b1: this.b1,
+                    b2: this.b2,
+                    totalTrained: this.totalTrained,
+                    accuracy: this.accuracy,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('miniML_model', JSON.stringify(data));
+            } catch(e) {}
+        }
+        
+        loadModel() {
+            try {
+                var saved = localStorage.getItem('miniML_model');
+                if (saved) {
+                    var data = JSON.parse(saved);
+                    this.w1 = data.w1;
+                    this.w2 = data.w2;
+                    this.b1 = data.b1;
+                    this.b2 = data.b2;
+                    this.totalTrained = data.totalTrained || 0;
+                    this.accuracy = data.accuracy || 0;
+                    console.log('[MiniML] Loaded model, trained on ' + this.totalTrained + ' samples');
+                }
+            } catch(e) {}
+        }
+    }
+
+    // ==================== 3. STATE ====================
     const STATE = {
         isRunning: false,
         isPaused: false,
@@ -32,7 +241,6 @@
         darkMode: false,
         minimized: false,
         
-        // ===== RECOVERY =====
         recovery: {
             isActive: false,
             totalLoss: 0,
@@ -46,7 +254,6 @@
             lastResult: null
         },
         
-        // ===== BALANCE =====
         balance: 0,
         startBalance: 0,
         peakBalanceEver: 0,
@@ -62,13 +269,11 @@
         maxBet: 0,
         highestProfit: 0,
         
-        // ===== MINBET & FIAT =====
         minBet: 0.0014,
         minBetIdr: 2,
         fiatRates: { usdt: 0, idr: 0, usd: 0 },
         fiatRateFetched: false,
         
-        // ===== RAFFLE =====
         raffle: {
             id: '299d4c87-d395-4386-8022-4a3072ad09a7',
             name: 'Undian Mingguan $75k',
@@ -80,7 +285,6 @@
             nextTicketRemaining: 1000
         },
         
-        // ===== NORMAL =====
         normalChance: 99.98,
         baseBetPercent: 0.125,
         maxBetCap: 0,
@@ -89,18 +293,15 @@
         maxDrawdownPct: 5,
         triggerDrawdownPct: 0.5,
         
-        // ===== RECOVERY SETTINGS =====
         recoveryChance: 49.5,
         recoveryBaseBetPct: 0.5,
         recoveryMaxBetPct: 5,
         recoveryMaxLossStreak: 7,
         recoveryMultiplier: 1.5,
         
-        // ===== DELAY =====
         delayNormal: 0,
         delayRecovery: 0,
         
-        // ===== OTHER =====
         sessionNumber: 1,
         sessionsCompleted: 0,
         sessionStartTime: null,
@@ -120,16 +321,146 @@
         maxLogs: 50,
         startTime: null,
         lastTGReport: 0,
-        lastMLSend: 0,
         
         stats: {
             profit: 0, wagered: 0, startBal: 0, currentBal: 0,
             bets: 0, wins: 0, loss: 0, startTime: null, maxDD: 0,
             maxBet: 0, maxDrawdownPct: 0, peakBalance: 0
-        }
+        },
+        
+        miniML: null,
+        trainingHistory: [],
+        mlEnabled: true,
+        mlPhase: 1, // 1=Data Collection, 2=ML Active, 3=Full ML
+        mlPhaseDataCount: 0,
+        lastAutoAdjust: 0
     };
 
-    // ==================== 3. UTILITY ====================
+    // ==================== 4. AUTO STRATEGY ====================
+    function autoAdjustStrategy() {
+        var dataCount = STATE.trainingHistory ? STATE.trainingHistory.length : 0;
+        var now = Date.now();
+        if (now - STATE.lastAutoAdjust < 60000) return; // Cek setiap 1 menit
+        STATE.lastAutoAdjust = now;
+        
+        // ===== PHASE 1: DATA COLLECTION (0-10.000 data) =====
+        if (dataCount < 10000) {
+            STATE.mlPhase = 1;
+            STATE.recoveryMaxLossStreak = 99; // Recovery gak aktif
+            STATE.triggerDrawdownPct = 5; // Trigger tinggi
+            STATE.recoveryBaseBetPct = 0.125;
+            STATE.baseBetPercent = 0.125;
+            STATE.recoveryChance = 99;
+            STATE.recovery.isActive = false;
+            STATE.isRecoveryMode = false;
+            
+            if (dataCount % 1000 === 0 && dataCount > 0) {
+                console.log('[STRATEGY] Phase 1: Data Collection (' + dataCount + ' data)');
+                sendTelegramMessage('📊 Phase 1: Data Collection\nData: ' + dataCount + '/10.000\n🔒 Recovery: OFF\n📈 Target: Kumpulin data');
+            }
+        }
+        
+        // ===== PHASE 2: ML ACTIVE (10.000-50.000 data) =====
+        else if (dataCount < 50000) {
+            STATE.mlPhase = 2;
+            STATE.triggerDrawdownPct = 1;
+            STATE.recoveryBaseBetPct = 0.25;
+            STATE.baseBetPercent = 0.15;
+            STATE.recoveryChance = 49.5;
+            STATE.recoveryMaxLossStreak = 7;
+            
+            if (dataCount % 5000 === 0) {
+                var acc = STATE.miniML ? (STATE.miniML.accuracy * 100).toFixed(1) : '0';
+                console.log('[STRATEGY] Phase 2: ML Active (' + dataCount + ' data | Acc: ' + acc + '%)');
+                sendTelegramMessage('📊 Phase 2: ML Active\nData: ' + dataCount + '/50.000\n🧠 ML Acc: ' + acc + '%\n🔄 Recovery: ON (konservatif)');
+            }
+        }
+        
+        // ===== PHASE 3: FULL ML (50.000+ data) =====
+        else {
+            STATE.mlPhase = 3;
+            STATE.triggerDrawdownPct = 0.5;
+            STATE.recoveryBaseBetPct = 0.5;
+            STATE.baseBetPercent = 0.2;
+            STATE.recoveryChance = 49.5;
+            STATE.recoveryMaxLossStreak = 7;
+            
+            if (dataCount % 10000 === 0) {
+                var acc = STATE.miniML ? (STATE.miniML.accuracy * 100).toFixed(1) : '0';
+                console.log('[STRATEGY] Phase 3: Full ML (' + dataCount + ' data | Acc: ' + acc + '%)');
+                sendTelegramMessage('📊 Phase 3: FULL ML\nData: ' + dataCount + '+\n🧠 ML Acc: ' + acc + '%\n🚀 Target: MAX PROFIT!');
+            }
+        }
+        
+        STATE.mlPhaseDataCount = dataCount;
+    }
+
+    // ==================== 5. MINI ML INTEGRATION ====================
+    function initMiniML() {
+        STATE.miniML = new MiniML();
+        STATE.trainingHistory = [];
+        console.log('[MiniML] Engine ready!');
+    }
+
+    function collectTrainingData() {
+        if (!STATE.miniML || !STATE.mlEnabled) return;
+        
+        var data = {
+            profit: STATE.profit,
+            balance: STATE.balance,
+            startBalance: STATE.startBalance,
+            bets: STATE.bets,
+            wins: STATE.wins,
+            losses: STATE.losses,
+            lossStreak: STATE.recovery.lossStreak || 0,
+            isRecovery: STATE.isRecoveryMode ? 1 : 0,
+            chance: STATE.isRecoveryMode ? STATE.recoveryChance : STATE.normalChance,
+            winRate: STATE.bets > 0 ? STATE.wins / STATE.bets : 0
+        };
+        
+        STATE.trainingHistory.push(data);
+        if (STATE.trainingHistory.length > 10000) {
+            STATE.trainingHistory = STATE.trainingHistory.slice(-5000);
+        }
+        
+        // Train ML setiap 100 data baru
+        if (STATE.trainingHistory.length % 100 === 0 && STATE.trainingHistory.length > 50) {
+            STATE.miniML.trainFromHistory(STATE.trainingHistory);
+            autoAdjustStrategy();
+        }
+        
+        // Auto strategy adjust (data collection phase)
+        if (STATE.mlPhase === 1) {
+            return; // Jangan kasih command di phase 1
+        }
+        
+        // Dapatkan rekomendasi (hanya untuk phase 2 & 3)
+        var rec = STATE.miniML.getRecommendation(data);
+        if (rec.commands.length > 0 && STATE.mlPhase > 1) {
+            // Cek akurasi: kalau < 60%, jangan terlalu agresif
+            if (rec.accuracy < 0.6 && STATE.mlPhase === 2) {
+                // Filter command yang terlalu agresif
+                var safeCommands = [];
+                for (var i = 0; i < rec.commands.length; i++) {
+                    var cmd = rec.commands[i];
+                    if (cmd.indexOf('/stoprecovery') === -1 && 
+                        cmd.indexOf('/stop') === -1) {
+                        safeCommands.push(cmd);
+                    }
+                }
+                rec.commands = safeCommands;
+            }
+            
+            if (rec.commands.length > 0) {
+                console.log('[MiniML] Commands:', rec.commands, '| Acc:', (rec.accuracy*100).toFixed(1)+'%');
+                for (var i = 0; i < rec.commands.length; i++) {
+                    processMLCommand(rec.commands[i], CONFIG.tgChatId);
+                }
+            }
+        }
+    }
+
+    // ==================== 6. UTILITY ====================
     function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
     
     function safeFloat(id, def) {
@@ -166,11 +497,7 @@
                Math.random().toString(36).substring(2, 15);
     }
 
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    // ==================== 4. TELEGRAM ====================
+    // ==================== 7. TELEGRAM ====================
     async function sendTelegramMessage(message) {
         if (!CONFIG.tgBotToken || !CONFIG.tgChatId) return;
         try {
@@ -187,35 +514,7 @@
         } catch(e) {}
     }
 
-    // ==================== 5. SEND DATA TO ML ====================
-    function sendDataToML() {
-        if (!CONFIG.tgBotToken || !CONFIG.tgChatId) return;
-        
-        var now = Date.now();
-        if (now - STATE.lastMLSend < 5000) return;
-        STATE.lastMLSend = now;
-        
-        var data = {
-            timestamp: Date.now(),
-            profit: STATE.profit,
-            balance: STATE.balance,
-            startBalance: STATE.startBalance,
-            bets: STATE.bets,
-            wins: STATE.wins,
-            losses: STATE.losses,
-            wagered: STATE.wagered,
-            isRecovery: STATE.isRecoveryMode ? 1 : 0,
-            lossStreak: STATE.recovery.lossStreak || 0,
-            chance: STATE.isRecoveryMode ? STATE.recoveryChance : STATE.normalChance,
-            basebet: STATE.isRecoveryMode ? STATE.recoveryBaseBetPct : STATE.baseBetPercent,
-            winRate: STATE.bets > 0 ? STATE.wins / STATE.bets : 0
-        };
-        
-        var message = 'ML DATA: ' + JSON.stringify(data);
-        sendTelegramMessage(message);
-    }
-
-    // ==================== 6. RECEIVE COMMAND FROM ML ====================
+    // ==================== 8. RECEIVE COMMAND ====================
     var lastUpdateId = 0;
 
     async function getTelegramCommands() {
@@ -223,9 +522,7 @@
         
         try {
             var url = 'https://api.telegram.org/bot' + CONFIG.tgBotToken + '/getUpdates';
-            if (lastUpdateId > 0) {
-                url += '?offset=' + (lastUpdateId + 1);
-            }
+            if (lastUpdateId > 0) url += '?offset=' + (lastUpdateId + 1);
             
             var res = await fetch(url);
             var data = await res.json();
@@ -234,11 +531,7 @@
                 for (var i = 0; i < data.result.length; i++) {
                     var update = data.result[i];
                     var msg = update.message;
-                    
-                    if (update.update_id > lastUpdateId) {
-                        lastUpdateId = update.update_id;
-                    }
-                    
+                    if (update.update_id > lastUpdateId) lastUpdateId = update.update_id;
                     if (msg && msg.text) {
                         var chatId = msg.chat.id.toString();
                         if (chatId === CONFIG.tgChatId) {
@@ -257,14 +550,14 @@
         var cmd = parts[0].toLowerCase();
         var value = parts[1];
         
-        console.log('[ML CMD] Received:', text);
+        console.log('[CMD] Received:', text);
         
         switch(cmd) {
             case '/chance':
                 var newChance = parseFloat(value);
                 if (newChance > 0 && newChance < 100) {
                     STATE.recoveryChance = newChance;
-                    sendTelegramMessage('✅ ML: Chance set to ' + newChance + '%');
+                    sendTelegramMessage('✅ Chance set to ' + newChance + '%');
                 }
                 break;
                 
@@ -276,7 +569,7 @@
                         STATE.recovery.baseBet = STATE.balance * (newBasebet / 100);
                         STATE.recovery.baseBet = Math.max(STATE.recovery.baseBet, STATE.minBet);
                     }
-                    sendTelegramMessage('✅ ML: Basebet set to ' + newBasebet + '%');
+                    sendTelegramMessage('✅ Basebet set to ' + newBasebet + '%');
                 }
                 break;
                 
@@ -284,7 +577,7 @@
                 var newMaxbet = parseFloat(value);
                 if (newMaxbet > 0 && newMaxbet < 20) {
                     STATE.recoveryMaxBetPct = newMaxbet;
-                    sendTelegramMessage('✅ ML: Max bet set to ' + newMaxbet + '%');
+                    sendTelegramMessage('✅ Max bet set to ' + newMaxbet + '%');
                 }
                 break;
                 
@@ -292,7 +585,7 @@
                 var newMaxls = parseInt(value);
                 if (newMaxls > 0 && newMaxls < 20) {
                     STATE.recoveryMaxLossStreak = newMaxls;
-                    sendTelegramMessage('✅ ML: Max loss streak set to ' + newMaxls + 'x');
+                    sendTelegramMessage('✅ Max loss streak set to ' + newMaxls + 'x');
                 }
                 break;
                 
@@ -300,7 +593,7 @@
                 var newTrigger = parseFloat(value);
                 if (newTrigger > 0 && newTrigger < 5) {
                     STATE.triggerDrawdownPct = newTrigger;
-                    sendTelegramMessage('✅ ML: Trigger set to ' + newTrigger + '%');
+                    sendTelegramMessage('✅ Trigger set to ' + newTrigger + '%');
                 }
                 break;
                 
@@ -308,7 +601,7 @@
                 if (STATE.isRecoveryMode) {
                     STATE.recovery.lossStreak = 0;
                     STATE.recovery.currentBet = STATE.recovery.baseBet;
-                    sendTelegramMessage('🔄 ML: Recovery reset!');
+                    sendTelegramMessage('🔄 Recovery reset!');
                 }
                 break;
                 
@@ -316,14 +609,14 @@
                 if (STATE.isRecoveryMode) {
                     STATE.isRecoveryMode = false;
                     resetRecoveryState();
-                    sendTelegramMessage('🛑 ML: Recovery stopped');
+                    sendTelegramMessage('🛑 Recovery stopped');
                     setTimeout(sendFireAndForgetBet, 0);
                 }
                 break;
                 
             case '/startrecovery':
                 if (!STATE.isRecoveryMode) {
-                    sendTelegramMessage('🔄 ML: Starting recovery...');
+                    sendTelegramMessage('🔄 Starting recovery...');
                     startRecovery();
                 }
                 break;
@@ -332,27 +625,61 @@
                 STATE.isRunning = false;
                 STATE.isPaused = true;
                 toggleStartStop(false);
-                sendTelegramMessage('🛑 ML: Bot stopped');
+                sendTelegramMessage('🛑 Bot stopped');
                 break;
                 
             case '/resume':
                 STATE.isPaused = false;
                 STATE.isRunning = true;
                 toggleStartStop(true);
-                sendTelegramMessage('▶️ ML: Bot resumed');
+                sendTelegramMessage('▶️ Bot resumed');
                 runLoop();
                 break;
                 
+            case '/mlstatus':
+                var acc = STATE.miniML ? (STATE.miniML.accuracy * 100).toFixed(1) : '0';
+                var dataCount = STATE.trainingHistory ? STATE.trainingHistory.length : 0;
+                var phase = STATE.mlPhase === 1 ? '📊 Data Collection' : 
+                           STATE.mlPhase === 2 ? '🧠 ML Active' : '🚀 Full ML';
+                var status = '🤖 MiniML Status\n' +
+                    'Data: ' + dataCount + '\n' +
+                    'Phase: ' + phase + '\n' +
+                    'Accuracy: ' + acc + '%\n' +
+                    'Enabled: ' + (STATE.mlEnabled ? '✅' : '❌') + '\n' +
+                    'Strategy: ' + (STATE.mlPhase === 1 ? '🔒 Konservatif' : 
+                                   STATE.mlPhase === 2 ? '⚖️ Seimbang' : '🚀 Agresif');
+                sendTelegramMessage(status);
+                break;
+                
+            case '/mldisable':
+                STATE.mlEnabled = false;
+                sendTelegramMessage('❌ MiniML disabled');
+                break;
+                
+            case '/mlenable':
+                STATE.mlEnabled = true;
+                sendTelegramMessage('✅ MiniML enabled');
+                break;
+                
+            case '/phase':
+                var phaseDesc = STATE.mlPhase === 1 ? '📊 Data Collection (0-10.000 data)' : 
+                               STATE.mlPhase === 2 ? '🧠 ML Active (10.000-50.000 data)' : '🚀 Full ML (50.000+ data)';
+                sendTelegramMessage('📊 Phase: ' + phaseDesc);
+                break;
+                
             case '/status':
-                var status = '📊 STATUS\n' +
+                var acc2 = STATE.miniML ? (STATE.miniML.accuracy * 100).toFixed(1) : '0';
+                var dataCount2 = STATE.trainingHistory ? STATE.trainingHistory.length : 0;
+                var status2 = '📊 STATUS\n' +
                     'Balance: ' + STATE.balance.toFixed(8) + '\n' +
                     'Profit: ' + STATE.profit.toFixed(8) + '\n' +
                     'Mode: ' + (STATE.isRecoveryMode ? 'RECOVERY' : 'NORMAL') + '\n' +
                     'Loss Streak: ' + STATE.recovery.lossStreak + '\n' +
                     'Bets: ' + STATE.bets + ' | WR: ' + (STATE.bets > 0 ? (STATE.wins/STATE.bets*100).toFixed(1) : 0) + '%\n' +
-                    'Chance: ' + (STATE.isRecoveryMode ? STATE.recoveryChance : STATE.normalChance) + '%\n' +
-                    'Basebet: ' + (STATE.isRecoveryMode ? STATE.recoveryBaseBetPct : STATE.baseBetPercent) + '%';
-                sendTelegramMessage(status);
+                    'ML: ' + (STATE.mlEnabled ? '✅' : '❌') + ' | Acc: ' + acc2 + '%\n' +
+                    'Phase: ' + (STATE.mlPhase === 1 ? '📊 Data Collection' : 
+                               STATE.mlPhase === 2 ? '🧠 ML Active' : '🚀 Full ML');
+                sendTelegramMessage(status2);
                 break;
                 
             default:
@@ -360,7 +687,7 @@
         }
     }
 
-    // ==================== 7. FIAT RATE ====================
+    // ==================== 9. FIAT RATE ====================
     function getCoinGeckoId(coin) {
         var map = {
             "USDT": "tether",
@@ -407,17 +734,13 @@
     }
 
     async function fetchMinBetRate(currency) {
-        if (currency.toLowerCase() === 'idr') {
-            return 1;
-        }
+        if (currency.toLowerCase() === 'idr') return 1;
         
         try {
             var cgId = getCoinGeckoId(currency);
             var res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=idr');
             var data = await res.json();
-            if (data[cgId] && data[cgId].idr) {
-                return data[cgId].idr;
-            }
+            if (data[cgId] && data[cgId].idr) return data[cgId].idr;
         } catch(e) {}
         
         try {
@@ -474,7 +797,7 @@
         return false;
     }
 
-    // ==================== 8. RAFFLE ====================
+    // ==================== 10. RAFFLE ====================
     async function fetchRaffleProgress() {
         if (!accessToken) return;
         try {
@@ -561,7 +884,7 @@
         `;
     }
 
-    // ==================== 9. SYNC USER INFO ====================
+    // ==================== 11. SYNC USER INFO ====================
     async function syncUserInfo() {
         if (!accessToken || accessToken.length < 30) return false;
         var query = 'query{user{name balances{available{amount currency}}}}';
@@ -610,7 +933,7 @@
         return false;
     }
 
-    // ==================== 10. PLACE DICE BET ====================
+    // ==================== 12. PLACE DICE BET ====================
     async function placeDiceBet(amount, chance, condition) {
         var target = condition === 'above' ? (100 - chance) : chance;
         var apiAmount = parseFloat(amount.toFixed(8));
@@ -636,12 +959,9 @@
             
             var data = await res.json();
             
-            if (data.error || !data.diceRoll) {
-                return null;
-            }
+            if (data.error || !data.diceRoll) return null;
             
             var d = data.diceRoll;
-            
             var expectedPayoutMultiplier = 99 / chance;
             var actualPayoutMultiplier = parseFloat(d.payoutMultiplier) || expectedPayoutMultiplier;
             var payout = parseFloat(d.payout) || 0;
@@ -699,7 +1019,7 @@
         }
     }
 
-    // ==================== 11. RECOVERY - MARTINGALE ====================
+    // ==================== 13. RECOVERY ====================
     function calculateMartingaleBet() {
         var r = STATE.recovery;
         var balance = STATE.balance;
@@ -714,27 +1034,19 @@
         
         var maxBetPct = STATE.recoveryMaxBetPct || 5;
         var maxBet = balance * (maxBetPct / 100);
-        if (bet > maxBet) {
-            bet = maxBet;
-        }
+        if (bet > maxBet) bet = maxBet;
         
         bet = Math.max(bet, STATE.minBet);
         bet = parseFloat(bet.toFixed(8));
-        
         r.currentBet = bet;
         
         var chance = STATE.recoveryChance || 49.5;
         
         console.log('[MARTINGALE] Base: ' + baseBet + ' | LS: ' + r.lossStreak + ' | Multiplier: ' + multiplier.toFixed(2) + 'x | Bet: ' + bet);
         
-        return {
-            bet: bet,
-            chance: chance,
-            condition: 'above'
-        };
+        return { bet: bet, chance: chance, condition: 'above' };
     }
 
-    // ==================== 12. RECOVERY RUN ====================
     async function runRecovery() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -751,7 +1063,6 @@
         
         console.log('[RECOVERY] Profit: ' + profit + ' | Loss Streak: ' + r.lossStreak);
         
-        // ===== CEK BEP =====
         if (profit >= 0) {
             STATE.isRecoveryMode = false;
             var finalProfit = STATE.balance - STATE.startBalance;
@@ -762,7 +1073,6 @@
             return;
         }
         
-        // ===== CEK MAX LS =====
         if (r.lossStreak >= STATE.recoveryMaxLossStreak) {
             r.lossStreak = 0;
             r.currentBet = r.baseBet;
@@ -773,7 +1083,6 @@
             return;
         }
         
-        // ===== CEK BALANCE =====
         if (STATE.balance <= STATE.minBet * 2) {
             STATE.isRecoveryMode = false;
             resetRecoveryState();
@@ -783,7 +1092,6 @@
             return;
         }
         
-        // ===== HITUNG BET =====
         var action = calculateMartingaleBet();
         var betAmount = action.bet;
         var chance = action.chance;
@@ -844,7 +1152,14 @@
             var chanceDisplay = chance + '% ' + (isWin ? 'WIN' : 'LOSS') + ' [LS:' + r.lossStreak + ']';
             logBet(STATE.bets, betAmount, chanceDisplay, profitResult);
             
-            // ===== CEK BEP LAGI =====
+            // ===== MINI ML TRAINING =====
+            if (STATE.mlEnabled && STATE.miniML) {
+                collectTrainingData();
+            }
+            
+            // ===== AUTO STRATEGY =====
+            autoAdjustStrategy();
+            
             var newProfit = STATE.balance - STATE.startBalance;
             if (newProfit >= 0) {
                 STATE.isRecoveryMode = false;
@@ -856,7 +1171,6 @@
                 return;
             }
             
-            // ===== CEK MAX LS LAGI =====
             if (r.lossStreak >= STATE.recoveryMaxLossStreak) {
                 r.lossStreak = 0;
                 r.currentBet = r.baseBet;
@@ -865,9 +1179,6 @@
                 setTimeout(runRecovery, 0);
                 return;
             }
-            
-            // ===== KIRIM DATA KE ML =====
-            sendDataToML();
             
             updateAllUI();
             setTimeout(runRecovery, 0);
@@ -896,7 +1207,7 @@
         STATE.lossStreak = 0;
     }
 
-    // ==================== 13. START RECOVERY ====================
+    // ==================== 14. START RECOVERY ====================
     function startRecovery() {
         console.log('[RECOVERY] Starting...');
         
@@ -941,7 +1252,7 @@
         setTimeout(runRecovery, 100);
     }
 
-    // ==================== 14. FIRE & FORGET ====================
+    // ==================== 15. FIRE & FORGET ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode) {
             console.log('[F&F] Recovery active, skipping...');
@@ -952,8 +1263,11 @@
         
         STATE.lossStreak = 0;
         
+        // Auto adjust strategy (data collection phase)
+        autoAdjustStrategy();
+        
         var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
-        if (drawdownPct >= STATE.triggerDrawdownPct) {
+        if (drawdownPct >= STATE.triggerDrawdownPct && STATE.mlPhase > 1) {
             console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
             startRecovery();
             return;
@@ -970,9 +1284,7 @@
         var betAmount = STATE.balance * (STATE.baseBetPercent / 100);
         betAmount = Math.max(betAmount, STATE.minBet);
         betAmount = Math.min(betAmount, STATE.balance * 0.5);
-        if (STATE.maxBetCap > 0) {
-            betAmount = Math.min(betAmount, STATE.maxBetCap);
-        }
+        if (STATE.maxBetCap > 0) betAmount = Math.min(betAmount, STATE.maxBetCap);
         betAmount = parseFloat(betAmount.toFixed(8));
         
         console.log('[F&F] Dice 99.98% | Bet:', betAmount);
@@ -980,14 +1292,18 @@
         placeDiceBet(betAmount, STATE.normalChance, 'above').then(function(result) {
             if (result) {
                 processBetResult(result, betAmount, 'normal', true);
-                sendDataToML();
+                // ===== MINI ML TRAINING =====
+                if (STATE.mlEnabled && STATE.miniML) {
+                    collectTrainingData();
+                }
+                autoAdjustStrategy();
             }
         }).catch(function(e) { console.error('[F&F] Dice error:', e); });
         
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
-    // ==================== 15. PROCESS BET RESULT ====================
+    // ==================== 16. PROCESS BET RESULT ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
@@ -1011,13 +1327,8 @@
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.drawdown = STATE.startBalance - STATE.balance;
         
-        if (STATE.drawdown > STATE.maxDrawdown) {
-            STATE.maxDrawdown = STATE.drawdown;
-        }
-        
-        if (betAmount > STATE.maxBet) {
-            STATE.maxBet = betAmount;
-        }
+        if (STATE.drawdown > STATE.maxDrawdown) STATE.maxDrawdown = STATE.drawdown;
+        if (betAmount > STATE.maxBet) STATE.maxBet = betAmount;
         
         STATE.wagerSesiCounter += betAmount;
         STATE.wagerSesiProfit = STATE.balance - STATE.wagerSesiStartBal;
@@ -1033,7 +1344,7 @@
         logBet(STATE.bets, betAmount, chance.toFixed(1) + '%', profit);
         
         var drawdownPct = (STATE.drawdown / STATE.startBalance) * 100;
-        if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode) {
+        if (drawdownPct >= STATE.triggerDrawdownPct && !STATE.isRecoveryMode && STATE.mlPhase > 1) {
             console.log('[TRIGGER] Recovery! Drawdown:', drawdownPct + '%');
             startRecovery();
             return;
@@ -1046,7 +1357,7 @@
         updateAllUI();
     }
 
-    // ==================== 16. LOGGING ====================
+    // ==================== 17. LOGGING ====================
     function logBet(betNumber, amount, chance, profit) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -1055,15 +1366,7 @@
             (STATE.darkMode ? "#1a1a2e" : "#f0f0f0") + 
             ";display:flex;justify-content:space-between;gap:8px;align-items:center;";
         
-        var profitColor = '';
-        if (profit > 0) {
-            profitColor = '#00e5c0';
-        } else if (profit < 0) {
-            profitColor = '#ff6b81';
-        } else {
-            profitColor = '#ffd93d';
-        }
-        
+        var profitColor = profit > 0 ? '#00e5c0' : profit < 0 ? '#ff6b81' : '#ffd93d';
         var profitSign = profit > 0 ? '+' : '';
         var chanceDisplay = (typeof chance === 'string' ? chance : chance.toFixed(1) + '%');
         var profitPct = amount > 0 ? (profit / amount * 100) : 0;
@@ -1081,7 +1384,7 @@
         }
     }
 
-    // ==================== 17. RESET FUNCTIONS ====================
+    // ==================== 18. RESET FUNCTIONS ====================
     function resetWagerSesi() {
         STATE.wagerTotalAccumulated += STATE.wagerSesiCounter;
         STATE.wagerSesiCounter = 0;
@@ -1123,11 +1426,17 @@
         STATE.betTimestamps = [];
         STATE.startTime = null;
         STATE.sessionStartTime = null;
+        STATE.trainingHistory = [];
+        STATE.mlPhase = 1;
+        if (STATE.miniML) {
+            STATE.miniML.history = [];
+            STATE.miniML.accuracy = 0;
+        }
         toggleStartStop(false);
         updateAllUI();
     }
 
-    // ==================== 18. UI UPDATES ====================
+    // ==================== 19. UI UPDATES ====================
     function updateStatsDisplay() {
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.stats.profit = STATE.profit;
@@ -1150,7 +1459,14 @@
             if (progress > 100) progress = 100;
             status = '🔄 MARTINGALE ' + progress.toFixed(0) + '%';
         } else {
-            status = '⚡ NORMAL 🎲';
+            var phaseLabel = STATE.mlPhase === 1 ? '📊 Collect' : 
+                           STATE.mlPhase === 2 ? '🧠 ML Active' : '🚀 Full ML';
+            status = '⚡ ' + phaseLabel + ' 🎲';
+        }
+        
+        var mlStatus = STATE.mlEnabled ? '✅ ML' : '❌ ML';
+        if (STATE.miniML && STATE.mlEnabled) {
+            mlStatus += ' ' + (STATE.miniML.accuracy * 100).toFixed(0) + '%';
         }
         
         var map = {
@@ -1167,7 +1483,8 @@
             "st-minbet": STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + ' (2 IDR)',
             "st-maxdd": STATE.maxDrawdown.toFixed(8),
             "st-maxbet": STATE.maxBet.toFixed(8),
-            "st-ddnow": drawdown.toFixed(8)
+            "st-ddnow": drawdown.toFixed(8),
+            "st-ml": mlStatus
         };
         
         for (var id in map) {
@@ -1197,7 +1514,7 @@
         }
     }
 
-    // ==================== 19. SESSION REPORT ====================
+    // ==================== 20. SESSION REPORT ====================
     async function sendSessionReport() {
         STATE.profit = STATE.balance - STATE.startBalance;
         
@@ -1209,8 +1526,12 @@
         var raffleProgress = (STATE.raffle.progress * 100).toFixed(1);
         var raffleTickets = STATE.raffle.userTickets;
         var wageredUSD = STATE.raffle.wageredFromBot;
+        var mlAcc = STATE.miniML ? (STATE.miniML.accuracy * 100).toFixed(1) : '0';
+        var dataCount = STATE.trainingHistory ? STATE.trainingHistory.length : 0;
+        var phaseLabel = STATE.mlPhase === 1 ? '📊 Data Collection' : 
+                       STATE.mlPhase === 2 ? '🧠 ML Active' : '🚀 Full ML';
         
-        var message = '💰 CHEAPCHEATX v3.0 (ML ENABLED)\n' +
+        var message = '💰 CHEAPCHEATX v3.0 (MiniML ' + phaseLabel + ')\n' +
                       'User: ' + STATE.stakeUser + '\n' +
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
@@ -1218,13 +1539,13 @@
                       'Wagered: ' + STATE.wagered.toFixed(8) + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
                       'Drawdown: ' + drawdownPct.toFixed(2) + '%\n' +
+                      'ML Data: ' + dataCount + ' | Acc: ' + mlAcc + '%\n' +
                       '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
-                      'Status: ' + status +
-                      '\n🤖 ML Server: Connected (XGBoost + LSTM)';
+                      'Status: ' + status;
         await sendTelegramMessage(message);
     }
 
-    // ==================== 20. RUN LOOP ====================
+    // ==================== 21. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1235,7 +1556,7 @@
         }
     }
 
-    // ==================== 21. UI CONTROLS ====================
+    // ==================== 22. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1257,12 +1578,12 @@
         }
     }
 
-    // ==================== 22. LISTEN TELEGRAM COMMANDS ====================
+    // ==================== 23. LISTEN TELEGRAM COMMANDS ====================
     setInterval(function() {
         getTelegramCommands();
     }, 5000);
 
-    // ==================== 23. CREATE UI ====================
+    // ==================== 24. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1307,6 +1628,7 @@
             .stats-block .divider { border-top: 1px solid var(--border); margin: 5px 0; }
             .logs-container { background: var(--log-bg); border-radius: 12px; height: 350px; overflow-y: auto; padding: 8px; font-size: 9px; border: 1px solid var(--border); font-family: monospace; }
             .ml-badge { background: #7c3aed; color: white; padding: 2px 8px; border-radius: 12px; font-size: 8px; font-weight: 700; margin-left: 8px; }
+            .phase-badge { background: #ff922b; color: black; padding: 2px 8px; border-radius: 12px; font-size: 8px; font-weight: 700; margin-left: 8px; }
             ::-webkit-scrollbar { width: 3px; }
             ::-webkit-scrollbar-thumb { background: var(--border); }
         `;
@@ -1317,7 +1639,8 @@
             <div class="bot-header" id="botHeader">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <span class="title">🎲 CHEAPCHEATX v3.0</span>
-                    <span class="ml-badge">🤖 ML</span>
+                    <span class="ml-badge">🤖 MiniML</span>
+                    <span class="phase-badge" id="st-phase">📊 Phase 1</span>
                     <span class="time-running" id="st-running-time">0s</span>
                 </div>
                 <div class="header-btns">
@@ -1371,7 +1694,7 @@
                         <div class="line"><span class="label">Max Bet</span><span class="value" id="st-maxbet">0</span></div>
                         <div class="line"><span class="label">Drawdown Now</span><span class="value" id="st-ddnow">0</span></div>
                         <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
-                        <div class="line"><span class="label">🤖 ML</span><span class="value" style="color:#7c3aed;">Connected</span></div>
+                        <div class="line"><span class="label">🤖 MiniML</span><span class="value" id="st-ml" style="color:#7c3aed;">✅ 0%</span></div>
                     </div>
                 </div>
                 <div id="tab-cfg" class="tab-content">
@@ -1410,8 +1733,8 @@
                         </div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🤖 ML SERVER</div>
-                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Machine Learning command receiver</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🤖 MiniML ENGINE</div>
+                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Neural Network di browser (auto-learn)</div>
                         <div class="grid-2">
                             <div class="md-field"><label>📊 ML ENABLED</label>
                                 <select id="p-ml-enabled">
@@ -1419,9 +1742,18 @@
                                     <option value="false">❌ Disabled</option>
                                 </select>
                             </div>
+                            <div class="md-field"><label>📊 LEARNING RATE</label>
+                                <select id="p-ml-lr">
+                                    <option value="0.005">0.005 (Sangat Pelan)</option>
+                                    <option value="0.01" selected>0.01 (Normal)</option>
+                                    <option value="0.02">0.02 (Cepat)</option>
+                                    <option value="0.05">0.05 (Agresif)</option>
+                                </select>
+                            </div>
                         </div>
                         <div style="font-size:8px;color:var(--text-light);margin-top:4px;">
-                            Bot akan mengirim data ke ML Server via Telegram. ML Server akan mengirim command balik.
+                            📊 MiniML belajar dari data bet. Auto strategy: Phase 1 (Data Collection) → Phase 2 (ML Active) → Phase 3 (Full ML)
+                            <br>Command: /mlstatus, /mldisable, /mlenable, /phase
                         </div>
                     </div>
                     <div class="stats-block">
@@ -1454,7 +1786,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0 ML<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Martingale (Dice)<br>📈 Double setiap loss | Max LS: reset ke base<br>🎯 Exit: balance >= startBalance (BEP)<br>🤖 ML Server: Connected via Telegram<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0 MiniML<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Martingale (Dice)<br>📈 Double setiap loss | Max LS: reset ke base<br>🎯 Exit: balance >= startBalance (BEP)<br>🤖 MiniML: Neural Network (auto-learn)<br>📊 Auto Strategy: 3 Phase (Data Collection → ML Active → Full ML)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -1590,8 +1922,21 @@
         var mlEnabledEl = document.getElementById("p-ml-enabled");
         if (mlEnabledEl) {
             mlEnabledEl.onchange = function() {
-                CONFIG.mlEnabled = this.value === 'true';
-                sendTelegramMessage('🤖 ML ' + (CONFIG.mlEnabled ? 'ENABLED' : 'DISABLED'));
+                STATE.mlEnabled = this.value === 'true';
+                if (STATE.mlEnabled && !STATE.miniML) {
+                    initMiniML();
+                }
+                sendTelegramMessage('🤖 MiniML ' + (STATE.mlEnabled ? 'ENABLED' : 'DISABLED'));
+            };
+        }
+        
+        var mlLrEl = document.getElementById("p-ml-lr");
+        if (mlLrEl) {
+            mlLrEl.onchange = function() {
+                if (STATE.miniML) {
+                    STATE.miniML.lr = parseFloat(this.value);
+                    sendTelegramMessage('✅ Learning rate set to ' + STATE.miniML.lr);
+                }
             };
         }
         
@@ -1610,6 +1955,12 @@
                 
                 fullReset();
                 
+                // Init MiniML
+                if (STATE.mlEnabled) {
+                    initMiniML();
+                    sendTelegramMessage('🤖 MiniML Engine initialized!');
+                }
+                
                 STATE.normalChance = 99.98;
                 STATE.baseBetPercent = safeFloat("p-basebet-normal", 0.125);
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
@@ -1625,8 +1976,11 @@
                 STATE.recoveryMaxBetPct = safeFloat("p-recovery-maxbet", 5);
                 STATE.recoveryMaxLossStreak = safeInt("p-recovery-maxls", 7);
                 STATE.recoveryMultiplier = parseFloat(document.getElementById("p-recovery-multiplier")?.value || 1.5);
+                STATE.mlEnabled = document.getElementById("p-ml-enabled")?.value === 'true';
                 
-                CONFIG.mlEnabled = document.getElementById("p-ml-enabled")?.value === 'true';
+                if (STATE.mlEnabled && STATE.miniML) {
+                    STATE.miniML.lr = parseFloat(document.getElementById("p-ml-lr")?.value || 0.01);
+                }
                 
                 var targetUSD = safeFloat("p-wager-total-target-usd", 1000);
                 var lossPct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1665,6 +2019,7 @@
                 STATE.maxBet = 0;
                 STATE.isRecoveryMode = false;
                 STATE.raffle.wageredFromBot = 0;
+                STATE.mlPhase = 1;
                 
                 STATE.recovery.isActive = false;
                 STATE.recovery.totalLoss = 0;
@@ -1675,6 +2030,7 @@
                 STATE.recovery.maxBet = 0;
                 STATE.recovery.baseBet = 0;
                 STATE.recovery.currentBet = 0;
+                STATE.trainingHistory = [];
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1694,16 +2050,18 @@
                 toggleStartStop(true);
                 updateAllUI();
                 
-                sendTelegramMessage('💰 CHEAPCHEATX v3.0 ML STARTED\n' +
+                var mlStatus = STATE.mlEnabled ? '✅ ENABLED' : '❌ DISABLED';
+                sendTelegramMessage('💰 CHEAPCHEATX v3.0 MiniML STARTED\n' +
                     'Mode: Dice 99.98% (Fire & Forget)\n' +
                     'Recovery: Martingale (Dice)\n' +
                     'Chance: ' + STATE.recoveryChance + '%\n' +
                     'Base Bet: ' + STATE.recoveryBaseBetPct + '% balance\n' +
                     'Max Bet: ' + STATE.recoveryMaxBetPct + '% balance\n' +
                     'Max LS: ' + STATE.recoveryMaxLossStreak + 'x\n' +
-                    'ML: ' + (CONFIG.mlEnabled ? 'ENABLED' : 'DISABLED') + '\n' +
+                    'MiniML: ' + mlStatus + '\n' +
+                    'Strategy: Phase 1 - Data Collection (3 jam pertama)\n' +
                     'Balance: ' + balance.toFixed(8) + '\n' +
-                    '🎯 Exit: balance >= startBalance (BEP)');
+                    '🎯 Target: Kumpulin data dulu, profit menyusul');
                 
                 runLoop();
             };
@@ -1818,6 +2176,9 @@
                 fetchRaffleProgress();
                 updateMinBet();
                 updateAllUI();
+                if (STATE.mlEnabled) {
+                    initMiniML();
+                }
             });
         }
         
@@ -1829,12 +2190,32 @@
                 fetchRaffleProgress();
             }
         }, 60000);
+        
+        // ===== UPDATE PHASE UI =====
+        setInterval(function() {
+            var phaseEl = document.getElementById("st-phase");
+            if (phaseEl) {
+                var label = STATE.mlPhase === 1 ? '📊 Phase 1' : 
+                           STATE.mlPhase === 2 ? '🧠 Phase 2' : '🚀 Phase 3';
+                phaseEl.textContent = label;
+                phaseEl.style.background = STATE.mlPhase === 1 ? '#ff922b' : 
+                                          STATE.mlPhase === 2 ? '#7c3aed' : '#00e5c0';
+                phaseEl.style.color = STATE.mlPhase === 1 ? 'black' : 'white';
+            }
+        }, 5000);
     }
 
-    // ==================== 24. START ====================
+    // ==================== 25. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
         createUI();
     }
 })();
+
+console.log('✅ CHEAPCHEATX v3.0 MiniML + Auto Strategy Loaded!');
+console.log('📊 3 Phase Strategy:');
+console.log('  Phase 1 (0-10.000 data): Data Collection - Konservatif');
+console.log('  Phase 2 (10.000-50.000 data): ML Active - Seimbang');
+console.log('  Phase 3 (50.000+ data): Full ML - Agresif');
+console.log('📊 Command: /mlstatus, /mldisable, /mlenable, /phase');
