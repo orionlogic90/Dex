@@ -4,10 +4,10 @@
 // NORMAL MODE: Dice 99.98% (Fire & Forget) - Wagering farming
 // RECOVERY MODE: Dice 49.5% (Martingale) - Target 125% DARI LOSS
 // TRIGGER: Drawdown > 0.5%
-// EXIT: HANYA ketika target 125% tercapai (profit >= 25% dari loss)
+// EXIT: BEP (profit >= 0) ATAU target 125% tercapai
 // startBalance TETAP dari awal session
 // MAX BET: 5% dari balance (bisa diatur)
-// MAX LOSS STREAK: 7x (bisa diatur)
+// MAX LOSS STREAK: Reset ke baseBet (bukan exit)
 // ========================================================================
 
 (function () {
@@ -624,32 +624,32 @@
         
         console.log('[RECOVERY] Loss: ' + totalLoss + ' | Target 125%: ' + target + ' | Profit: ' + profit);
         
-        // ===== CEK TARGET 125% =====
-        // Target tercapai jika profit >= 25% dari loss
-        if (profit >= target && target > 0) {
+        // ===== 1. CEK BEP / PROFIT =====
+        // Jika profit >= 0, balik ke Normal Mode (aman)
+        if (profit >= 0) {
             STATE.isRecoveryMode = false;
             var finalProfit = STATE.balance - STATE.startBalance;
             resetRecoveryState();
-            sendTelegramMessage('✅ MARTINGALE RECOVERY 125% SUCCESS!\n' +
-                'Loss: ' + totalLoss.toFixed(8) + '\n' +
-                'Target: ' + target.toFixed(8) + ' (125% dari loss)\n' +
+            sendTelegramMessage('✅ BEP / PROFIT! BACK TO NORMAL MODE\n' +
                 'Profit: ' + finalProfit.toFixed(8) + '\n' +
                 'Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
-                'Max Bet: ' + r.maxBet.toFixed(8) + '\n' +
-                'Balance: ' + STATE.balance.toFixed(8) + '\n' +
-                '🔄 BACK TO NORMAL MODE');
+                'Balance: ' + STATE.balance.toFixed(8));
             updateAllUI();
             setTimeout(sendFireAndForgetBet, 0);
             return;
         }
         
-        // Cek max loss streak
-        if (r.lossStreak >= STATE.recoveryMaxLossStreak) {
+        // ===== 2. CEK TARGET 125% =====
+        // Target tercapai jika profit >= 25% dari loss
+        if (profit >= target && target > 0) {
             STATE.isRecoveryMode = false;
+            var finalProfit2 = STATE.balance - STATE.startBalance;
             resetRecoveryState();
-            sendTelegramMessage('❌ MARTINGALE RECOVERY FAILED!\n' +
-                'Max Loss Streak: ' + r.lossStreak + '\n' +
+            sendTelegramMessage('✅ TARGET 125% REACHED!\n' +
                 'Loss: ' + totalLoss.toFixed(8) + '\n' +
+                'Target: ' + target.toFixed(8) + ' (125% dari loss)\n' +
+                'Profit: ' + finalProfit2.toFixed(8) + '\n' +
+                'Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
                 'Balance: ' + STATE.balance.toFixed(8) + '\n' +
                 '🔄 BACK TO NORMAL MODE');
             updateAllUI();
@@ -657,7 +657,22 @@
             return;
         }
         
-        // Cek balance
+        // ===== 3. CEK MAX LOSS STREAK =====
+        // Jika loss streak >= max, reset ke baseBet (bukan exit)
+        if (r.lossStreak >= STATE.recoveryMaxLossStreak) {
+            r.lossStreak = 0;
+            r.currentBet = r.baseBet;
+            console.log('[MARTINGALE] Loss Streak max reached! Reset to baseBet: ' + r.baseBet);
+            sendTelegramMessage('🔄 LOSS STREAK MAX (' + STATE.recoveryMaxLossStreak + 'x)\n' +
+                'Reset to Base Bet: ' + r.baseBet.toFixed(8) + '\n' +
+                'Loss: ' + totalLoss.toFixed(8) + ' | Target: ' + target.toFixed(8) + '\n' +
+                '📊 CONTINUE RECOVERY');
+            updateAllUI();
+            setTimeout(runRecovery, 0);
+            return;
+        }
+        
+        // ===== 4. CEK BALANCE =====
         if (STATE.balance <= STATE.minBet * 2) {
             STATE.isRecoveryMode = false;
             resetRecoveryState();
@@ -669,7 +684,7 @@
             return;
         }
         
-        // Hitung bet
+        // ===== 5. HITUNG BET =====
         var action = calculateMartingaleBet();
         var betAmount = action.bet;
         var chance = action.chance;
@@ -733,21 +748,35 @@
             var chanceDisplay = chance + '% ' + (isWin ? 'WIN' : 'LOSS') + ' [LS:' + r.lossStreak + ']';
             logBet(STATE.bets, betAmount, chanceDisplay, profitResult);
             
+            // Cek BEP lagi setelah bet
+            var newProfit = STATE.balance - STATE.startBalance;
+            if (newProfit >= 0) {
+                STATE.isRecoveryMode = false;
+                var finalProfit3 = STATE.balance - STATE.startBalance;
+                resetRecoveryState();
+                sendTelegramMessage('✅ BEP / PROFIT! BACK TO NORMAL MODE\n' +
+                    'Profit: ' + finalProfit3.toFixed(8) + '\n' +
+                    'Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
+                    'Balance: ' + STATE.balance.toFixed(8));
+                updateAllUI();
+                setTimeout(sendFireAndForgetBet, 0);
+                return;
+            }
+            
             // Cek target lagi setelah bet
             var newTotalLoss = STATE.startBalance - STATE.balance;
             var newTarget = newTotalLoss * 1.25;
-            var newProfit = STATE.balance - STATE.startBalance;
+            var newProfit2 = STATE.balance - STATE.startBalance;
             
-            if (newProfit >= newTarget && newTarget > 0) {
+            if (newProfit2 >= newTarget && newTarget > 0) {
                 STATE.isRecoveryMode = false;
-                var finalProfit2 = STATE.balance - STATE.startBalance;
+                var finalProfit4 = STATE.balance - STATE.startBalance;
                 resetRecoveryState();
-                sendTelegramMessage('✅ MARTINGALE RECOVERY 125% SUCCESS!\n' +
+                sendTelegramMessage('✅ TARGET 125% REACHED!\n' +
                     'Loss: ' + newTotalLoss.toFixed(8) + '\n' +
                     'Target: ' + newTarget.toFixed(8) + ' (125% dari loss)\n' +
-                    'Profit: ' + finalProfit2.toFixed(8) + '\n' +
+                    'Profit: ' + finalProfit4.toFixed(8) + '\n' +
                     'Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
-                    'Max Bet: ' + r.maxBet.toFixed(8) + '\n' +
                     'Balance: ' + STATE.balance.toFixed(8) + '\n' +
                     '🔄 BACK TO NORMAL MODE');
                 updateAllUI();
@@ -757,15 +786,15 @@
             
             // Cek max loss streak lagi
             if (r.lossStreak >= STATE.recoveryMaxLossStreak) {
-                STATE.isRecoveryMode = false;
-                resetRecoveryState();
-                sendTelegramMessage('❌ MARTINGALE RECOVERY FAILED!\n' +
-                    'Max Loss Streak: ' + r.lossStreak + '\n' +
-                    'Loss: ' + newTotalLoss.toFixed(8) + '\n' +
-                    'Balance: ' + STATE.balance.toFixed(8) + '\n' +
-                    '🔄 BACK TO NORMAL MODE');
+                r.lossStreak = 0;
+                r.currentBet = r.baseBet;
+                console.log('[MARTINGALE] Loss Streak max reached! Reset to baseBet: ' + r.baseBet);
+                sendTelegramMessage('🔄 LOSS STREAK MAX (' + STATE.recoveryMaxLossStreak + 'x)\n' +
+                    'Reset to Base Bet: ' + r.baseBet.toFixed(8) + '\n' +
+                    'Loss: ' + newTotalLoss.toFixed(8) + ' | Target: ' + newTarget.toFixed(8) + '\n' +
+                    '📊 CONTINUE RECOVERY');
                 updateAllUI();
-                setTimeout(sendFireAndForgetBet, 0);
+                setTimeout(runRecovery, 0);
                 return;
             }
             
@@ -834,16 +863,18 @@
         
         var baseBet = STATE.balance * 0.005;
         baseBet = Math.max(baseBet, STATE.minBet);
+        STATE.recovery.baseBet = baseBet;
+        STATE.recovery.currentBet = baseBet;
         
         sendTelegramMessage('🔄 MARTINGALE RECOVERY STARTED\n' +
             'Total Loss: ' + totalLoss.toFixed(8) + '\n' +
             'Target: ' + (totalLoss * 1.25).toFixed(8) + ' (125% dari loss)\n' +
             'Base Bet: ' + baseBet.toFixed(8) + ' (0.5% balance)\n' +
             'Max Bet: ' + (STATE.balance * STATE.recoveryMaxBetPct / 100).toFixed(8) + ' (' + STATE.recoveryMaxBetPct + '% balance)\n' +
-            'Max Loss Streak: ' + STATE.recoveryMaxLossStreak + 'x\n' +
+            'Max Loss Streak: ' + STATE.recoveryMaxLossStreak + 'x (reset ke baseBet)\n' +
             '🎯 Dice 49.5% (2x payout)\n' +
             '📊 Double bet setiap loss\n' +
-            '🎯 Target: Profit >= 25% dari loss');
+            '🎯 Exit: BEP atau Target 125%');
         
         updateAllUI();
         setTimeout(runRecovery, 100);
@@ -1127,8 +1158,8 @@
             recoveryInfo = '\n🔄 MARTINGALE RECOVERY (125% dari loss)\n' +
                            '  Target: ' + target.toFixed(8) + '\n' +
                            '  Progress: ' + progress.toFixed(1) + '%\n' +
+                           '  Loss Streak: ' + r.lossStreak + '/' + STATE.recoveryMaxLossStreak + '\n' +
                            '  Win: ' + r.win + ' | Loss: ' + r.loss + '\n' +
-                           '  Loss Streak: ' + r.lossStreak + '\n' +
                            '  Max Bet: ' + r.maxBet.toFixed(8);
         }
         
@@ -1144,7 +1175,7 @@
                       '\n🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
                       'Status: ' + status +
                       '\n📊 Normal: Dice 99.98% (FF) | Recovery: Dice 49.5% Martingale\n' +
-                      '🎯 Target: 125% dari loss (balik modal + profit 25%)';
+                      '🎯 Exit: BEP atau Target 125% dari loss';
         await sendTelegramMessage(message);
     }
 
@@ -1299,7 +1330,7 @@
                         <div class="minbet-info" id="minbet-info">≈ 0.00000000 crypto (2 IDR)</div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 MARTINGALE RECOVERY (125% dari loss)</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 MARTINGALE RECOVERY</div>
                         <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Dice 49.5% (2x payout) - Double bet setiap loss</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.5" step="0.01" min="0.01" max="5"></div>
@@ -1307,10 +1338,10 @@
                         </div>
                         <div class="grid-2">
                             <div class="md-field"><label>📊 MAX BET (% balance)</label><input type="number" id="p-recovery-maxbet" value="5" step="0.5" min="1" max="20"></div>
-                            <div class="md-field"><label>✂️ MAX LOSS STREAK</label><input type="number" id="p-recovery-maxls" value="7" step="1" min="3" max="15"></div>
+                            <div class="md-field"><label>📊 MAX LOSS STREAK (reset ke base)</label><input type="number" id="p-recovery-maxls" value="7" step="1" min="3" max="15"></div>
                         </div>
                         <div style="font-size:8px;color:var(--text-light);margin-top:4px;">
-                            Base Bet: 0.5% balance | Double setiap loss | Max Bet: X% balance | Stop di Xx loss streak
+                            Base Bet: 0.5% balance | Double setiap loss | Max Bet: X% balance | Max LS: reset ke baseBet
                         </div>
                     </div>
                     <div class="stats-block">
@@ -1343,7 +1374,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Dice 49.5% Martingale<br>📈 Double bet setiap loss<br>🎯 Target: 125% dari loss (balik modal + profit 25%)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Dice 49.5% Martingale<br>📈 Double bet setiap loss<br>🎯 Exit: BEP atau Target 125% dari loss<br>🔄 Max LS: reset ke baseBet<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -1505,6 +1536,8 @@
                 STATE.recovery.loss = 0;
                 STATE.recovery.totalBets = 0;
                 STATE.recovery.maxBet = 0;
+                STATE.recovery.baseBet = 0;
+                STATE.recovery.currentBet = 0;
                 
                 STATE.stats = {
                     profit: 0, wagered: 0, startBal: balance, currentBal: balance,
@@ -1529,7 +1562,7 @@
                     'Recovery: Dice 49.5% Martingale\n' +
                     'Target: 125% dari loss (balik modal + profit 25%)\n' +
                     'Max Bet: ' + STATE.recoveryMaxBetPct + '% balance\n' +
-                    'Max Loss Streak: ' + STATE.recoveryMaxLossStreak + 'x\n' +
+                    'Max Loss Streak: ' + STATE.recoveryMaxLossStreak + 'x (reset ke baseBet)\n' +
                     'Balance: ' + balance.toFixed(8) + '\n' +
                     'MinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
                     'Trigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n' +
