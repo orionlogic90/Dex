@@ -1,24 +1,24 @@
 // ========================================================================
-// CHEAPCHEATX v3.0 - DICE ONLY (99.98% Normal + Martingale Recovery)
+// CHEAPCHEATX v3.0 - BOT STAKE (DICE ONLY + RECEIVE ML COMMAND)
 // ========================================================================
 // NORMAL MODE: Dice 99.98% (Fire & Forget) - Wagering farming
-// RECOVERY MODE: Dice dengan Martingale - Exit ketika balance >= startBalance
-// TRIGGER: Drawdown > 0.5%
-// PARAMETER: Chance, Base Bet, Max Bet, Max Loss Streak (bisa diatur di UI)
+// RECOVERY MODE: Dice dengan Martingale 1.5x
+// EXIT: BEP (balance >= startBalance)
+// COMMAND: Receive dari ML Server via Telegram
 // ========================================================================
 
 (function () {
     // ==================== 1. CONFIG ====================
     const CONFIG = {
         apiUrl: window.location.origin + '/_api',
-        version: "CheapCheatX v3.0",
+        version: "CheapCheatX v3.0 ML",
         tgBotToken: "8472646774:AAGYIU5V1kK4YMj5u1MqR0-QR5mQ4XemdMQ",
         tgChatId: "8453280675",
         tgReportInterval: 300000,
-        wagerParallelCap: 5,
         maxHistory: 50,
         maxLogs: 50,
-        lockdownToken: "s5MNWtjTM5TvCMkAzxov"
+        lockdownToken: "s5MNWtjTM5TvCMkAzxov",
+        mlEnabled: true  // Enable ML command receive
     };
 
     let accessToken = "";
@@ -89,11 +89,12 @@
         maxDrawdownPct: 5,
         triggerDrawdownPct: 0.5,
         
-        // ===== RECOVERY SETTINGS (default) =====
+        // ===== RECOVERY SETTINGS =====
         recoveryChance: 49.5,
         recoveryBaseBetPct: 0.5,
         recoveryMaxBetPct: 5,
         recoveryMaxLossStreak: 7,
+        recoveryMultiplier: 1.5,
         
         // ===== DELAY =====
         delayNormal: 0,
@@ -119,6 +120,7 @@
         maxLogs: 50,
         startTime: null,
         lastTGReport: 0,
+        lastMLSend: 0,
         
         stats: {
             profit: 0, wagered: 0, startBal: 0, currentBal: 0,
@@ -185,7 +187,183 @@
         } catch(e) {}
     }
 
-    // ==================== 5. FIAT RATE ====================
+    // ==================== 5. SEND DATA TO ML ====================
+    function sendDataToML() {
+        if (!CONFIG.mlEnabled) return;
+        if (!CONFIG.tgBotToken || !CONFIG.tgChatId) return;
+        
+        var now = Date.now();
+        if (now - STATE.lastMLSend < 5000) return; // Max 5 detik
+        STATE.lastMLSend = now;
+        
+        var data = {
+            timestamp: Date.now(),
+            profit: STATE.profit,
+            balance: STATE.balance,
+            startBalance: STATE.startBalance,
+            bets: STATE.bets,
+            wins: STATE.wins,
+            losses: STATE.losses,
+            wagered: STATE.wagered,
+            isRecovery: STATE.isRecoveryMode ? 1 : 0,
+            lossStreak: STATE.recovery.lossStreak || 0,
+            chance: STATE.isRecoveryMode ? STATE.recoveryChance : STATE.normalChance,
+            basebet: STATE.isRecoveryMode ? STATE.recoveryBaseBetPct : STATE.baseBetPercent,
+            winRate: STATE.bets > 0 ? STATE.wins / STATE.bets : 0
+        };
+        
+        var message = 'ML DATA: ' + JSON.stringify(data);
+        sendTelegramMessage(message);
+    }
+
+    // ==================== 6. RECEIVE COMMAND FROM ML ====================
+    var lastUpdateId = 0;
+
+    async function getTelegramCommands() {
+        if (!CONFIG.mlEnabled) return;
+        if (!CONFIG.tgBotToken) return;
+        
+        try {
+            var url = 'https://api.telegram.org/bot' + CONFIG.tgBotToken + '/getUpdates';
+            if (lastUpdateId > 0) {
+                url += '?offset=' + (lastUpdateId + 1);
+            }
+            
+            var res = await fetch(url);
+            var data = await res.json();
+            
+            if (data.ok && data.result) {
+                for (var i = 0; i < data.result.length; i++) {
+                    var update = data.result[i];
+                    var msg = update.message;
+                    
+                    if (update.update_id > lastUpdateId) {
+                        lastUpdateId = update.update_id;
+                    }
+                    
+                    if (msg && msg.text) {
+                        var chatId = msg.chat.id.toString();
+                        if (chatId === CONFIG.tgChatId) {
+                            processMLCommand(msg.text, msg.chat.id);
+                        }
+                    }
+                }
+            }
+        } catch(e) {
+            console.log('[TG] Error:', e);
+        }
+    }
+
+    function processMLCommand(text, chatId) {
+        var parts = text.split(' ');
+        var cmd = parts[0].toLowerCase();
+        var value = parts[1];
+        
+        console.log('[ML CMD] Received:', text);
+        
+        switch(cmd) {
+            case '/chance':
+                var newChance = parseFloat(value);
+                if (newChance > 0 && newChance < 100) {
+                    STATE.recoveryChance = newChance;
+                    sendTelegramMessage('✅ ML: Chance set to ' + newChance + '%');
+                }
+                break;
+                
+            case '/basebet':
+                var newBasebet = parseFloat(value);
+                if (newBasebet > 0 && newBasebet < 10) {
+                    STATE.recoveryBaseBetPct = newBasebet;
+                    if (STATE.isRecoveryMode) {
+                        STATE.recovery.baseBet = STATE.balance * (newBasebet / 100);
+                        STATE.recovery.baseBet = Math.max(STATE.recovery.baseBet, STATE.minBet);
+                    }
+                    sendTelegramMessage('✅ ML: Basebet set to ' + newBasebet + '%');
+                }
+                break;
+                
+            case '/maxbet':
+                var newMaxbet = parseFloat(value);
+                if (newMaxbet > 0 && newMaxbet < 20) {
+                    STATE.recoveryMaxBetPct = newMaxbet;
+                    sendTelegramMessage('✅ ML: Max bet set to ' + newMaxbet + '%');
+                }
+                break;
+                
+            case '/maxls':
+                var newMaxls = parseInt(value);
+                if (newMaxls > 0 && newMaxls < 20) {
+                    STATE.recoveryMaxLossStreak = newMaxls;
+                    sendTelegramMessage('✅ ML: Max loss streak set to ' + newMaxls + 'x');
+                }
+                break;
+                
+            case '/trigger':
+                var newTrigger = parseFloat(value);
+                if (newTrigger > 0 && newTrigger < 5) {
+                    STATE.triggerDrawdownPct = newTrigger;
+                    sendTelegramMessage('✅ ML: Trigger set to ' + newTrigger + '%');
+                }
+                break;
+                
+            case '/resetrecovery':
+                if (STATE.isRecoveryMode) {
+                    STATE.recovery.lossStreak = 0;
+                    STATE.recovery.currentBet = STATE.recovery.baseBet;
+                    sendTelegramMessage('🔄 ML: Recovery reset!');
+                }
+                break;
+                
+            case '/stoprecovery':
+                if (STATE.isRecoveryMode) {
+                    STATE.isRecoveryMode = false;
+                    resetRecoveryState();
+                    sendTelegramMessage('🛑 ML: Recovery stopped');
+                    setTimeout(sendFireAndForgetBet, 0);
+                }
+                break;
+                
+            case '/startrecovery':
+                if (!STATE.isRecoveryMode) {
+                    sendTelegramMessage('🔄 ML: Starting recovery...');
+                    startRecovery();
+                }
+                break;
+                
+            case '/stop':
+                STATE.isRunning = false;
+                STATE.isPaused = true;
+                toggleStartStop(false);
+                sendTelegramMessage('🛑 ML: Bot stopped');
+                break;
+                
+            case '/resume':
+                STATE.isPaused = false;
+                STATE.isRunning = true;
+                toggleStartStop(true);
+                sendTelegramMessage('▶️ ML: Bot resumed');
+                runLoop();
+                break;
+                
+            case '/status':
+                var status = '📊 STATUS\n' +
+                    'Balance: ' + STATE.balance.toFixed(8) + '\n' +
+                    'Profit: ' + STATE.profit.toFixed(8) + '\n' +
+                    'Mode: ' + (STATE.isRecoveryMode ? 'RECOVERY' : 'NORMAL') + '\n' +
+                    'Loss Streak: ' + STATE.recovery.lossStreak + '\n' +
+                    'Bets: ' + STATE.bets + ' | WR: ' + (STATE.bets > 0 ? (STATE.wins/STATE.bets*100).toFixed(1) : 0) + '%\n' +
+                    'Chance: ' + (STATE.isRecoveryMode ? STATE.recoveryChance : STATE.normalChance) + '%\n' +
+                    'Basebet: ' + (STATE.isRecoveryMode ? STATE.recoveryBaseBetPct : STATE.baseBetPercent) + '%';
+                sendTelegramMessage(status);
+                break;
+                
+            default:
+                // Unknown command
+                break;
+        }
+    }
+
+    // ==================== 7. FIAT RATE ====================
     function getCoinGeckoId(coin) {
         var map = {
             "USDT": "tether",
@@ -273,41 +451,6 @@
         return fallbackRates[currency.toLowerCase()] || 16000;
     }
 
-    async function fetchBaseRateFromAPI(currency) {
-        try {
-            var query = `query CurrencyConfiguration($isAcp: Boolean!) {
-                currencyConfiguration(isAcp: $isAcp) {
-                    baseRates {
-                        currency
-                        baseRate
-                    }
-                }
-            }`;
-            var variables = { isAcp: false };
-            var res = await fetch(CONFIG.apiUrl + '/graphql', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-access-token': accessToken
-                },
-                body: JSON.stringify({ query: query, variables: variables })
-            });
-            var data = await res.json();
-            if (data?.data?.currencyConfiguration?.baseRates) {
-                var rates = data.data.currencyConfiguration.baseRates;
-                var found = rates.find(function(r) { 
-                    return r.currency.toLowerCase() === currency.toLowerCase(); 
-                });
-                if (found) {
-                    return found.baseRate;
-                }
-            }
-        } catch(e) {
-            console.error('[FIAT] Error fetching baseRate:', e);
-        }
-        return null;
-    }
-
     async function updateMinBet() {
         var currency = STATE.selectedCurrency.toUpperCase();
         var rate = await fetchMinBetRate(currency);
@@ -334,7 +477,7 @@
         return false;
     }
 
-    // ==================== 6. RAFFLE ====================
+    // ==================== 8. RAFFLE ====================
     async function fetchRaffleProgress() {
         if (!accessToken) return;
         try {
@@ -421,7 +564,7 @@
         `;
     }
 
-    // ==================== 7. SYNC USER INFO ====================
+    // ==================== 9. SYNC USER INFO ====================
     async function syncUserInfo() {
         if (!accessToken || accessToken.length < 30) return false;
         var query = 'query{user{name balances{available{amount currency}}}}';
@@ -470,7 +613,7 @@
         return false;
     }
 
-    // ==================== 8. PLACE DICE BET ====================
+    // ==================== 10. PLACE DICE BET ====================
     async function placeDiceBet(amount, chance, condition) {
         var target = condition === 'above' ? (100 - chance) : chance;
         var apiAmount = parseFloat(amount.toFixed(8));
@@ -559,27 +702,23 @@
         }
     }
 
-    // ==================== 9. RECOVERY - MARTINGALE ====================
+    // ==================== 11. RECOVERY - MARTINGALE ====================
     function calculateMartingaleBet() {
         var r = STATE.recovery;
         var balance = STATE.balance;
         
-        // ===== BASE BET DARI SETTING =====
         var baseBetPct = STATE.recoveryBaseBetPct || 0.5;
         var baseBet = balance * (baseBetPct / 100);
         baseBet = Math.max(baseBet, STATE.minBet);
         r.baseBet = baseBet;
         
-        // Hitung martingale: double setiap loss
-        var multiplier = Math.pow(2, r.lossStreak);
+        var multiplier = Math.pow(STATE.recoveryMultiplier || 1.5, r.lossStreak);
         var bet = baseBet * multiplier;
         
-        // Max bet dari setting
         var maxBetPct = STATE.recoveryMaxBetPct || 5;
         var maxBet = balance * (maxBetPct / 100);
         if (bet > maxBet) {
             bet = maxBet;
-            console.log('[MARTINGALE] Bet capped at ' + maxBet);
         }
         
         bet = Math.max(bet, STATE.minBet);
@@ -587,10 +726,9 @@
         
         r.currentBet = bet;
         
-        // ===== CHANCE DARI SETTING =====
         var chance = STATE.recoveryChance || 49.5;
         
-        console.log('[MARTINGALE] Base: ' + baseBet + ' | LS: ' + r.lossStreak + ' | Multiplier: ' + multiplier + 'x | Bet: ' + bet);
+        console.log('[MARTINGALE] Base: ' + baseBet + ' | LS: ' + r.lossStreak + ' | Multiplier: ' + multiplier.toFixed(2) + 'x | Bet: ' + bet);
         
         return {
             bet: bet,
@@ -599,7 +737,7 @@
         };
     }
 
-    // ==================== 10. RECOVERY RUN ====================
+    // ==================== 12. RECOVERY RUN ====================
     async function runRecovery() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -616,29 +754,23 @@
         
         console.log('[RECOVERY] Profit: ' + profit + ' | Loss Streak: ' + r.lossStreak);
         
-        // ===== CEK PROFIT >= 0 (BALANCE >= START) =====
+        // ===== CEK BEP =====
         if (profit >= 0) {
             STATE.isRecoveryMode = false;
             var finalProfit = STATE.balance - STATE.startBalance;
             resetRecoveryState();
-            sendTelegramMessage('✅ BACK TO NORMAL MODE! (BEP/PROFIT)\n' +
-                'Profit: ' + finalProfit.toFixed(8) + '\n' +
-                'Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
-                'Balance: ' + STATE.balance.toFixed(8));
+            sendTelegramMessage('✅ BACK TO NORMAL! (BEP)\nProfit: ' + finalProfit.toFixed(8));
             updateAllUI();
             setTimeout(sendFireAndForgetBet, 0);
             return;
         }
         
-        // ===== CEK MAX LOSS STREAK =====
+        // ===== CEK MAX LS =====
         if (r.lossStreak >= STATE.recoveryMaxLossStreak) {
             r.lossStreak = 0;
             r.currentBet = r.baseBet;
-            console.log('[MARTINGALE] Loss Streak max reached! Reset to baseBet: ' + r.baseBet);
-            sendTelegramMessage('🔄 LOSS STREAK MAX (' + STATE.recoveryMaxLossStreak + 'x)\n' +
-                'Reset to Base Bet: ' + r.baseBet.toFixed(8) + '\n' +
-                'Profit: ' + profit.toFixed(8) + '\n' +
-                '📊 CONTINUE RECOVERY');
+            console.log('[MARTINGALE] Loss Streak max reached! Reset to baseBet');
+            sendTelegramMessage('🔄 MAX LS (' + STATE.recoveryMaxLossStreak + 'x) RESET TO BASE');
             updateAllUI();
             setTimeout(runRecovery, 0);
             return;
@@ -648,9 +780,7 @@
         if (STATE.balance <= STATE.minBet * 2) {
             STATE.isRecoveryMode = false;
             resetRecoveryState();
-            sendTelegramMessage('⚠️ BALANCE TOO LOW! Stopping recovery.\n' +
-                'Balance: ' + STATE.balance.toFixed(8) + '\n' +
-                '🔄 BACK TO NORMAL MODE');
+            sendTelegramMessage('⚠️ BALANCE TOO LOW! Stopping recovery.');
             updateAllUI();
             setTimeout(sendFireAndForgetBet, 0);
             return;
@@ -664,14 +794,12 @@
         
         console.log('[RECOVERY] Bet: ' + betAmount + ' | Chance: ' + chance + '%');
         
-        // Place Dice bet
         var result = await placeDiceBet(betAmount, chance, condition);
         
         if (result) {
             var profitResult = result.profit || 0;
             var isWin = result.win;
             
-            // Update recovery state
             r.totalBets++;
             r.lastResult = isWin;
             
@@ -687,7 +815,6 @@
             
             if (betAmount > r.maxBet) r.maxBet = betAmount;
             
-            // Update stats
             STATE.bets++;
             STATE.wagered += betAmount;
             STATE.betTimestamps.push(Date.now());
@@ -720,34 +847,30 @@
             var chanceDisplay = chance + '% ' + (isWin ? 'WIN' : 'LOSS') + ' [LS:' + r.lossStreak + ']';
             logBet(STATE.bets, betAmount, chanceDisplay, profitResult);
             
-            // ===== CEK PROFIT LAGI =====
+            // ===== CEK BEP LAGI =====
             var newProfit = STATE.balance - STATE.startBalance;
             if (newProfit >= 0) {
                 STATE.isRecoveryMode = false;
                 var finalProfit2 = STATE.balance - STATE.startBalance;
                 resetRecoveryState();
-                sendTelegramMessage('✅ BACK TO NORMAL MODE! (BEP/PROFIT)\n' +
-                    'Profit: ' + finalProfit2.toFixed(8) + '\n' +
-                    'Stats: Win ' + r.win + ' | Loss ' + r.loss + '\n' +
-                    'Balance: ' + STATE.balance.toFixed(8));
+                sendTelegramMessage('✅ BACK TO NORMAL! (BEP)\nProfit: ' + finalProfit2.toFixed(8));
                 updateAllUI();
                 setTimeout(sendFireAndForgetBet, 0);
                 return;
             }
             
-            // ===== CEK MAX LOSS STREAK LAGI =====
+            // ===== CEK MAX LS LAGI =====
             if (r.lossStreak >= STATE.recoveryMaxLossStreak) {
                 r.lossStreak = 0;
                 r.currentBet = r.baseBet;
-                console.log('[MARTINGALE] Loss Streak max reached! Reset to baseBet: ' + r.baseBet);
-                sendTelegramMessage('🔄 LOSS STREAK MAX (' + STATE.recoveryMaxLossStreak + 'x)\n' +
-                    'Reset to Base Bet: ' + r.baseBet.toFixed(8) + '\n' +
-                    'Profit: ' + newProfit.toFixed(8) + '\n' +
-                    '📊 CONTINUE RECOVERY');
+                sendTelegramMessage('🔄 MAX LS (' + STATE.recoveryMaxLossStreak + 'x) RESET TO BASE');
                 updateAllUI();
                 setTimeout(runRecovery, 0);
                 return;
             }
+            
+            // ===== KIRIM DATA KE ML =====
+            sendDataToML();
             
             updateAllUI();
             setTimeout(runRecovery, 0);
@@ -776,9 +899,9 @@
         STATE.lossStreak = 0;
     }
 
-    // ==================== 11. START RECOVERY ====================
+    // ==================== 13. START RECOVERY ====================
     function startRecovery() {
-        console.log('[RECOVERY] Starting Martingale recovery...');
+        console.log('[RECOVERY] Starting...');
         
         if (STATE.balance <= STATE.minBet * 2) {
             STATE.isRecoveryMode = false;
@@ -810,19 +933,18 @@
         STATE.recovery.baseBet = baseBet;
         STATE.recovery.currentBet = baseBet;
         
-        sendTelegramMessage('🔄 MARTINGALE RECOVERY STARTED\n' +
+        sendTelegramMessage('🔄 RECOVERY STARTED\n' +
             'Loss: ' + totalLoss.toFixed(8) + '\n' +
             'Chance: ' + STATE.recoveryChance + '%\n' +
-            'Base Bet: ' + baseBetPct + '% balance (' + baseBet.toFixed(8) + ')\n' +
-            'Max Bet: ' + STATE.recoveryMaxBetPct + '% balance\n' +
-            'Max LS: ' + STATE.recoveryMaxLossStreak + 'x (reset ke base)\n' +
-            '🎯 Exit: balance >= startBalance (BEP/PROFIT)');
+            'Base Bet: ' + baseBetPct + '% (' + baseBet.toFixed(8) + ')\n' +
+            'Max Bet: ' + STATE.recoveryMaxBetPct + '%\n' +
+            'Max LS: ' + STATE.recoveryMaxLossStreak + 'x');
         
         updateAllUI();
         setTimeout(runRecovery, 100);
     }
 
-    // ==================== 12. FIRE & FORGET ====================
+    // ==================== 14. FIRE & FORGET ====================
     function sendFireAndForgetBet() {
         if (STATE.isRecoveryMode) {
             console.log('[F&F] Recovery active, skipping...');
@@ -859,13 +981,17 @@
         console.log('[F&F] Dice 99.98% | Bet:', betAmount);
         
         placeDiceBet(betAmount, STATE.normalChance, 'above').then(function(result) {
-            if (result) processBetResult(result, betAmount, 'normal', true);
+            if (result) {
+                processBetResult(result, betAmount, 'normal', true);
+                // Kirim data ke ML setelah bet normal
+                sendDataToML();
+            }
         }).catch(function(e) { console.error('[F&F] Dice error:', e); });
         
         setTimeout(sendFireAndForgetBet, STATE.delayNormal);
     }
 
-    // ==================== 13. PROCESS BET RESULT ====================
+    // ==================== 15. PROCESS BET RESULT ====================
     function processBetResult(result, betAmount, mode, isFireAndForget) {
         if (!result) return;
         
@@ -924,7 +1050,7 @@
         updateAllUI();
     }
 
-    // ==================== 14. LOGGING ====================
+    // ==================== 16. LOGGING ====================
     function logBet(betNumber, amount, chance, profit) {
         var logBox = document.getElementById("p-logs");
         if (!logBox) return;
@@ -959,7 +1085,7 @@
         }
     }
 
-    // ==================== 15. RESET FUNCTIONS ====================
+    // ==================== 17. RESET FUNCTIONS ====================
     function resetWagerSesi() {
         STATE.wagerTotalAccumulated += STATE.wagerSesiCounter;
         STATE.wagerSesiCounter = 0;
@@ -1005,7 +1131,7 @@
         updateAllUI();
     }
 
-    // ==================== 16. UI UPDATES ====================
+    // ==================== 18. UI UPDATES ====================
     function updateStatsDisplay() {
         STATE.profit = STATE.balance - STATE.startBalance;
         STATE.stats.profit = STATE.profit;
@@ -1075,7 +1201,7 @@
         }
     }
 
-    // ==================== 17. SESSION REPORT ====================
+    // ==================== 19. SESSION REPORT ====================
     async function sendSessionReport() {
         STATE.profit = STATE.balance - STATE.startBalance;
         
@@ -1088,21 +1214,7 @@
         var raffleTickets = STATE.raffle.userTickets;
         var wageredUSD = STATE.raffle.wageredFromBot;
         
-        var r = STATE.recovery;
-        var recoveryInfo = '';
-        if (STATE.isRecoveryMode) {
-            var totalLoss = STATE.startBalance - STATE.balance;
-            var progress = totalLoss > 0 ? (STATE.profit / -totalLoss * 100) : 0;
-            if (progress < 0) progress = 0;
-            if (progress > 100) progress = 100;
-            recoveryInfo = '\n🔄 MARTINGALE RECOVERY\n' +
-                           '  Progress: ' + progress.toFixed(1) + '%\n' +
-                           '  Loss Streak: ' + r.lossStreak + '/' + STATE.recoveryMaxLossStreak + '\n' +
-                           '  Win: ' + r.win + ' | Loss: ' + r.loss + '\n' +
-                           '  Max Bet: ' + r.maxBet.toFixed(8);
-        }
-        
-        var message = '💰 CHEAPCHEATX v3.0 (DICE ONLY)\n' +
+        var message = '💰 CHEAPCHEATX v3.0 (ML ENABLED)\n' +
                       'User: ' + STATE.stakeUser + '\n' +
                       'Time: ' + runTime + '\n' +
                       'Balance: ' + STATE.balance.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
@@ -1110,15 +1222,13 @@
                       'Wagered: ' + STATE.wagered.toFixed(8) + '\n' +
                       'Bets: ' + STATE.bets + ' | WR: ' + winRate.toFixed(0) + '%\n' +
                       'Drawdown: ' + drawdownPct.toFixed(2) + '%\n' +
-                      recoveryInfo +
-                      '\n🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
+                      '🎟️ Raffle: ' + raffleProgress + '% | ' + raffleTickets + ' tickets | Bot: $' + wageredUSD.toFixed(2) + '\n' +
                       'Status: ' + status +
-                      '\n📊 Normal: Dice 99.98% (FF) | Recovery: Martingale\n' +
-                      '🎯 Exit: balance >= startBalance (BEP/PROFIT)';
+                      '\n🤖 ML Server Connected';
         await sendTelegramMessage(message);
     }
 
-    // ==================== 18. RUN LOOP ====================
+    // ==================== 20. RUN LOOP ====================
     function runLoop() {
         if (!STATE.isRunning || STATE.isPaused) return;
         
@@ -1129,7 +1239,7 @@
         }
     }
 
-    // ==================== 19. UI CONTROLS ====================
+    // ==================== 21. UI CONTROLS ====================
     function toggleStartStop(starting) {
         var startBtn = document.getElementById("p-start");
         var stopBtn = document.getElementById("p-stop");
@@ -1151,7 +1261,14 @@
         }
     }
 
-    // ==================== 20. CREATE UI ====================
+    // ==================== 22. LISTEN TELEGRAM COMMANDS (LOOP) ====================
+    setInterval(function() {
+        if (CONFIG.mlEnabled) {
+            getTelegramCommands();
+        }
+    }, 5000);
+
+    // ==================== 23. CREATE UI ====================
     function createUI() {
         var existing = document.getElementById("BotConsole");
         if (existing) existing.remove();
@@ -1195,6 +1312,7 @@
             .stats-block .value { font-weight: 600; text-align: right; color: var(--accent); font-size: 10px; word-break: break-word; max-width: 60%; }
             .stats-block .divider { border-top: 1px solid var(--border); margin: 5px 0; }
             .logs-container { background: var(--log-bg); border-radius: 12px; height: 350px; overflow-y: auto; padding: 8px; font-size: 9px; border: 1px solid var(--border); font-family: monospace; }
+            .ml-badge { background: #7c3aed; color: white; padding: 2px 8px; border-radius: 12px; font-size: 8px; font-weight: 700; margin-left: 8px; }
             ::-webkit-scrollbar { width: 3px; }
             ::-webkit-scrollbar-thumb { background: var(--border); }
         `;
@@ -1205,6 +1323,7 @@
             <div class="bot-header" id="botHeader">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <span class="title">🎲 CHEAPCHEATX v3.0</span>
+                    <span class="ml-badge">🤖 ML</span>
                     <span class="time-running" id="st-running-time">0s</span>
                 </div>
                 <div class="header-btns">
@@ -1232,11 +1351,12 @@
                             <button id="p-stop" class="btn btn-stop" disabled>STOP</button>
                             <button id="p-reset" class="btn btn-reset">RESET</button>
                         </div>
-                        <select id="p-currency"></select>
+                        <select id="p-currency" style="padding:8px;border-radius:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:11px;"></select>
                     </div>
                     <div class="status-inline">
                         <span class="dot" id="statusDot" style="background:#FF4757;"></span>
                         <span id="botStatus">STOP</span>
+                        <span style="margin-left:auto;font-size:9px;color:var(--text-light);" id="st-chance">⚡ NORMAL | DD: 0.00%</span>
                     </div>
                     <div id="raffle-container" style="background:var(--bg-block);border-radius:12px;padding:8px 10px;margin-bottom:6px;border:1px solid var(--border);">
                         <div id="st-raffle">Loading raffle progress...</div>
@@ -1257,6 +1377,7 @@
                         <div class="line"><span class="label">Max Bet</span><span class="value" id="st-maxbet">0</span></div>
                         <div class="line"><span class="label">Drawdown Now</span><span class="value" id="st-ddnow">0</span></div>
                         <div class="line"><span class="label">Countdown</span><span class="value" id="st-timer">--</span></div>
+                        <div class="line"><span class="label">🤖 ML</span><span class="value" style="color:#7c3aed;">Connected</span></div>
                     </div>
                 </div>
                 <div id="tab-cfg" class="tab-content">
@@ -1269,24 +1390,45 @@
                         <div class="minbet-info" id="minbet-info">≈ 0.00000000 crypto (2 IDR)</div>
                     </div>
                     <div class="stats-block">
-                        <div style="font-weight:bold;margin-bottom:8px;">🔄 MARTINGALE RECOVERY SETTINGS</div>
-                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Dice - Exit ketika balance >= startBalance (BEP/PROFIT)</div>
+                        <div style="font-weight:bold;margin-bottom:8px;">🔄 MARTINGALE RECOVERY</div>
+                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Dice - Exit BEP (balance >= startBalance)</div>
                         <div class="grid-2">
                             <div class="md-field"><label>🎯 CHANCE RECOVERY (%)</label><input type="number" id="p-recovery-chance" value="49.5" step="0.5" min="1" max="98"></div>
                             <div class="md-field"><label>💰 BASE BET (% balance)</label><input type="number" id="p-recovery-basebet" value="0.5" step="0.1" min="0.1" max="5"></div>
                         </div>
                         <div class="grid-2">
+                            <div class="md-field"><label>📊 MARTINGALE MULTIPLIER</label>
+                                <select id="p-recovery-multiplier">
+                                    <option value="1.2">1.2x (Sangat Aman)</option>
+                                    <option value="1.5" selected>1.5x (Aman)</option>
+                                    <option value="1.8">1.8x (Standar)</option>
+                                    <option value="2">2x (Agresif)</option>
+                                </select>
+                            </div>
                             <div class="md-field"><label>📊 MAX BET (% balance)</label><input type="number" id="p-recovery-maxbet" value="5" step="0.5" min="1" max="20"></div>
-                            <div class="md-field"><label>📊 MAX LOSS STREAK (reset ke base)</label><input type="number" id="p-recovery-maxls" value="7" step="1" min="3" max="20"></div>
                         </div>
                         <div class="grid-2">
-                            <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.5" step="0.01" min="0.01" max="5"></div>
-                            <div style="display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--text-light);">
-                                ⚡ Exit: balance >= startBalance
-                            </div>
+                            <div class="md-field"><label>📊 MAX LOSS STREAK (reset ke base)</label><input type="number" id="p-recovery-maxls" value="7" step="1" min="3" max="20"></div>
+                            <div class="md-field"><label>🎯 TRIGGER DRAWDOWN (%)</label><input type="number" id="p-trigger-drawdown" value="0.5" step="0.1" min="0.1" max="5"></div>
                         </div>
                         <div style="font-size:8px;color:var(--text-light);margin-top:4px;">
                             Base Bet: X% balance | Double setiap loss | Max Bet: X% balance | Max LS: reset ke baseBet
+                        </div>
+                    </div>
+                    <div class="stats-block">
+                        <div style="font-weight:bold;margin-bottom:8px;">🤖 ML SERVER</div>
+                        <div style="font-size:9px;color:var(--text-light);margin-bottom:6px;">Machine Learning command receiver</div>
+                        <div class="grid-2">
+                            <div class="md-field"><label>📊 ML ENABLED</label>
+                                <select id="p-ml-enabled">
+                                    <option value="true">✅ Enabled</option>
+                                    <option value="false">❌ Disabled</option>
+                                </select>
+                            </div>
+                            <div class="md-field"><label>📊 SEND DATA INTERVAL (detik)</label><input type="number" id="p-ml-interval" value="5" step="1" min="1" max="60"></div>
+                        </div>
+                        <div style="font-size:8px;color:var(--text-light);margin-top:4px;">
+                            Bot akan mengirim data ke ML Server via Telegram. ML Server akan mengirim command balik.
                         </div>
                     </div>
                     <div class="stats-block">
@@ -1319,7 +1461,7 @@
                     </div>
                 </div>
                 <div id="tab-logs" class="tab-content">
-                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Martingale (Dice)<br>📈 Double bet setiap loss | Max LS: reset ke base<br>🎯 Exit: balance >= startBalance (BEP/PROFIT)<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
+                    <div class="logs-container" id="p-logs"><div style="text-align:center;padding:20px;">🎲 CHEAPCHEATX v3.0 ML<br>"Your Stake Wagered Partner"<br><br>📊 Normal: Dice 99.98% (Fire & Forget)<br>🔄 Recovery: Martingale (Dice)<br>📈 Double bet setiap loss | Max LS: reset ke base<br>🎯 Exit: balance >= startBalance (BEP)<br>🤖 ML Server: Connected via Telegram<br>💳 MinBet: 2 IDR (auto convert)<br>🎟️ Raffle Progress Bar</div></div>
                 </div>
             </div>
         </div>`;
@@ -1361,6 +1503,7 @@
             updateAllUI();
         };
         
+        // ===== LOGIN =====
         var loginBtn = document.getElementById("p-login");
         if (loginBtn) {
             loginBtn.onclick = async function() {
@@ -1392,6 +1535,7 @@
             };
         }
         
+        // ===== CURRENCY =====
         var currencyEl = document.getElementById("p-currency");
         if (currencyEl) {
             currencyEl.onchange = function() {
@@ -1405,7 +1549,7 @@
             };
         }
         
-        // ===== RECOVERY SETTINGS EVENTS =====
+        // ===== RECOVERY SETTINGS =====
         var recoveryChanceEl = document.getElementById("p-recovery-chance");
         if (recoveryChanceEl) {
             recoveryChanceEl.onchange = function() {
@@ -1417,6 +1561,13 @@
         if (recoveryBaseBetEl) {
             recoveryBaseBetEl.onchange = function() {
                 STATE.recoveryBaseBetPct = safeFloat("p-recovery-basebet", 0.5);
+            };
+        }
+        
+        var recoveryMultiplierEl = document.getElementById("p-recovery-multiplier");
+        if (recoveryMultiplierEl) {
+            recoveryMultiplierEl.onchange = function() {
+                STATE.recoveryMultiplier = parseFloat(this.value);
             };
         }
         
@@ -1434,6 +1585,24 @@
             };
         }
         
+        var triggerEl = document.getElementById("p-trigger-drawdown");
+        if (triggerEl) {
+            triggerEl.onchange = function() {
+                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.5);
+                updateAllUI();
+            };
+        }
+        
+        // ===== ML SETTINGS =====
+        var mlEnabledEl = document.getElementById("p-ml-enabled");
+        if (mlEnabledEl) {
+            mlEnabledEl.onchange = function() {
+                CONFIG.mlEnabled = this.value === 'true';
+                sendTelegramMessage('🤖 ML ' + (CONFIG.mlEnabled ? 'ENABLED' : 'DISABLED'));
+            };
+        }
+        
+        // ===== START =====
         var startBtn = document.getElementById("p-start");
         if (startBtn) {
             startBtn.onclick = async function() {
@@ -1462,6 +1631,9 @@
                 STATE.recoveryBaseBetPct = safeFloat("p-recovery-basebet", 0.5);
                 STATE.recoveryMaxBetPct = safeFloat("p-recovery-maxbet", 5);
                 STATE.recoveryMaxLossStreak = safeInt("p-recovery-maxls", 7);
+                STATE.recoveryMultiplier = parseFloat(document.getElementById("p-recovery-multiplier")?.value || 1.5);
+                
+                CONFIG.mlEnabled = document.getElementById("p-ml-enabled")?.value === 'true';
                 
                 var targetUSD = safeFloat("p-wager-total-target-usd", 1000);
                 var lossPct = safeFloat("p-wager-loss-tolerance-pct", 0.5);
@@ -1529,23 +1701,22 @@
                 toggleStartStop(true);
                 updateAllUI();
                 
-                sendTelegramMessage('💰 CHEAPCHEATX v3.0 STARTED\n' +
+                sendTelegramMessage('💰 CHEAPCHEATX v3.0 ML STARTED\n' +
                     'Mode: Dice 99.98% (Fire & Forget)\n' +
                     'Recovery: Martingale (Dice)\n' +
                     'Chance: ' + STATE.recoveryChance + '%\n' +
                     'Base Bet: ' + STATE.recoveryBaseBetPct + '% balance\n' +
                     'Max Bet: ' + STATE.recoveryMaxBetPct + '% balance\n' +
-                    'Max Loss Streak: ' + STATE.recoveryMaxLossStreak + 'x (reset ke base)\n' +
+                    'Max LS: ' + STATE.recoveryMaxLossStreak + 'x\n' +
+                    'ML: ' + (CONFIG.mlEnabled ? 'ENABLED' : 'DISABLED') + '\n' +
                     'Balance: ' + balance.toFixed(8) + '\n' +
-                    'MinBet: ' + STATE.minBet.toFixed(8) + ' ' + STATE.selectedCurrency.toUpperCase() + '\n' +
-                    'Trigger: Drawdown > ' + STATE.triggerDrawdownPct + '%\n' +
-                    '🎯 Exit: balance >= startBalance (BEP/PROFIT)\n' +
-                    '🎟️ Raffle: Tracking progress');
+                    '🎯 Exit: balance >= startBalance (BEP)');
                 
                 runLoop();
             };
         }
         
+        // ===== PAUSE =====
         var pauseBtn = document.getElementById("p-pause");
         if (pauseBtn) {
             pauseBtn.onclick = function() {
@@ -1560,6 +1731,7 @@
             };
         }
         
+        // ===== STOP =====
         var stopBtn = document.getElementById("p-stop");
         if (stopBtn) {
             stopBtn.onclick = function() {
@@ -1568,6 +1740,7 @@
             };
         }
         
+        // ===== RESET =====
         var resetBtn = document.getElementById("p-reset");
         if (resetBtn) {
             resetBtn.onclick = function() {
@@ -1576,25 +1749,19 @@
             };
         }
         
-        var triggerEl = document.getElementById("p-trigger-drawdown");
-        if (triggerEl) {
-            triggerEl.onchange = function() {
-                STATE.triggerDrawdownPct = safeFloat("p-trigger-drawdown", 0.5);
-                updateAllUI();
-            };
-        }
-        
+        // ===== MAX DRAWDOWN =====
         var maxDrawdownEl = document.getElementById("p-max-drawdown");
         if (maxDrawdownEl) {
             maxDrawdownEl.onchange = function() {
                 STATE.maxDrawdownPct = safeFloat("p-max-drawdown", 5);
-                updateAllUI();
             };
         }
         
+        // ===== WAGER TARGET =====
         var targetUsdEl = document.getElementById("p-wager-total-target-usd");
         if (targetUsdEl) targetUsdEl.oninput = updateAllUI;
         
+        // ===== LOSS TOLERANCE =====
         var lossToleranceEl = document.getElementById("p-wager-loss-tolerance-pct");
         if (lossToleranceEl) {
             lossToleranceEl.oninput = function() {
@@ -1606,6 +1773,7 @@
             };
         }
         
+        // ===== OPEN TAB =====
         window.openTab = function(tabName) {
             document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
             var target = document.getElementById('tab-' + tabName);
@@ -1614,6 +1782,7 @@
             if (event && event.currentTarget) event.currentTarget.classList.add('active');
         };
         
+        // ===== DRAG =====
         var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
         function dragMouseDown(e) {
             if (e.target.closest && (e.target.closest('button') || e.target.closest('input') || e.target.closest('select'))) return;
@@ -1646,6 +1815,7 @@
         }
         function closeDragElement() { document.onmouseup = null; document.onmousemove = null; }
         
+        // ===== INIT =====
         var saved = localStorage.getItem('apitoken');
         if (saved) {
             accessToken = saved;
@@ -1668,7 +1838,7 @@
         }, 60000);
     }
 
-    // ==================== 21. START ====================
+    // ==================== 24. START ====================
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', createUI);
     } else {
